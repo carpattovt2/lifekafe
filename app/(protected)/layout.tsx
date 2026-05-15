@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { LanguageProvider } from '@/lib/LanguageContext'
 import Sidebar from '@/components/Sidebar'
 import LanguageToggle from '@/components/LanguageToggle'
+import MobileNav from '@/components/MobileNav'
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -13,9 +14,18 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   return (
     <LanguageProvider>
       <div style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar email={user.email ?? ''} />
+        {/* Desktop sidebar — hidden on mobile via CSS class */}
+        <div className="sidebar-desktop">
+          <Sidebar email={user.email ?? ''} />
+        </div>
+
+        {/* Mobile hamburger + slide-in menu — hidden on desktop via CSS */}
+        <MobileNav email={user.email ?? ''} />
+
+        {/* Desktop language toggle — hidden on mobile via CSS class */}
         <LanguageToggle />
-        <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+
+        <main className="main-content" style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
           {children}
         </main>
       </div>

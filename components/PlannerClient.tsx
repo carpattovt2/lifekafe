@@ -173,7 +173,8 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
           onToday={() => setCursor(new Date())}
           prevLabel={t.planner.prev} nextLabel={t.planner.next} todayLabel={t.planner.today}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+        <div className="scroll-x">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', minWidth: '560px' }}>
           {days.map((day, i) => {
             const ds = formatDs(day)
             const dayEvs = events.filter(e => e.event_date === ds)
@@ -195,6 +196,7 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
             )
           })}
         </div>
+        </div>{/* end scroll-x */}
       </div>
     )
   }
@@ -215,41 +217,45 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
           onToday={() => setCursor(new Date())}
           prevLabel={t.planner.prev} nextLabel={t.planner.next} todayLabel={t.planner.today}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '2px' }}>
-          {DAYS_SHORT.map(d => (
-            <div key={d} style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: 'var(--muted)',
-              padding: '6px', textAlign: 'center', background: 'var(--bg3)',
-            }}>{d}</div>
-          ))}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-          {Array.from({ length: offset }).map((_, i) => (
-            <div key={`e${i}`} style={{ background: 'var(--bg)', minHeight: 80 }} />
-          ))}
-          {Array.from({ length: daysInMonth }, (_, i) => {
-            const day = i + 1
-            const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-            const dayEvs = events.filter(e => e.event_date === ds)
-            const isToday = ds === today()
-            return (
-              <div key={day} style={{
-                background: 'var(--bg2)',
-                border: `1px solid ${isToday ? 'var(--c-planner)' : 'var(--border)'}`,
-                padding: '6px', minHeight: 80,
-              }}>
-                <div style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: '8px',
-                  color: isToday ? 'var(--c-planner)' : 'var(--muted)', marginBottom: '4px',
-                }}>{day}</div>
-                {dayEvs.slice(0, 3).map(ev => <EventPill key={ev.id} ev={ev} onClick={openEvent} />)}
-                {dayEvs.length > 3 && (
-                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>+{dayEvs.length-3} more</div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <div className="scroll-x">
+          <div style={{ minWidth: '560px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '2px' }}>
+              {DAYS_SHORT.map(d => (
+                <div key={d} style={{
+                  fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: 'var(--muted)',
+                  padding: '6px', textAlign: 'center', background: 'var(--bg3)',
+                }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
+              {Array.from({ length: offset }).map((_, i) => (
+                <div key={`e${i}`} style={{ background: 'var(--bg)', minHeight: 80 }} />
+              ))}
+              {Array.from({ length: daysInMonth }, (_, i) => {
+                const day = i + 1
+                const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+                const dayEvs = events.filter(e => e.event_date === ds)
+                const isToday = ds === today()
+                return (
+                  <div key={day} style={{
+                    background: 'var(--bg2)',
+                    border: `1px solid ${isToday ? 'var(--c-planner)' : 'var(--border)'}`,
+                    padding: '6px', minHeight: 80,
+                  }}>
+                    <div style={{
+                      fontFamily: "'Press Start 2P', monospace", fontSize: '8px',
+                      color: isToday ? 'var(--c-planner)' : 'var(--muted)', marginBottom: '4px',
+                    }}>{day}</div>
+                    {dayEvs.slice(0, 3).map(ev => <EventPill key={ev.id} ev={ev} onClick={openEvent} />)}
+                    {dayEvs.length > 3 && (
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>+{dayEvs.length-3} more</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>{/* end scroll-x */}
       </div>
     )
   }

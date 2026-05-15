@@ -178,7 +178,8 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
 
       {/* Table */}
       <div className="pixel-card card-weight" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', borderBottom: '2px solid var(--border)' }}>
+        <div className="scroll-x">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', borderBottom: '2px solid var(--border)', minWidth: '480px' }}>
           {[t.weight.colDate, t.weight.colWeight, t.weight.colChange, ''].map((h, i) => (
             <div key={i} style={{
               fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: 'var(--muted)',
@@ -205,6 +206,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
               display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
               borderBottom: '1px solid var(--border)',
               background: isEditing ? 'rgba(74,222,128,0.05)' : 'transparent',
+              minWidth: '480px',
             }}>
               <div style={{ padding: '10px 16px', fontSize: '18px', borderRight: '1px solid var(--border)' }}>
                 {formatDate(entry.date, lang)}
@@ -248,6 +250,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
             </div>
           )
         })}
+        </div>{/* end scroll-x */}
       </div>
     </>
   )

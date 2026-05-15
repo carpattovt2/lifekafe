@@ -35,7 +35,7 @@ export default function DashboardContent({ latestWeight, weightDiff, events, tod
   const preview = journalPreview(todayJournal)
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+    <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
 
       {/* Quote */}
       <QuoteWidget />

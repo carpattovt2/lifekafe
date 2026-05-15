@@ -7,7 +7,7 @@ export default function LanguageToggle() {
   const { lang, setLang } = useLanguage()
 
   return (
-    <div style={{
+    <div className="lang-toggle-desktop" style={{
       position: 'fixed',
       top: '16px',
       right: '20px',
