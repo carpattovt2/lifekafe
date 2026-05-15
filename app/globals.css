@@ -266,11 +266,45 @@ h1, h2, h3, .pixel-font {
   /* Reduce page padding on mobile */
   .page-content { padding: 70px 14px 20px !important; }
 
-  /* Dashboard grid — single column on small screens */
+  /* Dashboard grid — single column on mobile */
   .dashboard-grid { grid-template-columns: 1fr !important; }
 
   /* Ensure cards don't overflow */
   .pixel-card { word-break: break-word; }
+
+  /* Quote text — readable size on mobile */
+  .quote-text { font-size: 16px !important; }
+
+  /* Weight form — stack vertically on mobile */
+  .weight-form {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .weight-form-field {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+  }
+  .weight-form-field input,
+  .weight-form-field select {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .weight-form-submit {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+}
+
+/* Tablet: 2-column dashboard grid */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .dashboard-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+/* Events card spans full row on multi-column layouts */
+@media (min-width: 768px) {
+  .dash-events { grid-column: 1 / -1; }
 }
 
 @media (min-width: 768px) {

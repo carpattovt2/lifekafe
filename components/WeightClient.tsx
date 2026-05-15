@@ -105,12 +105,12 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
       {/* Form */}
       <div className="pixel-card card-weight" style={{ marginBottom: '20px' }}>
         <div className="widget-label" style={{ color: 'var(--c-weight)' }}>{t.weight.logEntry}</div>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1', minWidth: '160px' }}>
+        <form className="weight-form" onSubmit={handleSubmit} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="weight-form-field" style={{ flex: '1', minWidth: '160px' }}>
             <label className="pixel-label">{t.weight.date}</label>
-            <input className="pixel-input" type="date" value={date} onChange={e => setDate(e.target.value)} required />
+            <input className="pixel-input" type="date" value={date} onChange={e => setDate(e.target.value)} required style={{ maxWidth: '100%' }} />
           </div>
-          <div style={{ flex: '1', minWidth: '180px' }}>
+          <div className="weight-form-field" style={{ flex: '1', minWidth: '180px' }}>
             <label className="pixel-label">{t.weight.weightLabel} ({unit})</label>
             <div style={{ display: 'flex' }}>
               <input
@@ -145,7 +145,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
               </div>
             )}
           </div>
-          <button type="submit" className="pixel-btn pixel-btn-success" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
+          <button type="submit" className="pixel-btn pixel-btn-success weight-form-submit" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
             {loading ? t.weight.saving : t.weight.logBtn}
           </button>
         </form>

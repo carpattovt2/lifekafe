@@ -68,7 +68,7 @@ export default function DashboardContent({ latestWeight, weightDiff, events, tod
       </div>
 
       {/* Upcoming Events */}
-      <div className="pixel-card card-planner" style={{ gridColumn: 'span 2' }}>
+      <div className="pixel-card card-planner dash-events">
         <div className="widget-label" style={{ color: 'var(--c-planner)' }}>{t.dashboard.eventsTitle}</div>
         {events.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

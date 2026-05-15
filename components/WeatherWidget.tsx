@@ -63,22 +63,23 @@ export default function WeatherWidget() {
       {!weather && !error && <div style={{ color: 'var(--muted)', fontSize: '16px' }}>Loading...</div>}
       {weather && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '36px' }}>{iconForCode(weather.weathercode)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '40px', lineHeight: 1 }}>{iconForCode(weather.weathercode)}</span>
             <div>
               <div style={{
                 fontFamily: "'Press Start 2P', monospace",
-                fontSize: '20px',
+                fontSize: '22px',
                 color: 'var(--text)',
+                marginBottom: '4px',
               }}>
                 {weather.temp}°C
               </div>
-              <div style={{ color: 'var(--muted)', fontSize: '16px', marginTop: '2px' }}>
+              <div style={{ color: 'var(--muted)', fontSize: '18px' }}>
                 {describeCode(weather.weathercode)}
               </div>
             </div>
           </div>
-          <div style={{ color: 'var(--muted)', fontSize: '15px' }}>
+          <div style={{ color: 'var(--muted)', fontSize: '16px' }}>
             Wind: {weather.windspeed} km/h
           </div>
         </>

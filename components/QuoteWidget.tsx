@@ -54,17 +54,28 @@ export default function QuoteWidget() {
         <div style={{ color: 'var(--muted)', fontSize: '18px' }}>Loading<span className="blink">_</span></div>
       ) : quote ? (
         <div>
-          <div style={{
-            fontSize: '20px',
-            color: 'var(--text)',
-            lineHeight: 1.5,
-            marginBottom: '8px',
-            borderLeft: '3px solid var(--c-dash)',
-            paddingLeft: '12px',
-          }}>
+          <div
+            className="quote-text"
+            style={{
+              fontSize: '20px',
+              color: 'var(--text)',
+              lineHeight: 1.6,
+              marginBottom: '10px',
+              borderLeft: '3px solid var(--c-dash)',
+              paddingLeft: '12px',
+              wordBreak: 'break-word',
+              overflowWrap: 'break-word',
+              whiteSpace: 'normal',
+            }}
+          >
             "{quote.content}"
           </div>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: 'var(--c-dash)' }}>
+          <div style={{
+            fontFamily: "'Press Start 2P', monospace",
+            fontSize: '8px',
+            color: 'var(--c-dash)',
+            wordBreak: 'break-word',
+          }}>
             — {quote.author}
           </div>
         </div>
