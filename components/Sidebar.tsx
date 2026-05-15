@@ -3,17 +3,20 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-
-const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: '⌂' },
-  { href: '/weight',    label: 'Weight',    icon: '⚖' },
-  { href: '/planner',   label: 'Planner',   icon: '◫' },
-]
+import { useLanguage } from '@/lib/LanguageContext'
+import type { Lang } from '@/lib/i18n'
 
 export default function Sidebar({ email }: { email: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const { t, lang, setLang } = useLanguage()
+
+  const NAV = [
+    { href: '/dashboard', label: t.nav.dashboard, icon: '⌂' },
+    { href: '/weight',    label: t.nav.weight,    icon: '⚖' },
+    { href: '/planner',   label: t.nav.planner,   icon: '◫' },
+  ]
 
   async function logout() {
     await supabase.auth.signOut()
@@ -29,14 +32,10 @@ export default function Sidebar({ email }: { email: string }) {
       borderRight: '2px solid var(--border)',
       display: 'flex',
       flexDirection: 'column',
-      padding: '0',
       flexShrink: 0,
     }}>
       {/* Logo */}
-      <div style={{
-        padding: '20px 16px 16px',
-        borderBottom: '2px solid var(--border)',
-      }}>
+      <div style={{ padding: '20px 16px 16px', borderBottom: '2px solid var(--border)' }}>
         <div style={{
           fontFamily: "'Press Start 2P', monospace",
           fontSize: '13px',
@@ -47,29 +46,60 @@ export default function Sidebar({ email }: { email: string }) {
           lifekafe
         </div>
         <div style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '4px' }}>
-          <span className="blink" style={{ color: 'var(--green)' }}>●</span> ONLINE
+          <span className="blink" style={{ color: 'var(--green)' }}>●</span> {t.common.online}
         </div>
       </div>
 
       {/* Nav */}
       <nav style={{ padding: '12px 8px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {NAV.map(({ href, label, icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={`nav-link ${pathname === href ? 'active' : ''}`}
-          >
+          <Link key={href} href={href} className={`nav-link ${pathname === href ? 'active' : ''}`}>
             <span style={{ fontSize: '16px' }}>{icon}</span>
             {label}
           </Link>
         ))}
       </nav>
 
+      {/* Language toggle */}
+      <div style={{ padding: '10px 16px', borderTop: '2px solid var(--border)' }}>
+        <div style={{
+          fontFamily: "'Press Start 2P', monospace",
+          fontSize: '7px',
+          color: 'var(--muted)',
+          marginBottom: '6px',
+          letterSpacing: '0.1em',
+        }}>
+          LANGUAGE
+        </div>
+        <div style={{ display: 'flex', gap: '0' }}>
+          {(['en', 'ua'] as Lang[]).map(l => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              style={{
+                flex: 1,
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: '9px',
+                padding: '7px 0',
+                border: '2px solid',
+                borderColor: lang === l ? 'var(--c-dash)' : 'var(--border)',
+                background: lang === l ? 'rgba(34,211,238,0.15)' : 'var(--bg3)',
+                color: lang === l ? 'var(--c-dash)' : 'var(--muted)',
+                cursor: 'pointer',
+                marginRight: l === 'en' ? '-2px' : '0',
+                transition: 'all 0.15s',
+                zIndex: lang === l ? 1 : 0,
+                position: 'relative',
+              }}
+            >
+              {l.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* User + Logout */}
-      <div style={{
-        padding: '12px 16px',
-        borderTop: '2px solid var(--border)',
-      }}>
+      <div style={{ padding: '12px 16px', borderTop: '2px solid var(--border)' }}>
         <div style={{
           fontSize: '13px',
           color: 'var(--muted)',
@@ -84,7 +114,7 @@ export default function Sidebar({ email }: { email: string }) {
           className="pixel-btn pixel-btn-danger"
           style={{ width: '100%', justifyContent: 'center', fontSize: '9px', padding: '8px 12px' }}
         >
-          LOGOUT
+          {t.nav.logout}
         </button>
       </div>
     </aside>
