@@ -55,8 +55,8 @@ export default function WeatherWidget() {
   }, [])
 
   return (
-    <div className="pixel-card">
-      <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '9px', color: 'var(--muted)', marginBottom: '12px' }}>
+    <div className="pixel-card card-dash">
+      <div className="widget-label" style={{ color: 'var(--c-dash)' }}>
         ☁ WEATHER — NEW YORK
       </div>
       {error && <div style={{ color: 'var(--muted)', fontSize: '16px' }}>Unavailable</div>}

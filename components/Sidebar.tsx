@@ -40,8 +40,8 @@ export default function Sidebar({ email }: { email: string }) {
         <div style={{
           fontFamily: "'Press Start 2P', monospace",
           fontSize: '13px',
-          color: 'var(--accent2)',
-          textShadow: '0 0 10px rgba(6,182,212,0.4)',
+          color: 'var(--c-dash)',
+          textShadow: '0 0 12px rgba(34,211,238,0.4)',
           letterSpacing: '1px',
         }}>
           lifekafe

@@ -16,9 +16,9 @@ export default async function WeightPage() {
       <h1 style={{
         fontFamily: "'Press Start 2P', monospace",
         fontSize: '13px',
-        color: 'var(--accent2)',
+        color: 'var(--c-weight)',
         marginBottom: '24px',
-        textShadow: '0 0 12px rgba(6,182,212,0.4)',
+        textShadow: '0 0 12px rgba(74,222,128,0.35)',
       }}>
         ⚖ WEIGHT TRACKER
       </h1>
