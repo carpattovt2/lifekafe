@@ -15,6 +15,10 @@ type Entry = {
   created_at: string
 }
 
+const LBS_PER_KG = 2.2046
+
+function lbsToKg(lbs: number) { return lbs / LBS_PER_KG }
+
 function today() {
   return new Date().toISOString().split('T')[0]
 }
@@ -23,6 +27,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
   const [entries, setEntries] = useState<Entry[]>(initialEntries)
   const [date, setDate] = useState(today())
   const [weight, setWeight] = useState('')
+  const [unit, setUnit] = useState<'kg' | 'lbs'>('kg')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
@@ -30,13 +35,22 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
   const [editSaving, setEditSaving] = useState(false)
   const supabase = createClient()
 
+  // Preview conversion shown under the lbs input
+  const lbsPreview = unit === 'lbs' && weight && !isNaN(parseFloat(weight))
+    ? `${parseFloat(weight).toFixed(1)} lbs = ${lbsToKg(parseFloat(weight)).toFixed(1)} kg`
+    : null
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
+
+    const rawValue = parseFloat(weight)
+    const weight_kg = unit === 'lbs' ? lbsToKg(rawValue) : rawValue
+
     const { data, error: err } = await supabase
       .from('weight_entries')
-      .insert({ user_id: userId, date, weight_kg: parseFloat(weight) })
+      .insert({ user_id: userId, date, weight_kg: parseFloat(weight_kg.toFixed(2)) })
       .select()
       .single()
     if (err) {
@@ -72,27 +86,21 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
       .update({ weight_kg: newKg })
       .eq('id', id)
     if (!err) {
-      setEntries(prev =>
-        prev.map(e => e.id === id ? { ...e, weight_kg: newKg } : e)
-      )
+      setEntries(prev => prev.map(e => e.id === id ? { ...e, weight_kg: newKg } : e))
       setEditId(null)
       setEditWeight('')
     }
     setEditSaving(false)
   }
 
-  // Chart data — chronological order, limited to 30 most recent
+  // Chart — chronological, last 30 entries
   const chartData = [...entries]
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-30)
     .map(e => ({ date: e.date.slice(5), kg: Number(Number(e.weight_kg).toFixed(1)) }))
 
-  const yMin = chartData.length
-    ? Math.floor(Math.min(...chartData.map(d => d.kg)) - 1)
-    : 60
-  const yMax = chartData.length
-    ? Math.ceil(Math.max(...chartData.map(d => d.kg)) + 1)
-    : 100
+  const yMin = chartData.length ? Math.floor(Math.min(...chartData.map(d => d.kg)) - 1) : 60
+  const yMax = chartData.length ? Math.ceil(Math.max(...chartData.map(d => d.kg)) + 1) : 100
 
   return (
     <>
@@ -104,12 +112,66 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
             <label className="pixel-label">Date</label>
             <input className="pixel-input" type="date" value={date} onChange={e => setDate(e.target.value)} required />
           </div>
-          <div style={{ flex: '1', minWidth: '160px' }}>
-            <label className="pixel-label">Weight (kg)</label>
-            <input className="pixel-input" type="number" step="0.1" min="20" max="500"
-              value={weight} onChange={e => setWeight(e.target.value)} placeholder="75.5" required />
+
+          <div style={{ flex: '1', minWidth: '180px' }}>
+            <label className="pixel-label">Weight ({unit})</label>
+            <div style={{ display: 'flex', gap: '0' }}>
+              <input
+                className="pixel-input"
+                type="number"
+                step="0.1"
+                min={unit === 'lbs' ? '44' : '20'}
+                max={unit === 'lbs' ? '1100' : '500'}
+                value={weight}
+                onChange={e => setWeight(e.target.value)}
+                placeholder={unit === 'kg' ? '75.5' : '166.0'}
+                required
+                style={{ borderRight: 'none' }}
+              />
+              {/* Unit toggle */}
+              <div style={{ display: 'flex', flexShrink: 0 }}>
+                {(['kg', 'lbs'] as const).map(u => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => { setUnit(u); setWeight('') }}
+                    style={{
+                      fontFamily: "'Press Start 2P', monospace",
+                      fontSize: '9px',
+                      padding: '0 10px',
+                      border: '2px solid var(--border)',
+                      borderLeft: u === 'kg' ? '2px solid var(--border)' : 'none',
+                      cursor: 'pointer',
+                      background: unit === u ? 'var(--c-weight)' : 'var(--bg3)',
+                      color: unit === u ? '#000' : 'var(--muted)',
+                      fontWeight: unit === u ? 'bold' : 'normal',
+                      transition: 'background 0.15s, color 0.15s',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {lbsPreview && (
+              <div style={{
+                marginTop: '5px',
+                fontSize: '15px',
+                color: 'var(--c-weight)',
+                fontFamily: "'VT323', monospace",
+              }}>
+                ≈ {lbsPreview}
+              </div>
+            )}
           </div>
-          <button type="submit" className="pixel-btn pixel-btn-success" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
+
+          <button
+            type="submit"
+            className="pixel-btn pixel-btn-success"
+            disabled={loading}
+            style={{ whiteSpace: 'nowrap' }}
+          >
             {loading ? 'SAVING...' : '+ LOG WEIGHT'}
           </button>
         </form>
@@ -164,7 +226,6 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
 
       {/* Table */}
       <div className="pixel-card card-weight" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Header */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr auto',
@@ -205,7 +266,6 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
                 {entry.date}
               </div>
 
-              {/* Editable weight cell */}
               <div style={{ padding: '6px 10px', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
                 {isEditing ? (
                   <input
@@ -220,11 +280,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
                     style={{ fontSize: '18px', padding: '4px 8px' }}
                   />
                 ) : (
-                  <span style={{
-                    fontFamily: "'Press Start 2P', monospace",
-                    fontSize: '13px',
-                    color: 'var(--c-weight)',
-                  }}>
+                  <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '13px', color: 'var(--c-weight)' }}>
                     {Number(entry.weight_kg).toFixed(1)}
                   </span>
                 )}
@@ -236,8 +292,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
                 borderRight: '1px solid var(--border)',
                 color: diffNum === null ? 'var(--muted)' : diffNum > 0 ? 'var(--red)' : diffNum < 0 ? 'var(--green)' : 'var(--muted)',
               }}>
-                {diff === null ? '—'
-                  : diffNum === null ? '—'
+                {diff === null || diffNum === null ? '—'
                   : diffNum === 0 ? '±0.0'
                   : diffNum > 0 ? `▲ +${diff}` : `▼ ${diff}`}
               </div>
@@ -245,38 +300,19 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
               <div style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {isEditing ? (
                   <>
-                    <button
-                      className="pixel-btn pixel-btn-success"
-                      style={{ fontSize: '8px', padding: '5px 8px' }}
-                      onClick={() => saveEdit(entry.id)}
-                      disabled={editSaving}
-                    >
+                    <button className="pixel-btn pixel-btn-success" style={{ fontSize: '8px', padding: '5px 8px' }}
+                      onClick={() => saveEdit(entry.id)} disabled={editSaving}>
                       {editSaving ? '...' : 'SAVE'}
                     </button>
-                    <button
-                      className="pixel-btn pixel-btn-secondary"
-                      style={{ fontSize: '8px', padding: '5px 8px' }}
-                      onClick={cancelEdit}
-                    >
-                      ✕
-                    </button>
+                    <button className="pixel-btn pixel-btn-secondary" style={{ fontSize: '8px', padding: '5px 8px' }}
+                      onClick={cancelEdit}>✕</button>
                   </>
                 ) : (
                   <>
-                    <button
-                      className="pixel-btn pixel-btn-secondary"
-                      style={{ fontSize: '8px', padding: '5px 8px' }}
-                      onClick={() => startEdit(entry)}
-                    >
-                      EDIT
-                    </button>
-                    <button
-                      className="pixel-btn pixel-btn-danger"
-                      style={{ fontSize: '8px', padding: '5px 8px' }}
-                      onClick={() => handleDelete(entry.id)}
-                    >
-                      DEL
-                    </button>
+                    <button className="pixel-btn pixel-btn-secondary" style={{ fontSize: '8px', padding: '5px 8px' }}
+                      onClick={() => startEdit(entry)}>EDIT</button>
+                    <button className="pixel-btn pixel-btn-danger" style={{ fontSize: '8px', padding: '5px 8px' }}
+                      onClick={() => handleDelete(entry.id)}>DEL</button>
                   </>
                 )}
               </div>
