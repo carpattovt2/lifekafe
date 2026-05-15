@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 :root {
-  /* Backgrounds — lightened from pure black to dark blue-gray */
-  --bg:      #0f1117;
-  --bg2:     #1a1f2e;
-  --bg3:     #242b3d;
-  --border:  #2d3555;
+  /* Lightened backgrounds */
+  --bg:      #2d2d44;
+  --bg2:     #363653;
+  --bg3:     #414162;
+  --border:  #4e4e72;
 
   /* Accents */
   --accent:  #8b5cf6;
@@ -16,14 +16,14 @@
   --red:     #f87171;
   --yellow:  #fbbf24;
   --orange:  #fb923c;
-  --text:    #e2e8f0;
-  --muted:   #6b7280;
+  --text:    #f0f2f8;
+  --muted:   #9095b0;
 
   /* Module accent colors */
-  --c-dash:    #22d3ee;   /* cyan */
-  --c-weight:  #4ade80;   /* green */
-  --c-planner: #c084fc;   /* purple */
-  --c-journal: #fb923c;   /* orange */
+  --c-dash:    #22d3ee;
+  --c-weight:  #4ade80;
+  --c-planner: #c084fc;
+  --c-journal: #fb923c;
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +32,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: 'VT323', monospace;
-  font-size: 18px;
+  font-size: 20px;
   margin: 0;
   padding: 0;
 }
@@ -45,31 +45,31 @@ h1, h2, h3, .pixel-font {
 .pixel-card {
   background: var(--bg2);
   border: 2px solid var(--border);
-  box-shadow: 4px 4px 0px rgba(0,0,0,0.6);
-  padding: 16px;
+  box-shadow: 4px 4px 0px rgba(0,0,0,0.45);
+  padding: 18px;
 }
 
 /* Module-tinted cards */
-.card-dash    { border-color: var(--c-dash);    box-shadow: 4px 4px 0 rgba(0,0,0,0.6), 0 0 12px rgba(34,211,238,0.12); }
-.card-weight  { border-color: var(--c-weight);  box-shadow: 4px 4px 0 rgba(0,0,0,0.6), 0 0 12px rgba(74,222,128,0.12); }
-.card-planner { border-color: var(--c-planner); box-shadow: 4px 4px 0 rgba(0,0,0,0.6), 0 0 12px rgba(192,132,252,0.12); }
-.card-journal { border-color: var(--c-journal); box-shadow: 4px 4px 0 rgba(0,0,0,0.6), 0 0 12px rgba(251,146,60,0.12); }
+.card-dash    { border-color: var(--c-dash);    box-shadow: 4px 4px 0 rgba(0,0,0,0.45), 0 0 14px rgba(34,211,238,0.15); }
+.card-weight  { border-color: var(--c-weight);  box-shadow: 4px 4px 0 rgba(0,0,0,0.45), 0 0 14px rgba(74,222,128,0.15); }
+.card-planner { border-color: var(--c-planner); box-shadow: 4px 4px 0 rgba(0,0,0,0.45), 0 0 14px rgba(192,132,252,0.15); }
+.card-journal { border-color: var(--c-journal); box-shadow: 4px 4px 0 rgba(0,0,0,0.45), 0 0 14px rgba(251,146,60,0.15); }
 
 /* Pixel border utility */
 .pixel-border {
   border: 2px solid var(--border);
-  box-shadow: 4px 4px 0px rgba(0,0,0,0.6);
+  box-shadow: 4px 4px 0px rgba(0,0,0,0.45);
 }
 
 /* Buttons */
 .pixel-btn {
   font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  padding: 10px 16px;
+  font-size: 11px;
+  padding: 11px 18px;
   border: 2px solid;
   cursor: pointer;
   transition: transform 0.1s, box-shadow 0.1s, filter 0.1s;
-  box-shadow: 3px 3px 0px rgba(0,0,0,0.7);
+  box-shadow: 3px 3px 0px rgba(0,0,0,0.6);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   display: inline-flex;
@@ -81,38 +81,14 @@ h1, h2, h3, .pixel-font {
 
 .pixel-btn:active {
   transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0px rgba(0,0,0,0.7);
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.6);
 }
 
-.pixel-btn-primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: #a78bfa;
-}
-
-.pixel-btn-success {
-  background: #16a34a;
-  color: #fff;
-  border-color: var(--green);
-}
-
-.pixel-btn-danger {
-  background: #dc2626;
-  color: #fff;
-  border-color: var(--red);
-}
-
-.pixel-btn-secondary {
-  background: var(--bg3);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.pixel-btn-warning {
-  background: #b45309;
-  color: #fff;
-  border-color: var(--yellow);
-}
+.pixel-btn-primary  { background: var(--accent);  color: #fff; border-color: #a78bfa; }
+.pixel-btn-success  { background: #16a34a;         color: #fff; border-color: var(--green); }
+.pixel-btn-danger   { background: #dc2626;         color: #fff; border-color: var(--red); }
+.pixel-btn-secondary{ background: var(--bg3);      color: var(--text); border-color: var(--border); }
+.pixel-btn-warning  { background: #b45309;         color: #fff; border-color: var(--yellow); }
 
 /* Inputs */
 .pixel-input {
@@ -121,7 +97,7 @@ h1, h2, h3, .pixel-font {
   color: var(--text);
   font-family: 'VT323', monospace;
   font-size: 20px;
-  padding: 8px 12px;
+  padding: 9px 13px;
   outline: none;
   width: 100%;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -134,12 +110,12 @@ h1, h2, h3, .pixel-font {
 
 .pixel-label {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 /* Navigation */
@@ -147,14 +123,14 @@ h1, h2, h3, .pixel-font {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 11px 12px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--muted);
   text-decoration: none;
   border: 2px solid transparent;
   transition: all 0.15s;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .nav-link:hover {
@@ -166,15 +142,15 @@ h1, h2, h3, .pixel-font {
 .nav-link.active {
   color: var(--accent2);
   border-color: var(--accent2);
-  background: rgba(34,211,238,0.08);
-  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  background: rgba(34,211,238,0.10);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
 }
 
 /* Tabs */
 .tab-btn {
   font-family: 'Press Start 2P', monospace;
-  font-size: 9px;
-  padding: 8px 14px;
+  font-size: 10px;
+  padding: 9px 15px;
   border: 2px solid var(--border);
   background: var(--bg2);
   color: var(--muted);
@@ -188,14 +164,14 @@ h1, h2, h3, .pixel-font {
   background: var(--accent);
   color: #fff;
   border-color: #a78bfa;
-  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
 }
 
 /* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0,0,0,0.80);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -214,10 +190,10 @@ h1, h2, h3, .pixel-font {
 /* Section headers */
 .widget-label {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: 0.1em;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   text-transform: uppercase;
 }
 

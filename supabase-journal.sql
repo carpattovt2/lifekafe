@@ -1,30 +1,30 @@
--- Run this in Supabase SQL Editor
+-- Run this in the Supabase SQL Editor
 
-create table if not exists journal_entries (
-  id           uuid primary key default gen_random_uuid(),
-  user_id      uuid references auth.users not null,
-  date         date not null,
-  gratitude    text,
-  insight      text,
+CREATE TABLE IF NOT EXISTS journal_entries (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       uuid REFERENCES auth.users NOT NULL,
+  date          date NOT NULL,
+  gratitude     text,
+  insight       text,
   stress_action text,
-  created_at   timestamp with time zone default now(),
-  constraint journal_entries_user_date unique (user_id, date)
+  created_at    timestamp with time zone DEFAULT now(),
+  UNIQUE (user_id, date)
 );
 
-alter table journal_entries enable row level security;
+ALTER TABLE journal_entries ENABLE ROW LEVEL SECURITY;
 
-create policy "Users can view own journal entries"
-  on journal_entries for select
-  using (auth.uid() = user_id);
+CREATE POLICY "Users can view own journal entries"
+  ON journal_entries FOR SELECT
+  USING (auth.uid() = user_id);
 
-create policy "Users can insert own journal entries"
-  on journal_entries for insert
-  with check (auth.uid() = user_id);
+CREATE POLICY "Users can insert own journal entries"
+  ON journal_entries FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
 
-create policy "Users can update own journal entries"
-  on journal_entries for update
-  using (auth.uid() = user_id);
+CREATE POLICY "Users can update own journal entries"
+  ON journal_entries FOR UPDATE
+  USING (auth.uid() = user_id);
 
-create policy "Users can delete own journal entries"
-  on journal_entries for delete
-  using (auth.uid() = user_id);
+CREATE POLICY "Users can delete own journal entries"
+  ON journal_entries FOR DELETE
+  USING (auth.uid() = user_id);

@@ -37,14 +37,6 @@ export default function DashboardContent({ latestWeight, weightDiff, events, tod
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
 
-      {/* Welcome */}
-      <div className="pixel-card card-dash" style={{ gridColumn: '1 / -1' }}>
-        <div className="widget-label" style={{ color: 'var(--c-dash)' }}>{t.dashboard.dailySummary}</div>
-        <div style={{ fontSize: '20px', color: 'var(--text)' }}>
-          {t.dashboard.welcome} <span style={{ color: 'var(--c-dash)' }}>{t.dashboard.haveGreatDay}</span>
-        </div>
-      </div>
-
       {/* Quote */}
       <QuoteWidget />
 
