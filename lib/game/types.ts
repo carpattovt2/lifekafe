@@ -1,4 +1,4 @@
-export type CardBack = 'classic' | 'pixel' | 'dark'
+export type CardBack = 'night' | 'elegant' | 'dragon' | 'runes' | 'poker' | 'sea' | 'vip' | 'vegas'
 export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades'
 export type Rank = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'Joker'
 
@@ -12,7 +12,7 @@ export interface Card {
 export interface Meld {
   id: string
   cards: Card[]
-  ownerIndex: number   // player index
+  ownerIndex: number
   type: 'group' | 'sequence'
 }
 
@@ -22,7 +22,7 @@ export interface Player {
   isHuman: boolean
   hand: Card[]
   hasMelded: boolean
-  turnCount: number    // how many turns this player has taken this round (for AI probability)
+  turnCount: number
 }
 
 export type Phase =
@@ -35,30 +35,28 @@ export type Phase =
 
 export interface GameState {
   phase: Phase
-  numPlayers: number           // 2-5
-  roundNumber: number          // 1-7
-  dealerIndex: number          // player index of current dealer
+  numPlayers: number
+  roundNumber: number
+  dealerIndex: number
   currentPlayerIndex: number
 
   deck: Card[]
   discardPile: Card[]
   trumpCard: Card | null
   trumpSuit: Suit | null
+  takenTrumpCard: Card | null   // stored when player takes trump (for return)
 
   players: Player[]
   melds: Meld[]
 
-  // [round][playerIndex] = points that round
   roundScores: number[][]
 
-  // Human-turn state
   selectedCardIds: string[]
   stagedMelds: Card[][]
   drawnThisTurn: boolean
-  drawnFromDiscardCardId: string | null  // must be used in meld/add before discarding
+  drawnFromDiscardCardId: string | null
   message: string
 
-  // Burning sets
   burningMeldId: string | null
   burningHasJoker: boolean
 }
