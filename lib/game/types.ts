@@ -47,10 +47,18 @@ export interface GameState {
   playerHasMelded: boolean
   aiHasMelded: boolean
 
-  roundScores: RoundScore[]   // length = completed rounds
+  roundScores: RoundScore[]
 
   selectedCardIds: string[]
-  stagedMelds: Card[][]       // melds queued this turn, not yet committed
+  stagedMelds: Card[][]
   message: string
   drawnThisTurn: boolean
+
+  // Swap mode
+  swapMode: boolean
+  swapFirstCardId: string | null
+
+  // Burning sets (4-card group)
+  burningMeldId: string | null    // meld pending burn resolution
+  burningHasJoker: boolean        // burning meld contains a Joker
 }

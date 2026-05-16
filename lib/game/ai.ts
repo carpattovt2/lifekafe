@@ -1,8 +1,7 @@
 import type { Card, GameState, Meld } from './types'
-import { meldValue, findMeldsInHand, totalMeldValue, canAddToMeld, isValidMeld } from './meld'
-import { handCardValue, RANK_NUM } from './cards'
+import { meldValue, findMeldsInHand, totalMeldValue, isValidMeld, isBurningGroup } from './meld'
+import { handCardValue } from './cards'
 
-// Return sorted indices of cards AI wants to keep (ascending priority = discard last)
 function cardPriority(card: Card): number {
   if (card.isJoker) return 1000
   if (['J','Q','K','10'].includes(card.rank)) return 5
@@ -11,39 +10,32 @@ function cardPriority(card: Card): number {
 }
 
 export function aiChooseDiscard(hand: Card[], melds: Meld[]): Card {
-  // Keep cards that participate in melds or near-melds
-  // Discard highest-value card that doesn't fit
   const usefulIds = new Set<string>()
-
-  // Mark cards in found melds
-  const found = findMeldsInHand(hand)
-  found.forEach(m => m.forEach(c => usefulIds.add(c.id)))
-
-  // Cards not in useful sets, sort by value desc → discard highest
+  findMeldsInHand(hand).forEach(m => m.forEach(c => usefulIds.add(c.id)))
   const useless = hand.filter(c => !usefulIds.has(c.id))
   if (useless.length > 0) {
     return useless.sort((a, b) => handCardValue(b, true) - handCardValue(a, true))[0]
   }
-
-  // All cards are in melds — discard lowest priority card from smallest meld
-  return hand.sort((a, b) => cardPriority(a) - cardPriority(b))[0]
+  return [...hand].sort((a, b) => cardPriority(a) - cardPriority(b))[0]
 }
 
 export interface AIDecision {
   drawFromDiscard: boolean
-  meldsToPlay: Card[][]      // sets to lay down
+  meldsToPlay: Card[][]
   cardsToAddToMeld: { meldId: string; cards: Card[] }[]
   discardCard: Card
+  // Burning meld decision
+  burnAction: 'steal' | 'burn' | null
+  burningMeldId: string | null
+  jokerReplacementCards: Card[]   // 2 cards to replace joker in burning meld
 }
 
 export function computeAITurn(state: GameState): AIDecision {
   const hand = [...state.aiHand]
   const topDiscard = state.discardPile[state.discardPile.length - 1]
 
-  // Decide: draw from discard?
   let drawFromDiscard = false
   if (topDiscard && state.aiHasMelded) {
-    // Check if discard helps complete a meld
     const testHand = [topDiscard, ...hand]
     const withDiscard = findMeldsInHand(testHand)
     const withoutDiscard = findMeldsInHand(hand)
@@ -52,19 +44,13 @@ export function computeAITurn(state: GameState): AIDecision {
     }
   }
 
-  // Simulate drawing
-  const workingHand = drawFromDiscard
-    ? [topDiscard, ...hand]
-    : hand // deck draw handled externally; AI gets a random card added before this runs
+  const workingHand = drawFromDiscard ? [topDiscard, ...hand] : hand
 
-  // Find melds to play
   const meldsToPlay: Card[][] = []
   const usedIds = new Set<string>()
 
   if (!state.aiHasMelded) {
-    // Find combination of melds totaling 51+
     const candidates = findMeldsInHand(workingHand)
-    // Greedy: add melds until 51+ or no more
     for (const m of candidates) {
       if (m.some(c => usedIds.has(c.id))) continue
       meldsToPlay.push(m)
@@ -76,7 +62,6 @@ export function computeAITurn(state: GameState): AIDecision {
       usedIds.clear()
     }
   } else {
-    // Already melded — lay down any valid sets
     const candidates = findMeldsInHand(workingHand)
     for (const m of candidates) {
       if (m.some(c => usedIds.has(c.id))) continue
@@ -85,11 +70,11 @@ export function computeAITurn(state: GameState): AIDecision {
     }
   }
 
-  // Try adding remaining cards to existing melds
   const cardsToAddToMeld: { meldId: string; cards: Card[] }[] = []
   const remaining = workingHand.filter(c => !usedIds.has(c.id))
   for (const card of remaining) {
     for (const meld of state.melds) {
+      if (isBurningGroup(meld)) continue // don't add to burning set
       const combined = [...meld.cards, card]
       if (isValidMeld(combined)) {
         cardsToAddToMeld.push({ meldId: meld.id, cards: [card] })
@@ -99,11 +84,34 @@ export function computeAITurn(state: GameState): AIDecision {
     }
   }
 
-  // Discard
+  // Burning meld decision
+  let burnAction: 'steal' | 'burn' | null = null
+  let burningMeldId: string | null = null
+  const jokerReplacementCards: Card[] = []
+
+  const burningMeld = state.melds.find(m => m.id === state.burningMeldId)
+  if (burningMeld && state.burningHasJoker) {
+    // AI tries to steal joker from burning meld by providing 2 cards
+    const available = workingHand.filter(c => !usedIds.has(c.id) && !c.isJoker)
+    if (available.length >= 2) {
+      // Use the lowest-value 2 cards as payment
+      const sorted = [...available].sort((a, b) => handCardValue(a, true) - handCardValue(b, true))
+      jokerReplacementCards.push(sorted[0], sorted[1])
+      burnAction = 'steal'
+      burningMeldId = state.burningMeldId
+    } else {
+      burnAction = 'burn'
+      burningMeldId = state.burningMeldId
+    }
+  } else if (state.burningMeldId) {
+    burnAction = 'burn'
+    burningMeldId = state.burningMeldId
+  }
+
   const afterPlaying = workingHand.filter(c => !usedIds.has(c.id))
   const discardCard = afterPlaying.length > 0
     ? aiChooseDiscard(afterPlaying, state.melds)
-    : afterPlaying[0] ?? workingHand[workingHand.length - 1]
+    : workingHand[workingHand.length - 1]
 
-  return { drawFromDiscard, meldsToPlay, cardsToAddToMeld, discardCard }
+  return { drawFromDiscard, meldsToPlay, cardsToAddToMeld, discardCard, burnAction, burningMeldId, jokerReplacementCards }
 }
