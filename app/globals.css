@@ -203,6 +203,42 @@ h1, h2, h3, .pixel-font {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
+/* ── Card animations ─────────────────────────────────────────────────────── */
+@keyframes slideInCard {
+  from { transform: translateX(48px) rotate(6deg); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.card-draw-in { animation: slideInCard 0.22s cubic-bezier(0.4,0,0.2,1); }
+
+@keyframes burnAway {
+  0%   { transform: scale(1); opacity: 1; filter: brightness(1); }
+  30%  { transform: scale(1.1) rotate(-3deg); filter: brightness(2) saturate(3) hue-rotate(-15deg); }
+  70%  { transform: scale(1.08) rotate(3deg); filter: brightness(3) saturate(4) blur(2px); }
+  100% { transform: scale(0.6); opacity: 0; filter: blur(10px) brightness(4); }
+}
+.card-burn { animation: burnAway 0.55s ease-in forwards; }
+
+/* ── Turn indicator ──────────────────────────────────────────────────────── */
+@keyframes playerTurnPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(74,222,128,0.5), 0 0 20px rgba(74,222,128,0.25); }
+  50%      { box-shadow: 0 0 20px rgba(74,222,128,0.9), 0 0 40px rgba(74,222,128,0.5); }
+}
+.player-turn-bar { animation: playerTurnPulse 1.6s ease-in-out infinite; }
+
+@keyframes spinLoop { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.ai-spinner { display: inline-block; animation: spinLoop 0.9s linear infinite; }
+
+/* ── Round-end overlay ───────────────────────────────────────────────────── */
+@keyframes slideUpPanel {
+  from { transform: translateY(100vh); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+.round-end-panel { animation: slideUpPanel 0.38s cubic-bezier(0.4,0,0.2,1); }
+
+/* ── Highlight glows on cards ────────────────────────────────────────────── */
+.card-highlight-green { box-shadow: 0 0 0 2px #22c55e, 0 0 10px rgba(34,197,94,0.65) !important; }
+.card-highlight-yellow { box-shadow: 0 0 0 2px #fbbf24, 0 0 10px rgba(251,191,36,0.65) !important; }
+
 /* ── Mobile navigation ───────────────────────────────────────────────────── */
 .hamburger-btn {
   display: none;
