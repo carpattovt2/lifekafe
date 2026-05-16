@@ -1,5 +1,5 @@
 import type { Card, GameState, Meld } from './types'
-import { meldValue, findMeldsInHand, totalMeldValue, isValidMeld, isBurningGroup } from './meld'
+import { meldValue, findMeldsInHand, totalMeldValue, canAddToMeld, isValidMeld, isBurningGroup } from './meld'
 import { handCardValue } from './cards'
 
 function cardPriority(card: Card): number {
@@ -9,12 +9,20 @@ function cardPriority(card: Card): number {
   return parseInt(card.rank) ?? 5
 }
 
+function meldProbability(turnCount: number): number {
+  if (turnCount <= 5)  return 0.20
+  if (turnCount <= 10) return 0.40
+  if (turnCount <= 15) return 0.60
+  if (turnCount <= 20) return 0.80
+  return 1.00
+}
+
 export function aiChooseDiscard(hand: Card[], melds: Meld[]): Card {
   const usefulIds = new Set<string>()
   findMeldsInHand(hand).forEach(m => m.forEach(c => usefulIds.add(c.id)))
   const useless = hand.filter(c => !usefulIds.has(c.id))
   if (useless.length > 0) {
-    return useless.sort((a, b) => handCardValue(b, true) - handCardValue(a, true))[0]
+    return useless.sort((a, b) => handCardValue(b) - handCardValue(a))[0]
   }
   return [...hand].sort((a, b) => cardPriority(a) - cardPriority(b))[0]
 }
@@ -24,22 +32,21 @@ export interface AIDecision {
   meldsToPlay: Card[][]
   cardsToAddToMeld: { meldId: string; cards: Card[] }[]
   discardCard: Card
-  // Burning meld decision
   burnAction: 'steal' | 'burn' | null
-  burningMeldId: string | null
-  jokerReplacementCards: Card[]   // 2 cards to replace joker in burning meld
+  jokerReplacementCards: Card[]
 }
 
-export function computeAITurn(state: GameState): AIDecision {
-  const hand = [...state.aiHand]
+export function computeAITurn(state: GameState, playerIndex: number): AIDecision {
+  const player     = state.players[playerIndex]
+  const hand       = [...player.hand]
   const topDiscard = state.discardPile[state.discardPile.length - 1]
 
+  // Decide draw from discard
   let drawFromDiscard = false
-  if (topDiscard && state.aiHasMelded) {
-    const testHand = [topDiscard, ...hand]
-    const withDiscard = findMeldsInHand(testHand)
-    const withoutDiscard = findMeldsInHand(hand)
-    if (totalMeldValue(withDiscard) > totalMeldValue(withoutDiscard) + handCardValue(topDiscard, true)) {
+  if (topDiscard && player.hasMelded) {
+    const withD  = findMeldsInHand([topDiscard, ...hand])
+    const withoutD = findMeldsInHand(hand)
+    if (totalMeldValue(withD) > totalMeldValue(withoutD) + handCardValue(topDiscard)) {
       drawFromDiscard = true
     }
   }
@@ -49,7 +56,8 @@ export function computeAITurn(state: GameState): AIDecision {
   const meldsToPlay: Card[][] = []
   const usedIds = new Set<string>()
 
-  if (!state.aiHasMelded) {
+  if (!player.hasMelded) {
+    // Only meld if 51+ is possible AND probability check passes
     const candidates = findMeldsInHand(workingHand)
     for (const m of candidates) {
       if (m.some(c => usedIds.has(c.id))) continue
@@ -60,8 +68,16 @@ export function computeAITurn(state: GameState): AIDecision {
     if (totalMeldValue(meldsToPlay) < 51) {
       meldsToPlay.length = 0
       usedIds.clear()
+    } else {
+      // Apply probability: maybe don't meld yet
+      const prob = meldProbability(player.turnCount)
+      if (Math.random() > prob) {
+        meldsToPlay.length = 0
+        usedIds.clear()
+      }
     }
   } else {
+    // Already melded — lay down any valid sets
     const candidates = findMeldsInHand(workingHand)
     for (const m of candidates) {
       if (m.some(c => usedIds.has(c.id))) continue
@@ -70,13 +86,14 @@ export function computeAITurn(state: GameState): AIDecision {
     }
   }
 
+  // Add cards to existing melds — ONLY if player has already melded 51+
   const cardsToAddToMeld: { meldId: string; cards: Card[] }[] = []
-  const remaining = workingHand.filter(c => !usedIds.has(c.id))
-  for (const card of remaining) {
-    for (const meld of state.melds) {
-      if (isBurningGroup(meld)) continue // don't add to burning set
-      const combined = [...meld.cards, card]
-      if (isValidMeld(combined)) {
+  if (player.hasMelded || meldsToPlay.length > 0) {
+    const remaining = workingHand.filter(c => !usedIds.has(c.id))
+    for (const card of remaining) {
+      for (const meld of state.melds) {
+        if (isBurningGroup(meld)) continue
+        if (!canAddToMeld(meld, [card])) continue
         cardsToAddToMeld.push({ meldId: meld.id, cards: [card] })
         usedIds.add(card.id)
         break
@@ -84,28 +101,20 @@ export function computeAITurn(state: GameState): AIDecision {
     }
   }
 
-  // Burning meld decision
+  // Burning meld resolution
   let burnAction: 'steal' | 'burn' | null = null
-  let burningMeldId: string | null = null
   const jokerReplacementCards: Card[] = []
-
-  const burningMeld = state.melds.find(m => m.id === state.burningMeldId)
-  if (burningMeld && state.burningHasJoker) {
-    // AI tries to steal joker from burning meld by providing 2 cards
+  if (state.burningMeldId && state.burningHasJoker) {
     const available = workingHand.filter(c => !usedIds.has(c.id) && !c.isJoker)
     if (available.length >= 2) {
-      // Use the lowest-value 2 cards as payment
-      const sorted = [...available].sort((a, b) => handCardValue(a, true) - handCardValue(b, true))
+      const sorted = [...available].sort((a, b) => handCardValue(a) - handCardValue(b))
       jokerReplacementCards.push(sorted[0], sorted[1])
       burnAction = 'steal'
-      burningMeldId = state.burningMeldId
     } else {
       burnAction = 'burn'
-      burningMeldId = state.burningMeldId
     }
   } else if (state.burningMeldId) {
     burnAction = 'burn'
-    burningMeldId = state.burningMeldId
   }
 
   const afterPlaying = workingHand.filter(c => !usedIds.has(c.id))
@@ -113,5 +122,5 @@ export function computeAITurn(state: GameState): AIDecision {
     ? aiChooseDiscard(afterPlaying, state.melds)
     : workingHand[workingHand.length - 1]
 
-  return { drawFromDiscard, meldsToPlay, cardsToAddToMeld, discardCard, burnAction, burningMeldId, jokerReplacementCards }
+  return { drawFromDiscard, meldsToPlay, cardsToAddToMeld, discardCard, burnAction, jokerReplacementCards }
 }

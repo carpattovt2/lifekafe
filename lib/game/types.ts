@@ -11,54 +11,53 @@ export interface Card {
 export interface Meld {
   id: string
   cards: Card[]
-  owner: 'human' | 'ai'
+  ownerIndex: number   // player index
   type: 'group' | 'sequence'
 }
 
-export type PlayerKey = 'human' | 'ai'
+export interface Player {
+  id: string
+  name: string
+  isHuman: boolean
+  hand: Card[]
+  hasMelded: boolean
+  turnCount: number    // how many turns this player has taken this round (for AI probability)
+}
 
 export type Phase =
+  | 'setup'
   | 'player-draw'
   | 'player-action'
   | 'ai-turn'
   | 'round-end'
   | 'game-end'
 
-export interface RoundScore {
-  human: number
-  ai: number
-}
-
 export interface GameState {
-  roundNumber: number         // 1-7
-  dealerIndex: 0 | 1         // 0=human, 1=ai
-  currentPlayer: PlayerKey
   phase: Phase
+  numPlayers: number           // 2-5
+  roundNumber: number          // 1-7
+  dealerIndex: number          // player index of current dealer
+  currentPlayerIndex: number
 
   deck: Card[]
   discardPile: Card[]
   trumpCard: Card | null
   trumpSuit: Suit | null
 
-  playerHand: Card[]
-  aiHand: Card[]
+  players: Player[]
   melds: Meld[]
 
-  playerHasMelded: boolean
-  aiHasMelded: boolean
+  // [round][playerIndex] = points that round
+  roundScores: number[][]
 
-  roundScores: RoundScore[]
-
+  // Human-turn state
   selectedCardIds: string[]
   stagedMelds: Card[][]
-  message: string
   drawnThisTurn: boolean
+  drawnFromDiscardCardId: string | null  // must be used in meld/add before discarding
+  message: string
 
-  // Swap mode
-  swapMode: boolean
-  swapFirstCardId: string | null
-
-  // Burning sets (4-card group)
-  burningMeldId: string | null    // meld pending burn resolution
-  burningHasJoker: boolean        // burning meld contains a Joker
+  // Burning sets
+  burningMeldId: string | null
+  burningHasJoker: boolean
 }

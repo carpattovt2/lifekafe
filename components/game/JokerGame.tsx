@@ -1,86 +1,74 @@
 'use client'
 
-import { useReducer, useEffect } from 'react'
-import type { Card, GameState, Meld, PlayerKey, RoundScore, Suit } from '@/lib/game/types'
-import { createDeck, shuffle, dealInitialHands, handCardValue, suitSymbol, isRed, RANK_NUM } from '@/lib/game/cards'
+import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
+import type { Card, GameState, Meld, Player, Phase, Suit } from '@/lib/game/types'
+import { createDeck, shuffle, dealToPlayers, handCardValue, suitSymbol, isRed, RANK_NUM } from '@/lib/game/cards'
 import {
   isValidMeld, meldType, meldValue, canAddToMeld, canStealJoker,
   totalMeldValue, findMeldsInHand, isBurningGroup, sortedMeldCards,
 } from '@/lib/game/meld'
 import { computeAITurn } from '@/lib/game/ai'
 
-// ── ID counter ────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 let _meldId = 0
 const mkMeldId = () => `m${++_meldId}`
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function removeCards(hand: Card[], ids: Set<string>): Card[] {
-  return hand.filter(c => !ids.has(c.id))
-}
-
-function calcHandPenalty(hand: Card[], hasMelded: boolean): number {
-  if (hand.length === 0) return 0
-  const raw = hand.reduce((s, c) => s + handCardValue(c, hasMelded), 0)
-  return Math.min(10, Math.round(raw / 10))
-}
-
-function reshuffleDeckState(state: GameState): GameState {
-  if (state.deck.length > 0) return state
-  const top  = state.discardPile[state.discardPile.length - 1]
-  const rest = state.discardPile.slice(0, -1)
-  return { ...state, deck: shuffle(rest), discardPile: [top] }
-}
-
-// Insert burned cards into the MIDDLE of the discard pile (not drawable)
-function burnIntoDiscard(discardPile: Card[], burnedCards: Card[]): Card[] {
-  const mid = Math.floor(discardPile.length / 2)
-  return [...discardPile.slice(0, mid), ...burnedCards, ...discardPile.slice(mid)]
-}
-
-// Make a sorted meld from cards
-function makeMeld(cards: Card[], owner: 'human' | 'ai'): Meld {
+function makeMeld(cards: Card[], ownerIndex: number): Meld {
   const type = meldType(cards)
-  return { id: mkMeldId(), cards: sortedMeldCards(cards, type), owner, type }
+  return { id: mkMeldId(), cards: sortedMeldCards(cards, type), ownerIndex, type }
 }
 
-// After adding cards to a meld, re-sort and check for burning
-function updatedMeld(meld: Meld, newCards: Card[]): Meld {
-  const cards = sortedMeldCards([...meld.cards, ...newCards], meld.type)
+function updatedMeld(meld: Meld, extra: Card[]): Meld {
+  const cards = sortedMeldCards([...meld.cards, ...extra], meld.type)
   return { ...meld, cards }
 }
 
-// Check melds for a newly-burning group (exactly 4 cards, group type)
-function findBurningMeld(melds: Meld[], triggeredMeldId?: string): Meld | null {
-  if (triggeredMeldId) {
-    const m = melds.find(m => m.id === triggeredMeldId)
-    if (m && isBurningGroup(m)) return m
-  }
-  return null
+function burnIntoDiscard(pile: Card[], burned: Card[]): Card[] {
+  const mid = Math.floor(pile.length / 2)
+  return [...pile.slice(0, mid), ...burned, ...pile.slice(mid)]
 }
 
-// ── Initial state ─────────────────────────────────────────────────────────────
-function makeInitial(): GameState {
+function calcPenalty(hand: Card[]): number {
+  if (!hand.length) return 0
+  return Math.min(10, Math.round(hand.reduce((s, c) => s + handCardValue(c), 0) / 10))
+}
+
+function reshuffleIfEmpty(state: GameState): GameState {
+  if (state.deck.length > 0) return state
+  const top  = state.discardPile[state.discardPile.length - 1]
+  const rest = state.discardPile.slice(0, -1)
+  return { ...state, deck: shuffle(rest), discardPile: top ? [top] : [] }
+}
+
+function nextPlayerIndex(current: number, numPlayers: number) {
+  return (current + 1) % numPlayers
+}
+
+// ── Initial / deal ────────────────────────────────────────────────────────────
+function makeSetupState(): GameState {
   return {
-    roundNumber: 1,
-    dealerIndex: Math.random() < 0.5 ? 0 : 1,
-    currentPlayer: 'human',
-    phase: 'player-draw',
-    deck: [], discardPile: [], trumpCard: null, trumpSuit: null,
-    playerHand: [], aiHand: [], melds: [],
-    playerHasMelded: false, aiHasMelded: false,
-    roundScores: [],
-    selectedCardIds: [], stagedMelds: [],
-    message: '', drawnThisTurn: false,
-    swapMode: false, swapFirstCardId: null,
+    phase: 'setup', numPlayers: 2, roundNumber: 1, dealerIndex: 0,
+    currentPlayerIndex: 0, deck: [], discardPile: [],
+    trumpCard: null, trumpSuit: null, players: [], melds: [],
+    roundScores: [], selectedCardIds: [], stagedMelds: [],
+    drawnThisTurn: false, drawnFromDiscardCardId: null, message: '',
     burningMeldId: null, burningHasJoker: false,
   }
 }
 
-function dealRound(base: GameState): GameState {
-  const rawDeck = shuffle(createDeck())
-  const d = [...rawDeck]
+function createPlayers(numPlayers: number): Player[] {
+  const players: Player[] = [{ id: 'human', name: 'You', isHuman: true, hand: [], hasMelded: false, turnCount: 0 }]
+  for (let i = 1; i < numPlayers; i++) {
+    players.push({ id: `ai${i}`, name: `AI ${i}`, isHuman: false, hand: [], hasMelded: false, turnCount: 0 })
+  }
+  return players
+}
 
-  // 1. Flip trump card FIRST (before dealing)
+function dealRound(base: GameState): GameState {
+  const raw = shuffle(createDeck())
+  const d   = [...raw]
+
+  // Flip trump first
   const flipped = d.shift()!
   let trumpCard: Card | null = null
   let trumpSuit: Suit | null = null
@@ -88,136 +76,154 @@ function dealRound(base: GameState): GameState {
   let discardPile: Card[] = []
 
   if (flipped.isJoker) {
-    jokerForFirst = flipped      // no trump this round
+    jokerForFirst = flipped
   } else {
     trumpCard = flipped
     trumpSuit = flipped.suit as Suit
     discardPile = [flipped]
   }
 
-  // 2. Deal: human-goes-first when AI is dealer
-  const humanGoesFirst = base.dealerIndex === 1
-  const firstPlayer: PlayerKey = humanGoesFirst ? 'human' : 'ai'
+  const firstPlayerIndex = nextPlayerIndex(base.dealerIndex, base.numPlayers)
+  const { hands, remaining } = dealToPlayers(d, base.numPlayers, firstPlayerIndex)
 
-  const { firstHand, secondHand, remaining } = dealInitialHands(d)
-  // firstHand=15 cards (non-dealer), secondHand=14 (dealer)
-  let playerHand = humanGoesFirst ? [...firstHand]  : [...secondHand]
-  let aiHand     = humanGoesFirst ? [...secondHand] : [...firstHand]
-  let finalDeck  = [...remaining]
+  const players = base.players.map((p, i) => ({
+    ...p,
+    hand: [...hands[i]],
+    hasMelded: false,
+    turnCount: 0,
+  }))
 
-  // 3. Handle Joker-as-trump: give Joker to first player (they have 15), swap out 1 random
+  // Handle Joker-as-trump: give to first player (swap out 1 random)
   if (jokerForFirst) {
-    if (firstPlayer === 'human') {
-      const idx = Math.floor(Math.random() * playerHand.length)
-      finalDeck.push(playerHand.splice(idx, 1)[0]) // removed card goes to bottom of deck
-      playerHand.push(jokerForFirst)
-    } else {
-      const idx = Math.floor(Math.random() * aiHand.length)
-      finalDeck.push(aiHand.splice(idx, 1)[0])
-      aiHand.push(jokerForFirst)
-    }
+    const fp = players[firstPlayerIndex]
+    const rmIdx = Math.floor(Math.random() * fp.hand.length)
+    remaining.push(fp.hand.splice(rmIdx, 1)[0])
+    fp.hand.push(jokerForFirst)
   }
 
-  const jokerMsg = jokerForFirst ? ' Trump was Joker — you got it as bonus!' : ''
+  const firstPhase: Phase = players[firstPlayerIndex].isHuman ? 'player-draw' : 'ai-turn'
+  const jokerMsg = jokerForFirst ? ' Trump was Joker — bonus card given!' : ''
 
   return {
     ...base,
-    deck: finalDeck,
-    discardPile,
-    trumpCard,
-    trumpSuit,
-    playerHand,
-    aiHand,
+    roundNumber: base.roundNumber,
+    deck: remaining, discardPile,
+    trumpCard, trumpSuit,
+    players,
     melds: [],
-    playerHasMelded: false, aiHasMelded: false,
     selectedCardIds: [], stagedMelds: [],
-    currentPlayer: firstPlayer,
-    phase: firstPlayer === 'human' ? 'player-draw' : 'ai-turn',
-    message: firstPlayer === 'human' ? `Your turn — draw a card.${jokerMsg}` : 'AI is playing…',
-    drawnThisTurn: false,
-    swapMode: false, swapFirstCardId: null,
+    drawnThisTurn: false, drawnFromDiscardCardId: null,
+    currentPlayerIndex: firstPlayerIndex,
+    phase: firstPhase,
+    message: players[firstPlayerIndex].isHuman
+      ? `Your turn — draw a card.${jokerMsg}`
+      : `${players[firstPlayerIndex].name} is playing…`,
     burningMeldId: null, burningHasJoker: false,
   }
 }
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
 type Action =
+  | { type: 'START_GAME'; numPlayers: number }
   | { type: 'INIT_ROUND' }
   | { type: 'DRAW_DECK' }
   | { type: 'DRAW_DISCARD' }
   | { type: 'TOGGLE_CARD'; cardId: string }
-  | { type: 'TOGGLE_SWAP_MODE' }
-  | { type: 'SWAP_CARD'; cardId: string }
+  | { type: 'REORDER_HAND'; fromIndex: number; toIndex: number }
   | { type: 'STAGE_MELD' }
   | { type: 'CLEAR_STAGED' }
   | { type: 'COMMIT_MELDS' }
   | { type: 'ADD_TO_MELD'; meldId: string }
   | { type: 'STEAL_JOKER'; meldId: string }
   | { type: 'BURN_MELD' }
-  | { type: 'REPLACE_BURNING_JOKER' }   // use 2 selected cards to take joker
+  | { type: 'REPLACE_BURNING_JOKER' }
   | { type: 'DISCARD'; cardId: string }
   | { type: 'AI_TURN_DONE'; next: Partial<GameState> }
   | { type: 'NEXT_ROUND' }
   | { type: 'END_GAME_EARLY' }
 
+function mutPlayer(state: GameState, index: number, patch: Partial<Player>): Player[] {
+  return state.players.map((p, i) => i === index ? { ...p, ...patch } : p)
+}
+
+function checkBurning(melds: Meld[], triggeredId: string): { burningMeldId: string | null; burningHasJoker: boolean } {
+  const m = melds.find(x => x.id === triggeredId)
+  if (m && isBurningGroup(m)) {
+    return { burningMeldId: m.id, burningHasJoker: m.cards.some(c => c.isJoker) }
+  }
+  return { burningMeldId: null, burningHasJoker: false }
+}
+
+function finishRound(state: GameState, winnerIndex: number, meldedOut: boolean, lastJoker: boolean): GameState {
+  const bonus = meldedOut ? (lastJoker ? -20 : -10) : -5
+  const scores = state.players.map((p, i) => {
+    if (i === winnerIndex) return bonus
+    if (!p.hasMelded) return 10
+    return calcPenalty(p.hand)
+  })
+  return {
+    ...state,
+    roundScores: [...state.roundScores, scores],
+    phase: 'round-end',
+    message: `Round ${state.roundNumber} over! ${state.players[winnerIndex].name} won.`,
+    selectedCardIds: [], stagedMelds: [],
+    burningMeldId: null, burningHasJoker: false,
+  }
+}
+
+function advanceTurn(state: GameState): GameState {
+  const next = nextPlayerIndex(state.currentPlayerIndex, state.numPlayers)
+  const nextPlayer = state.players[next]
+  return {
+    ...state,
+    currentPlayerIndex: next,
+    phase: nextPlayer.isHuman ? 'player-draw' : 'ai-turn',
+    drawnThisTurn: false, drawnFromDiscardCardId: null,
+    selectedCardIds: [], stagedMelds: [],
+    message: nextPlayer.isHuman ? 'Your turn — draw a card.' : `${nextPlayer.name} is playing…`,
+  }
+}
+
 function reducer(state: GameState, action: Action): GameState {
+  const cp = state.currentPlayerIndex
+  const cur = state.players[cp]
+
   switch (action.type) {
+    case 'START_GAME': {
+      const players = createPlayers(action.numPlayers)
+      const base: GameState = { ...makeSetupState(), numPlayers: action.numPlayers, players, dealerIndex: Math.floor(Math.random() * action.numPlayers) }
+      return dealRound(base)
+    }
 
     case 'INIT_ROUND': return dealRound(state)
 
     case 'DRAW_DECK': {
       if (state.drawnThisTurn || state.phase !== 'player-draw') return state
-      let s = reshuffleDeckState(state)
-      if (s.deck.length === 0) return { ...s, message: 'Deck is empty!' }
+      let s = reshuffleIfEmpty(state)
+      if (!s.deck.length) return { ...s, message: 'Deck is empty!' }
       const card = s.deck[0]
-      return {
-        ...s, deck: s.deck.slice(1),
-        playerHand: [...s.playerHand, card],
-        drawnThisTurn: true, phase: 'player-action',
-        message: `Drew ${card.isJoker ? 'JOKER' : card.rank + ' of ' + card.suit}. Meld or discard.`,
-      }
+      const players = mutPlayer(s, cp, { hand: [...cur.hand, card] })
+      return { ...s, deck: s.deck.slice(1), players, drawnThisTurn: true, phase: 'player-action',
+        message: `Drew ${card.isJoker ? 'JOKER' : card.rank + ' ' + suitSymbol(card.suit)}. Meld or discard.` }
     }
 
     case 'DRAW_DISCARD': {
       if (state.drawnThisTurn || state.phase !== 'player-draw') return state
       const top = state.discardPile[state.discardPile.length - 1]
       if (!top) return { ...state, message: 'Discard pile is empty.' }
-      if (top.id === state.trumpCard?.id && state.playerHand.length > 1)
+      if (top.id === state.trumpCard?.id && cur.hand.length > 1)
         return { ...state, message: 'Trump card: only take it if going out this turn!' }
-      if (!state.playerHasMelded && top.id !== state.trumpCard?.id)
+      if (!cur.hasMelded && top.id !== state.trumpCard?.id)
         return { ...state, message: 'Draw from discard only after your first meld (51+ pts).' }
+      const players = mutPlayer(state, cp, { hand: [...cur.hand, top] })
       return {
-        ...state, discardPile: state.discardPile.slice(0, -1),
-        playerHand: [...state.playerHand, top],
-        drawnThisTurn: true, phase: 'player-action',
-        message: `Took ${top.isJoker ? 'JOKER' : top.rank + ' ' + suitSymbol(top.suit)} from discard.`,
+        ...state, discardPile: state.discardPile.slice(0, -1), players,
+        drawnThisTurn: true, drawnFromDiscardCardId: top.id, phase: 'player-action',
+        message: `Took ${top.isJoker ? 'JOKER' : top.rank + ' ' + suitSymbol(top.suit)} — must use it in a meld this turn!`,
       }
-    }
-
-    case 'TOGGLE_SWAP_MODE':
-      return { ...state, swapMode: !state.swapMode, swapFirstCardId: null, selectedCardIds: [] }
-
-    case 'SWAP_CARD': {
-      const { swapFirstCardId, playerHand } = state
-      if (!swapFirstCardId) {
-        // First tap
-        return { ...state, swapFirstCardId: action.cardId }
-      }
-      if (swapFirstCardId === action.cardId) {
-        // Tap same card → cancel
-        return { ...state, swapFirstCardId: null }
-      }
-      // Second tap → swap positions
-      const i = playerHand.findIndex(c => c.id === swapFirstCardId)
-      const j = playerHand.findIndex(c => c.id === action.cardId)
-      if (i < 0 || j < 0) return { ...state, swapFirstCardId: null }
-      const newHand = [...playerHand]
-      ;[newHand[i], newHand[j]] = [newHand[j], newHand[i]]
-      return { ...state, playerHand: newHand, swapFirstCardId: null, message: 'Cards swapped!' }
     }
 
     case 'TOGGLE_CARD': {
-      if (state.swapMode) return state // ignore in swap mode
       const already = state.selectedCardIds.includes(action.cardId)
       return {
         ...state,
@@ -227,299 +233,467 @@ function reducer(state: GameState, action: Action): GameState {
       }
     }
 
+    case 'REORDER_HAND': {
+      const h = [...cur.hand]
+      const card = h.splice(action.fromIndex, 1)[0]
+      h.splice(action.toIndex, 0, card)
+      return { ...state, players: mutPlayer(state, cp, { hand: h }) }
+    }
+
     case 'STAGE_MELD': {
       if (state.selectedCardIds.length < 3) return { ...state, message: 'Select at least 3 cards.' }
-      const selected = state.playerHand.filter(c => state.selectedCardIds.includes(c.id))
-      if (!isValidMeld(selected)) return { ...state, message: 'Not a valid meld. Check the rules.' }
-      return {
-        ...state, stagedMelds: [...state.stagedMelds, selected],
-        selectedCardIds: [],
-        message: `Meld staged (${meldValue(selected)} pts). Stage more or commit.`,
-      }
+      const selected = cur.hand.filter(c => state.selectedCardIds.includes(c.id))
+      if (!isValidMeld(selected)) return { ...state, message: 'Not a valid meld. Check rules.' }
+      return { ...state, stagedMelds: [...state.stagedMelds, selected], selectedCardIds: [],
+        message: `Staged (${meldValue(selected)} pts). Stage more or commit.` }
     }
 
     case 'CLEAR_STAGED':
-      return { ...state, stagedMelds: [], selectedCardIds: [], message: 'Staged melds cleared.' }
+      return { ...state, stagedMelds: [], selectedCardIds: [], message: 'Cleared.' }
 
     case 'COMMIT_MELDS': {
-      if (state.stagedMelds.length === 0) return { ...state, message: 'No staged melds.' }
+      if (!state.stagedMelds.length) return { ...state, message: 'No staged melds.' }
       const total = totalMeldValue(state.stagedMelds)
-      if (!state.playerHasMelded && total < 51)
-        return { ...state, message: `First meld needs 51+ points. You have ${total}.` }
-      const usedIds = new Set(state.stagedMelds.flat().map(c => c.id))
-      const newMelds = state.stagedMelds.map(cards => makeMeld(cards, 'human'))
-      const newHand  = removeCards(state.playerHand, usedIds)
+      if (!cur.hasMelded && total < 51)
+        return { ...state, message: `First meld needs 51+ pts. You have ${total}.` }
+      const usedIds  = new Set(state.stagedMelds.flat().map(c => c.id))
+      const newMelds = state.stagedMelds.map(cards => makeMeld(cards, cp))
+      const newHand  = cur.hand.filter(c => !usedIds.has(c.id))
       const allMelds = [...state.melds, ...newMelds]
+      // Clear drawnFromDiscardCardId if drawn card was used
+      const discardUsed = state.drawnFromDiscardCardId && usedIds.has(state.drawnFromDiscardCardId)
 
-      // Check for burning: any new meld that's a 4-card group?
-      const burningMeld = newMelds.find(m => isBurningGroup(m)) ?? null
-      if (burningMeld) {
-        const hasJoker = burningMeld.cards.some(c => c.isJoker)
-        if (newHand.length === 0 && !hasJoker) {
-          return finishRound({ ...state, playerHand: newHand, melds: allMelds, playerHasMelded: true, stagedMelds: [] }, 'human', true, false)
-        }
-        return {
-          ...state, playerHand: newHand, melds: allMelds, playerHasMelded: true,
+      const burning = newMelds.find(m => isBurningGroup(m))
+      if (burning) {
+        const hasJ = burning.cards.some(c => c.isJoker)
+        if (!newHand.length && !hasJ) return finishRound({ ...state, players: mutPlayer(state, cp, { hand: newHand, hasMelded: true }), melds: allMelds, stagedMelds: [] }, cp, true, false)
+        return { ...state, players: mutPlayer(state, cp, { hand: newHand, hasMelded: true }), melds: allMelds,
           stagedMelds: [], selectedCardIds: [],
-          burningMeldId: burningMeld.id, burningHasJoker: hasJoker,
-          message: hasJoker
-            ? `🔥 4-of-a-kind with JOKER! Select 2 cards to steal Joker, or click BURN.`
-            : `🔥 4-of-a-kind! Set will burn on discard.`,
-        }
+          drawnFromDiscardCardId: discardUsed ? null : state.drawnFromDiscardCardId,
+          burningMeldId: burning.id, burningHasJoker: hasJ,
+          message: hasJ ? '🔥 4-of-a-kind with JOKER! Select 2 cards → RESCUE JOKER, or BURN.' : '🔥 4-of-a-kind! Burns on discard.' }
       }
 
-      if (newHand.length === 0) {
-        return finishRound({ ...state, playerHand: newHand, melds: allMelds, playerHasMelded: true, stagedMelds: [] }, 'human', true, false)
-      }
-      return {
-        ...state, playerHand: newHand, melds: allMelds, playerHasMelded: true,
-        stagedMelds: [], selectedCardIds: [],
-        message: `Melded ${total} pts! Now add to sets or discard.`,
-      }
+      if (!newHand.length)
+        return finishRound({ ...state, players: mutPlayer(state, cp, { hand: newHand, hasMelded: true }), melds: allMelds, stagedMelds: [] }, cp, true, false)
+
+      return { ...state, players: mutPlayer(state, cp, { hand: newHand, hasMelded: true }),
+        melds: allMelds, stagedMelds: [], selectedCardIds: [],
+        drawnFromDiscardCardId: discardUsed ? null : state.drawnFromDiscardCardId,
+        message: `Melded ${total} pts! Add to sets or discard.` }
     }
 
     case 'ADD_TO_MELD': {
-      if (state.selectedCardIds.length === 0) return { ...state, message: 'Select cards to add.' }
-      const selected = state.playerHand.filter(c => state.selectedCardIds.includes(c.id))
+      if (!state.selectedCardIds.length) return { ...state, message: 'Select cards to add.' }
+      const selected = cur.hand.filter(c => state.selectedCardIds.includes(c.id))
       const meld = state.melds.find(m => m.id === action.meldId)
       if (!meld) return state
       if (!canAddToMeld(meld, selected)) return { ...state, message: 'Cannot add those cards to that set.' }
-      const usedIds = new Set(selected.map(c => c.id))
-      const newMeld  = updatedMeld(meld, selected)
-      let newMelds   = state.melds.map(m => m.id === meld.id ? newMeld : m)
-      const newHand  = removeCards(state.playerHand, usedIds)
+      const usedIds   = new Set(selected.map(c => c.id))
+      const newMeld   = updatedMeld(meld, selected)
+      let newMelds    = state.melds.map(m => m.id === meld.id ? newMeld : m)
+      const newHand   = cur.hand.filter(c => !usedIds.has(c.id))
+      const discardUsed = state.drawnFromDiscardCardId && usedIds.has(state.drawnFromDiscardCardId)
 
-      // Check if the new meld is now a 4-card group (burning!)
       if (isBurningGroup(newMeld)) {
-        const hasJoker = newMeld.cards.some(c => c.isJoker)
-        if (newHand.length === 0 && !hasJoker) {
-          return finishRound({ ...state, playerHand: newHand, melds: newMelds, selectedCardIds: [] }, 'human', true, false)
-        }
-        return {
-          ...state, playerHand: newHand, melds: newMelds, selectedCardIds: [],
-          burningMeldId: newMeld.id, burningHasJoker: hasJoker,
-          message: hasJoker
-            ? `🔥 4-of-a-kind with JOKER! Select 2 cards to steal Joker, or BURN.`
-            : `🔥 4-of-a-kind! Set burns when you discard.`,
-        }
+        const hasJ = newMeld.cards.some(c => c.isJoker)
+        if (!newHand.length && !hasJ) return finishRound({ ...state, players: mutPlayer(state, cp, { hand: newHand }), melds: newMelds, selectedCardIds: [] }, cp, true, false)
+        return { ...state, players: mutPlayer(state, cp, { hand: newHand }), melds: newMelds, selectedCardIds: [],
+          drawnFromDiscardCardId: discardUsed ? null : state.drawnFromDiscardCardId,
+          burningMeldId: newMeld.id, burningHasJoker: hasJ,
+          message: hasJ ? '🔥 4-of-a-kind with JOKER! RESCUE or BURN.' : '🔥 4-of-a-kind! Burns on discard.' }
       }
-
-      if (newHand.length === 0) {
-        return finishRound({ ...state, playerHand: newHand, melds: newMelds, selectedCardIds: [] }, 'human', true, false)
-      }
-      return { ...state, playerHand: newHand, melds: newMelds, selectedCardIds: [], message: 'Added to set!' }
+      if (!newHand.length) return finishRound({ ...state, players: mutPlayer(state, cp, { hand: newHand }), melds: newMelds, selectedCardIds: [] }, cp, true, false)
+      return { ...state, players: mutPlayer(state, cp, { hand: newHand }), melds: newMelds, selectedCardIds: [],
+        drawnFromDiscardCardId: discardUsed ? null : state.drawnFromDiscardCardId,
+        message: 'Added to set!' }
     }
 
     case 'STEAL_JOKER': {
-      if (state.selectedCardIds.length !== 1) return { ...state, message: 'Select exactly 1 card to replace the Joker.' }
-      const realCard = state.playerHand.find(c => c.id === state.selectedCardIds[0])!
+      if (state.selectedCardIds.length !== 1) return { ...state, message: 'Select exactly 1 card.' }
+      const realCard = cur.hand.find(c => c.id === state.selectedCardIds[0])!
       const meld = state.melds.find(m => m.id === action.meldId)
       if (!meld) return state
       const { canSteal, jokerIndex } = canStealJoker(meld, realCard)
       if (!canSteal) return { ...state, message: 'Cannot replace Joker with that card.' }
       const joker = meld.cards[jokerIndex]
-      const newMeldCards = sortedMeldCards(
-        meld.cards.map((c, i) => i === jokerIndex ? realCard : c),
-        meld.type,
-      )
+      const newMeldCards = sortedMeldCards(meld.cards.map((c, i) => i === jokerIndex ? realCard : c), meld.type)
       const newMelds = state.melds.map(m => m.id === meld.id ? { ...m, cards: newMeldCards } : m)
-      const newHand  = [...state.playerHand.filter(c => c.id !== realCard.id), joker]
-      return { ...state, playerHand: newHand, melds: newMelds, selectedCardIds: [], message: 'Joker stolen! ★' }
+      const newHand  = [...cur.hand.filter(c => c.id !== realCard.id), joker]
+      return { ...state, players: mutPlayer(state, cp, { hand: newHand }), melds: newMelds, selectedCardIds: [], message: 'Joker stolen! ★' }
     }
 
     case 'REPLACE_BURNING_JOKER': {
-      if (state.selectedCardIds.length !== 2) return { ...state, message: 'Select exactly 2 cards to replace the Joker.' }
-      const burningMeld = state.melds.find(m => m.id === state.burningMeldId)
-      if (!burningMeld) return state
-      const joker = burningMeld.cards.find(c => c.isJoker)
+      if (state.selectedCardIds.length !== 2) return { ...state, message: 'Select exactly 2 cards.' }
+      const bm = state.melds.find(m => m.id === state.burningMeldId)
+      if (!bm) return state
+      const joker = bm.cards.find(c => c.isJoker)
       if (!joker) return state
-      const replacers = state.playerHand.filter(c => state.selectedCardIds.includes(c.id))
+      const replacers = cur.hand.filter(c => state.selectedCardIds.includes(c.id))
       if (replacers.length !== 2) return state
-      // Player pays 2 cards → burning meld gets them, joker goes to player hand, set burns
-      const fullSet  = [...burningMeld.cards.filter(c => !c.isJoker), ...replacers]
-      const newDiscard = burnIntoDiscard(state.discardPile, fullSet)
+      const fullSet = [...bm.cards.filter(c => !c.isJoker), ...replacers]
+      const usedIds = new Set(replacers.map(c => c.id))
+      const newHand = [...cur.hand.filter(c => !usedIds.has(c.id)), joker]
       const newMelds = state.melds.filter(m => m.id !== state.burningMeldId)
-      const usedIds  = new Set(replacers.map(c => c.id))
-      const newHand  = [...removeCards(state.playerHand, usedIds), joker]
-      return {
-        ...state, playerHand: newHand, melds: newMelds,
-        discardPile: newDiscard, selectedCardIds: [],
-        burningMeldId: null, burningHasJoker: false,
-        message: 'Joker rescued! ★ Burning set consumed.',
-      }
+      return { ...state, players: mutPlayer(state, cp, { hand: newHand }), melds: newMelds,
+        discardPile: burnIntoDiscard(state.discardPile, fullSet),
+        selectedCardIds: [], burningMeldId: null, burningHasJoker: false,
+        message: 'Joker rescued! ★ Burning set consumed.' }
     }
 
     case 'BURN_MELD': {
-      const burningMeld = state.melds.find(m => m.id === state.burningMeldId)
-      if (!burningMeld) return { ...state, burningMeldId: null, burningHasJoker: false }
-      const newDiscard = burnIntoDiscard(state.discardPile, burningMeld.cards)
-      const newMelds   = state.melds.filter(m => m.id !== state.burningMeldId)
-      return {
-        ...state, melds: newMelds, discardPile: newDiscard,
+      const bm = state.melds.find(m => m.id === state.burningMeldId)
+      if (!bm) return { ...state, burningMeldId: null, burningHasJoker: false }
+      return { ...state, melds: state.melds.filter(m => m.id !== state.burningMeldId),
+        discardPile: burnIntoDiscard(state.discardPile, bm.cards),
         burningMeldId: null, burningHasJoker: false,
-        message: '🔥 Set burned — cards gone to middle of discard.',
-      }
+        message: '🔥 Set burned.' }
     }
 
     case 'DISCARD': {
       if (state.phase !== 'player-action') return state
       if (!state.drawnThisTurn) return { ...state, message: 'Draw a card first.' }
 
-      // Auto-burn pending burning meld (no Joker, or player chose not to act)
-      let s = state
-      if (s.burningMeldId) {
-        const bm = s.melds.find(m => m.id === s.burningMeldId)
-        if (bm) {
-          const newDiscard = burnIntoDiscard(s.discardPile, bm.cards)
-          s = { ...s, melds: s.melds.filter(m => m.id !== s.burningMeldId), discardPile: newDiscard, burningMeldId: null, burningHasJoker: false }
+      // Discard-from-pile guard
+      if (state.drawnFromDiscardCardId) {
+        const stillInHand = cur.hand.some(c => c.id === state.drawnFromDiscardCardId)
+        const inStaged    = state.stagedMelds.flat().some(c => c.id === state.drawnFromDiscardCardId)
+        if (stillInHand && !inStaged) {
+          return { ...state, message: '⚠ Must meld or add the drawn discard card before discarding!' }
         }
       }
 
-      const card = s.playerHand.find(c => c.id === action.cardId)
+      // Auto-burn pending meld
+      let s = state
+      if (s.burningMeldId) {
+        const bm = s.melds.find(m => m.id === s.burningMeldId)
+        if (bm) s = { ...s, melds: s.melds.filter(m => m.id !== s.burningMeldId), discardPile: burnIntoDiscard(s.discardPile, bm.cards), burningMeldId: null, burningHasJoker: false }
+      }
+
+      const card    = s.players[cp].hand.find(c => c.id === action.cardId)
       if (!card) return s
-      const newHand    = s.playerHand.filter(c => c.id !== action.cardId)
-      const newDiscard = [...s.discardPile, card]
-      if (newHand.length === 0) {
-        return finishRound({ ...s, playerHand: newHand, discardPile: newDiscard }, 'human', false, card.isJoker)
-      }
-      return {
-        ...s, playerHand: newHand, discardPile: newDiscard,
-        selectedCardIds: [], stagedMelds: [],
-        drawnThisTurn: false, currentPlayer: 'ai', phase: 'ai-turn',
-        message: "AI's turn…",
-      }
+      const newHand = s.players[cp].hand.filter(c => c.id !== action.cardId)
+      const pile    = [...s.discardPile, card]
+      if (!newHand.length) return finishRound({ ...s, players: mutPlayer(s, cp, { hand: newHand }), discardPile: pile }, cp, false, card.isJoker)
+      const next = advanceTurn({ ...s, players: mutPlayer(s, cp, { hand: newHand }), discardPile: pile })
+      return next
     }
 
-    case 'AI_TURN_DONE':
-      return { ...state, ...action.next }
+    case 'AI_TURN_DONE': return { ...state, ...action.next }
 
     case 'NEXT_ROUND': {
       if (state.roundNumber >= 7) return { ...state, phase: 'game-end' }
-      return dealRound({ ...state, roundNumber: state.roundNumber + 1, dealerIndex: state.dealerIndex === 0 ? 1 : 0 })
+      const nextDealer = nextPlayerIndex(state.dealerIndex, state.numPlayers)
+      return dealRound({ ...state, roundNumber: state.roundNumber + 1, dealerIndex: nextDealer })
     }
 
     case 'END_GAME_EARLY': {
-      const penaltyRound: RoundScore = { human: 25, ai: 0 }
-      return { ...state, roundScores: [...state.roundScores, penaltyRound], phase: 'game-end', message: 'Early end — +25 penalty.' }
+      const penalty = state.players.map((_, i) => i === 0 ? 25 : 0)
+      return { ...state, roundScores: [...state.roundScores, penalty], phase: 'game-end', message: 'Early end — +25 penalty.' }
     }
 
     default: return state
   }
 }
 
-// ── Round finish ──────────────────────────────────────────────────────────────
-function finishRound(state: GameState, winner: PlayerKey, meldedOut: boolean, lastJoker: boolean): GameState {
-  const bonus = meldedOut ? (lastJoker ? -20 : -10) : -5
-  const humanScore = winner === 'human' ? bonus : !state.playerHasMelded ? 10 : calcHandPenalty(state.playerHand, state.playerHasMelded)
-  const aiScore    = winner === 'ai'    ? bonus : !state.aiHasMelded    ? 10 : calcHandPenalty(state.aiHand,     state.aiHasMelded)
-  return {
-    ...state,
-    roundScores: [...state.roundScores, { human: humanScore, ai: aiScore }],
-    phase: 'round-end',
-    message: `Round ${state.roundNumber} over! ${winner === 'human' ? 'You' : 'AI'} won.`,
-    selectedCardIds: [], stagedMelds: [],
-    burningMeldId: null, burningHasJoker: false,
+// ── AI turn effect helper ─────────────────────────────────────────────────────
+function runAITurn(state: GameState, dispatch: (a: Action) => void) {
+  const cp      = state.currentPlayerIndex
+  const player  = state.players[cp]
+  let s         = reshuffleIfEmpty({ ...state })
+  const decision = computeAITurn(s, cp)
+
+  let hand         = [...player.hand]
+  let deck         = [...s.deck]
+  let discardPile  = [...s.discardPile]
+  let melds        = [...s.melds]
+  let hasMelded    = player.hasMelded
+  const usedIds    = new Set<string>()
+
+  // Draw
+  if (decision.drawFromDiscard && discardPile.length) {
+    hand = [...hand, discardPile[discardPile.length - 1]]
+    discardPile = discardPile.slice(0, -1)
+  } else if (deck.length) {
+    hand = [...hand, deck[0]]
+    deck = deck.slice(1)
   }
+
+  // Play melds
+  if (decision.meldsToPlay.length) {
+    for (const mc of decision.meldsToPlay) {
+      melds = [...melds, makeMeld(mc, cp)]
+      mc.forEach(c => usedIds.add(c.id))
+    }
+    hasMelded = true
+    hand = hand.filter(c => !usedIds.has(c.id))
+  }
+
+  // Add to melds — only if hasMelded now
+  if (hasMelded) {
+    for (const { meldId, cards } of decision.cardsToAddToMeld) {
+      const meld = melds.find(m => m.id === meldId)
+      if (!meld) continue
+      const nm = updatedMeld(meld, cards)
+      melds = melds.map(m => m.id === meldId ? nm : m)
+      cards.forEach(c => usedIds.add(c.id))
+      hand = hand.filter(c => !cards.map(x => x.id).includes(c.id))
+    }
+  }
+
+  // Handle burning (check newly created 4-card groups)
+  let burningMeldId = s.burningMeldId
+  let burningHasJoker = s.burningHasJoker
+  const newBurning = melds.find(m => isBurningGroup(m) && m.id !== burningMeldId)
+  if (newBurning && !burningMeldId) { burningMeldId = newBurning.id; burningHasJoker = newBurning.cards.some(c => c.isJoker) }
+
+  if (burningMeldId) {
+    const bm = melds.find(m => m.id === burningMeldId)
+    if (bm) {
+      if (decision.burnAction === 'steal' && burningHasJoker && decision.jokerReplacementCards.length >= 2) {
+        const joker = bm.cards.find(c => c.isJoker)!
+        const r = decision.jokerReplacementCards.filter(c => hand.some(h => h.id === c.id)).slice(0, 2)
+        if (r.length >= 2) {
+          const fullSet = [...bm.cards.filter(c => !c.isJoker), r[0], r[1]]
+          discardPile = burnIntoDiscard(discardPile, fullSet)
+          melds = melds.filter(m => m.id !== burningMeldId)
+          hand = [...hand.filter(c => c.id !== r[0].id && c.id !== r[1].id), joker]
+        } else { discardPile = burnIntoDiscard(discardPile, bm.cards); melds = melds.filter(m => m.id !== burningMeldId) }
+      } else { discardPile = burnIntoDiscard(discardPile, bm.cards); melds = melds.filter(m => m.id !== burningMeldId) }
+    }
+    burningMeldId = null; burningHasJoker = false
+  }
+
+  // Discard
+  const dc = hand.find(c => c.id === decision.discardCard.id) ?? hand[hand.length - 1]
+  if (!dc) {
+    const newPlayers = state.players.map((p, i) => i === cp ? { ...p, hand: [], hasMelded, turnCount: p.turnCount + 1 } : p)
+    const ns = finishRound({ ...s, players: newPlayers, deck, discardPile, melds, burningMeldId: null, burningHasJoker: false }, cp, true, false)
+    dispatch({ type: 'AI_TURN_DONE', next: ns })
+    return
+  }
+  hand = hand.filter(c => c.id !== dc.id)
+  discardPile = [...discardPile, dc]
+
+  const newPlayers = state.players.map((p, i) => i === cp ? { ...p, hand, hasMelded, turnCount: p.turnCount + 1 } : p)
+
+  if (!hand.length) {
+    const ns = finishRound({ ...s, players: newPlayers, deck, discardPile, melds, burningMeldId: null, burningHasJoker: false }, cp, false, dc.isJoker)
+    dispatch({ type: 'AI_TURN_DONE', next: ns })
+    return
+  }
+
+  const nextIdx = nextPlayerIndex(cp, state.numPlayers)
+  const nextPlayer = newPlayers[nextIdx]
+  dispatch({
+    type: 'AI_TURN_DONE',
+    next: {
+      players: newPlayers, deck, discardPile, melds,
+      burningMeldId: null, burningHasJoker: false,
+      currentPlayerIndex: nextIdx,
+      phase: nextPlayer.isHuman ? 'player-draw' : 'ai-turn',
+      drawnThisTurn: false, drawnFromDiscardCardId: null,
+      selectedCardIds: [], stagedMelds: [],
+      message: nextPlayer.isHuman ? 'Your turn — draw a card.' : `${nextPlayer.name} is playing…`,
+    },
+  })
 }
 
-// ── Card display ──────────────────────────────────────────────────────────────
-function CardView({
-  card, faceDown = false, selected = false, swapSelected = false, onClick, small = false, glow = false,
-}: {
-  card: Card; faceDown?: boolean; selected?: boolean; swapSelected?: boolean
-  onClick?: () => void; small?: boolean; glow?: boolean
+// ── Card view ─────────────────────────────────────────────────────────────────
+function CardView({ card, faceDown = false, selected = false, dimmed = false, onClick, small = false, glow = false, lifted = false, onPointerDown, onPointerUp, onPointerMove }: {
+  card: Card; faceDown?: boolean; selected?: boolean; dimmed?: boolean
+  onClick?: () => void; small?: boolean; glow?: boolean; lifted?: boolean
+  onPointerDown?: (e: React.PointerEvent) => void
+  onPointerUp?: (e: React.PointerEvent) => void
+  onPointerMove?: (e: React.PointerEvent) => void
 }) {
-  const w = small ? 38 : 48
-  const h = small ? 54 : 68
-  const redCard = isRed(card.suit)
-  const sym     = suitSymbol(card.suit)
-  const borderColor = swapSelected ? 'var(--yellow)' : selected ? 'var(--c-dash)' : 'var(--border)'
-  const shadowColor = glow ? '0 0 10px rgba(251,146,60,0.8), ' : ''
-
+  const w = small ? 36 : 46, h = small ? 52 : 66
+  const red = isRed(card.suit)
+  const sym = suitSymbol(card.suit)
   return (
-    <div
-      onClick={onClick}
-      style={{
-        width: w, height: h, flexShrink: 0,
-        border: `2px solid ${borderColor}`,
-        borderRadius: 3,
-        background: faceDown ? 'var(--bg3)' : '#f8f4ec',
-        cursor: onClick ? 'pointer' : 'default',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        position: 'relative', fontSize: small ? 9 : 11,
-        boxShadow: `${shadowColor}${selected || swapSelected ? `0 0 6px ${borderColor}` : '2px 2px 0 rgba(0,0,0,0.5)'}`,
-        transform: selected || swapSelected ? 'translateY(-6px)' : 'none',
-        transition: 'transform 0.1s, box-shadow 0.1s',
-        userSelect: 'none',
-      }}
-    >
+    <div onClick={onClick} onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerMove={onPointerMove} style={{
+      width: w, height: h, flexShrink: 0,
+      border: `2px solid ${selected ? 'var(--c-dash)' : 'var(--border)'}`,
+      borderRadius: 3,
+      background: faceDown ? 'var(--bg3)' : dimmed ? '#c0bdb5' : '#f8f4ec',
+      opacity: dimmed ? 0.55 : 1,
+      cursor: onClick ? 'pointer' : 'default',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      position: 'relative', fontSize: small ? 9 : 11,
+      boxShadow: glow ? '0 0 10px rgba(251,146,60,0.8)' : selected ? '0 0 6px var(--c-dash)' : lifted ? '0 8px 20px rgba(0,0,0,0.7)' : '2px 2px 0 rgba(0,0,0,0.5)',
+      transform: selected ? 'translateY(-6px)' : lifted ? 'scale(1.12) translateY(-8px)' : 'none',
+      transition: 'transform 0.1s, box-shadow 0.1s, opacity 0.1s',
+      userSelect: 'none',
+    }}>
       {faceDown ? (
-        <div style={{
-          width: '100%', height: '100%',
-          background: 'repeating-linear-gradient(45deg,var(--bg3),var(--bg3) 3px,var(--border) 3px,var(--border) 6px)',
-          borderRadius: 2,
-        }} />
+        <div style={{ width: '100%', height: '100%', background: 'repeating-linear-gradient(45deg,var(--bg3),var(--bg3) 3px,var(--border) 3px,var(--border) 6px)', borderRadius: 2 }} />
       ) : card.isJoker ? (
-        <div style={{ color: '#8b5cf6', fontFamily: "'Press Start 2P',monospace", fontSize: small ? 7 : 9, textAlign: 'center', lineHeight: 1.4 }}>
-          ★<br />JKR
-        </div>
+        <div style={{ color: '#8b5cf6', fontFamily: "'Press Start 2P',monospace", fontSize: small ? 7 : 9, textAlign: 'center', lineHeight: 1.4 }}>★<br />JKR</div>
       ) : (
         <>
-          <div style={{ position: 'absolute', top: 2, left: 3, color: redCard ? '#dc2626' : '#1e293b', fontWeight: 700 }}>{card.rank}</div>
-          <div style={{ fontSize: small ? 16 : 20, color: redCard ? '#dc2626' : '#1e293b' }}>{sym}</div>
-          <div style={{ position: 'absolute', bottom: 2, right: 3, color: redCard ? '#dc2626' : '#1e293b', fontWeight: 700, transform: 'rotate(180deg)' }}>{card.rank}</div>
+          <div style={{ position: 'absolute', top: 2, left: 3, color: red ? '#dc2626' : '#1e293b', fontWeight: 700 }}>{card.rank}</div>
+          <div style={{ fontSize: small ? 15 : 19, color: red ? '#dc2626' : '#1e293b' }}>{sym}</div>
+          <div style={{ position: 'absolute', bottom: 2, right: 3, color: red ? '#dc2626' : '#1e293b', fontWeight: 700, transform: 'rotate(180deg)' }}>{card.rank}</div>
         </>
       )}
     </div>
   )
 }
 
-// ── Meld display ──────────────────────────────────────────────────────────────
-function MeldView({ meld, onAdd, onSteal, burning }: {
-  meld: Meld; onAdd?: () => void; onSteal?: () => void; burning?: boolean
+// ── Draggable hand ────────────────────────────────────────────────────────────
+type DragState = { cardId: string; fromIndex: number; toIndex: number; x: number; y: number } | null
+
+function DraggableHand({ hand, selectedIds, stagedIds, onToggle, onReorder }: {
+  hand: Card[]
+  selectedIds: string[]
+  stagedIds: string[]
+  onToggle: (id: string) => void
+  onReorder: (from: number, to: number) => void
 }) {
+  const [drag, setDrag] = useState<DragState>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const CARD_W = 50  // card width + gap
+
+  const startDrag = useCallback((cardId: string, fromIndex: number, x: number, y: number) => {
+    setDrag({ cardId, fromIndex, toIndex: fromIndex, x, y })
+  }, [])
+
+  const calcDropIndex = useCallback((clientX: number) => {
+    if (!containerRef.current) return 0
+    const rect = containerRef.current.getBoundingClientRect()
+    const relX  = clientX - rect.left
+    const idx   = Math.round(relX / CARD_W)
+    return Math.max(0, Math.min(hand.length - 1, idx))
+  }, [hand.length])
+
+  useEffect(() => {
+    if (!drag) return
+    const onMove = (e: PointerEvent) => {
+      const toIndex = calcDropIndex(e.clientX)
+      setDrag(d => d ? { ...d, x: e.clientX, y: e.clientY, toIndex } : null)
+    }
+    const onUp = (e: PointerEvent) => {
+      if (drag) {
+        const toIndex = calcDropIndex(e.clientX)
+        if (toIndex !== drag.fromIndex) onReorder(drag.fromIndex, toIndex)
+      }
+      setDrag(null)
+    }
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    return () => { document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp) }
+  }, [drag, calcDropIndex, onReorder])
+
+  // Build rendered hand order with gap
+  const items: { card: Card; origIndex: number }[] = hand
+    .map((card, i) => ({ card, origIndex: i }))
+    .filter(item => !drag || item.card.id !== drag.cardId)
+
+  // Insert gap at drop position
+  const withGap: ({ type: 'card'; card: Card; origIndex: number } | { type: 'gap' })[] = []
+  let inserted = false
+  for (let i = 0; i <= items.length; i++) {
+    if (!inserted && drag && i === drag.toIndex) {
+      withGap.push({ type: 'gap' })
+      inserted = true
+    }
+    if (i < items.length) withGap.push({ type: 'card', ...items[i] })
+  }
+  if (!inserted && drag) withGap.push({ type: 'gap' })
+
+  return (
+    <div ref={containerRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, position: 'relative', touchAction: 'none' }}>
+      {withGap.map((item, i) => {
+        if (item.type === 'gap') {
+          return <div key="gap" style={{ width: 46, height: 66, border: '2px dashed var(--c-dash)', borderRadius: 3, flexShrink: 0 }} />
+        }
+        const { card, origIndex } = item
+        const isDragged = drag?.cardId === card.id
+        const isSelected = selectedIds.includes(card.id)
+        const isStaged   = stagedIds.includes(card.id)
+        return (
+          <CardView
+            key={card.id}
+            card={card}
+            selected={isSelected && !isStaged}
+            dimmed={isStaged}
+            lifted={isDragged}
+            onClick={() => onToggle(card.id)}
+            onPointerDown={(e: React.PointerEvent) => {
+              e.currentTarget.setPointerCapture(e.pointerId)
+              const { clientX, clientY } = e
+              timerRef.current = setTimeout(() => {
+                startDrag(card.id, origIndex, clientX, clientY)
+              }, 180)
+            }}
+            onPointerUp={() => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null } }}
+            onPointerMove={(e: React.PointerEvent) => {
+              if (timerRef.current) {
+                const startX = e.currentTarget.getBoundingClientRect().left
+                const dx = Math.abs(e.clientX - startX)
+                if (dx > 8) { clearTimeout(timerRef.current); timerRef.current = null }
+              }
+            }}
+          />
+        )
+      })}
+      {/* Floating drag ghost */}
+      {drag && (() => {
+        const dragged = hand.find(c => c.id === drag.cardId)
+        if (!dragged) return null
+        return (
+          <div style={{ position: 'fixed', left: drag.x - 23, top: drag.y - 33, zIndex: 999, pointerEvents: 'none' }}>
+            <CardView card={dragged} lifted />
+          </div>
+        )
+      })()}
+    </div>
+  )
+}
+
+// ── Meld view ─────────────────────────────────────────────────────────────────
+function MeldView({ meld, playerNames, onAdd, onSteal, burning }: {
+  meld: Meld; playerNames: string[]; onAdd?: () => void; onSteal?: () => void; burning?: boolean
+}) {
+  const ownerName = playerNames[meld.ownerIndex] ?? `P${meld.ownerIndex}`
   return (
     <div style={{
-      background: meld.owner === 'human' ? 'rgba(74,222,128,0.08)' : 'rgba(6,182,212,0.08)',
-      border: `2px solid ${burning ? '#fb923c' : meld.owner === 'human' ? 'var(--c-weight)' : 'var(--c-dash)'}`,
+      background: meld.ownerIndex === 0 ? 'rgba(74,222,128,0.08)' : 'rgba(6,182,212,0.08)',
+      border: `2px solid ${burning ? '#fb923c' : meld.ownerIndex === 0 ? 'var(--c-weight)' : 'var(--c-dash)'}`,
       boxShadow: burning ? '0 0 12px rgba(251,146,60,0.6)' : undefined,
-      padding: '6px 8px', borderRadius: 2,
-      display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start',
+      padding: '5px 7px', borderRadius: 2, display: 'inline-flex', flexDirection: 'column', gap: 3,
     }}>
-      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: burning ? 'var(--c-journal)' : 'var(--muted)', marginBottom: 2 }}>
-        {burning ? '🔥 ' : ''}{meld.owner === 'human' ? 'YOU' : 'AI'} · {meld.type.toUpperCase()} · {meldValue(meld.cards)} pts
+      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: burning ? 'var(--c-journal)' : 'var(--muted)' }}>
+        {burning ? '🔥 ' : ''}{ownerName} · {meld.type.toUpperCase()} · {meldValue(meld.cards)} pts
       </div>
-      <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         {meld.cards.map(c => <CardView key={c.id} card={c} small glow={burning && c.isJoker} />)}
       </div>
       {(onAdd || onSteal) && (
-        <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-          {onAdd  && <button onClick={onAdd}  className="pixel-btn pixel-btn-secondary" style={{ fontSize: 7, padding: '3px 6px' }}>+ ADD</button>}
-          {onSteal && meld.cards.some(c => c.isJoker) && (
-            <button onClick={onSteal} className="pixel-btn pixel-btn-warning" style={{ fontSize: 7, padding: '3px 6px' }}>STEAL ★</button>
-          )}
+        <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
+          {onAdd  && <button onClick={onAdd}  className="pixel-btn pixel-btn-secondary" style={{ fontSize: 6, padding: '3px 5px' }}>+ADD</button>}
+          {onSteal && meld.cards.some(c => c.isJoker) && <button onClick={onSteal} className="pixel-btn pixel-btn-warning" style={{ fontSize: 6, padding: '3px 5px' }}>STEAL★</button>}
         </div>
       )}
     </div>
   )
 }
 
-// ── Score display ─────────────────────────────────────────────────────────────
-function ScoreBoard({ scores }: { scores: RoundScore[] }) {
-  const ht = scores.reduce((s, r) => s + r.human, 0)
-  const at = scores.reduce((s, r) => s + r.ai, 0)
+// ── Score board ───────────────────────────────────────────────────────────────
+function ScoreBoard({ players, roundScores }: { players: Player[]; roundScores: number[][] }) {
+  const totals = players.map((_, pi) => roundScores.reduce((s, r) => s + (r[pi] ?? 0), 0))
   return (
-    <div style={{ fontFamily: "'VT323',monospace", fontSize: 16 }}>
-      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: 'var(--muted)', marginBottom: 6 }}>SCORES</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto repeat(7,1fr) auto', gap: 2, fontSize: 14 }}>
+    <div style={{ fontFamily: "'VT323',monospace", fontSize: 15, overflowX: 'auto' }}>
+      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 4 }}>SCORES</div>
+      <div style={{ display: 'grid', gridTemplateColumns: `auto repeat(7,1fr) auto`, gap: 2, minWidth: 300 }}>
         {['','R1','R2','R3','R4','R5','R6','R7','Σ'].map((h,i) => (
-          <div key={i} style={{ color:'var(--muted)',textAlign:'center',padding:'2px 4px',fontFamily:"'Press Start 2P',monospace",fontSize:7 }}>{h}</div>
+          <div key={i} style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', textAlign: 'center', padding: '1px 3px' }}>{h}</div>
         ))}
-        {['YOU',...scores.map(s=>s.human),ht].map((v,i) => (
-          <div key={i} style={{ textAlign:'center',padding:'2px 4px',color:i===0?'var(--c-weight)':'var(--text)' }}>{v}</div>
-        ))}
-        {['AI',...scores.map(s=>s.ai),at].map((v,i) => (
-          <div key={i} style={{ textAlign:'center',padding:'2px 4px',color:i===0?'var(--c-dash)':'var(--text)' }}>{v}</div>
+        {players.map((p, pi) => (
+          [p.isHuman ? 'YOU' : p.name, ...roundScores.map(r => r[pi] ?? ''), totals[pi]].map((v, i) => (
+            <div key={i} style={{ textAlign: 'center', padding: '1px 3px', color: i === 0 ? (p.isHuman ? 'var(--c-weight)' : 'var(--c-dash)') : 'var(--text)', fontSize: 13 }}>{v}</div>
+          ))
         ))}
       </div>
     </div>
@@ -528,139 +702,57 @@ function ScoreBoard({ scores }: { scores: RoundScore[] }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function JokerGame() {
-  const [state, dispatch] = useReducer(reducer, undefined, makeInitial)
-
-  useEffect(() => { dispatch({ type: 'INIT_ROUND' }) }, [])
+  const [state, dispatch] = useReducer(reducer, undefined, makeSetupState)
 
   // AI turn automation
   useEffect(() => {
     if (state.phase !== 'ai-turn') return
-    const timer = setTimeout(() => {
-      let s = reshuffleDeckState({ ...state })
-      const decision = computeAITurn(s)
-
-      let aiHand     = [...s.aiHand]
-      let deck       = [...s.deck]
-      let discardPile = [...s.discardPile]
-      let melds      = [...s.melds]
-      let aiHasMelded = s.aiHasMelded
-
-      // Draw
-      if (decision.drawFromDiscard && discardPile.length > 0) {
-        aiHand = [...aiHand, discardPile[discardPile.length - 1]]
-        discardPile = discardPile.slice(0, -1)
-      } else if (deck.length > 0) {
-        aiHand = [...aiHand, deck[0]]
-        deck = deck.slice(1)
-      }
-
-      const usedIds = new Set<string>()
-
-      // Play melds
-      if (decision.meldsToPlay.length > 0) {
-        for (const meldCards of decision.meldsToPlay) {
-          melds = [...melds, makeMeld(meldCards, 'ai')]
-          meldCards.forEach(c => usedIds.add(c.id))
-        }
-        aiHasMelded = true
-        aiHand = aiHand.filter(c => !usedIds.has(c.id))
-      }
-
-      // Add to existing melds
-      for (const { meldId, cards } of decision.cardsToAddToMeld) {
-        const meld = melds.find(m => m.id === meldId)
-        if (meld) {
-          const nm = updatedMeld(meld, cards)
-          melds = melds.map(m => m.id === meldId ? nm : m)
-          cards.forEach(c => usedIds.add(c.id))
-          aiHand = aiHand.filter(c => !cards.map(x => x.id).includes(c.id))
-        }
-      }
-
-      // Handle burning meld
-      let burningMeldId = s.burningMeldId
-      let burningHasJoker = s.burningHasJoker
-
-      // Check if AI's actions created a new burning group
-      const newBurning = melds.find(m => isBurningGroup(m) && m.id !== burningMeldId)
-      if (newBurning && !burningMeldId) {
-        burningMeldId = newBurning.id
-        burningHasJoker = newBurning.cards.some(c => c.isJoker)
-      }
-
-      // AI resolves burning
-      if (burningMeldId) {
-        if (decision.burnAction === 'steal' && burningHasJoker) {
-          const bm = melds.find(m => m.id === burningMeldId)
-          if (bm) {
-            const joker = bm.cards.find(c => c.isJoker)!
-            const replacers = decision.jokerReplacementCards.filter(c => aiHand.some(h => h.id === c.id))
-            if (replacers.length >= 2 && joker) {
-              const fullSet = [...bm.cards.filter(c => !c.isJoker), replacers[0], replacers[1]]
-              discardPile = burnIntoDiscard(discardPile, fullSet)
-              melds = melds.filter(m => m.id !== burningMeldId)
-              aiHand = [...aiHand.filter(c => c.id !== replacers[0].id && c.id !== replacers[1].id), joker]
-            } else {
-              discardPile = burnIntoDiscard(discardPile, bm.cards)
-              melds = melds.filter(m => m.id !== burningMeldId)
-            }
-          }
-        } else {
-          // Burn it
-          const bm = melds.find(m => m.id === burningMeldId)
-          if (bm) {
-            discardPile = burnIntoDiscard(discardPile, bm.cards)
-            melds = melds.filter(m => m.id !== burningMeldId)
-          }
-        }
-        burningMeldId = null
-        burningHasJoker = false
-      }
-
-      // Discard
-      const discardCard = aiHand.find(c => c.id === decision.discardCard.id) ?? aiHand[aiHand.length - 1]
-      if (!discardCard) {
-        dispatch({ type: 'AI_TURN_DONE', next: finishRound({ ...s, aiHand: [], deck, discardPile, melds, aiHasMelded, burningMeldId: null, burningHasJoker: false }, 'ai', true, false) })
-        return
-      }
-      aiHand = aiHand.filter(c => c.id !== discardCard.id)
-      discardPile = [...discardPile, discardCard]
-
-      if (aiHand.length === 0) {
-        dispatch({ type: 'AI_TURN_DONE', next: finishRound({ ...s, aiHand, deck, discardPile, melds, aiHasMelded, burningMeldId: null, burningHasJoker: false }, 'ai', false, discardCard.isJoker) })
-        return
-      }
-
-      dispatch({
-        type: 'AI_TURN_DONE',
-        next: {
-          aiHand, deck, discardPile, melds, aiHasMelded,
-          burningMeldId: null, burningHasJoker: false,
-          currentPlayer: 'human', phase: 'player-draw',
-          drawnThisTurn: false, selectedCardIds: [], stagedMelds: [],
-          message: 'Your turn — draw a card.',
-        },
-      })
-    }, 1400)
+    const timer = setTimeout(() => runAITurn(state, dispatch), 1400)
     return () => clearTimeout(timer)
-  }, [state.phase, state.roundNumber])
+  }, [state.phase, state.currentPlayerIndex, state.roundNumber])
 
+  const human = state.players[0]
   const topDiscard = state.discardPile[state.discardPile.length - 1]
-  const humanTotal = state.roundScores.reduce((s, r) => s + r.human, 0)
-  const aiTotal    = state.roundScores.reduce((s, r) => s + r.ai, 0)
+  const stagedIds  = new Set(state.stagedMelds.flat().map(c => c.id))
+  const playerNames = state.players.map(p => p.isHuman ? 'You' : p.name)
 
-  // ── End screens ─────────────────────────────────────────────────────────────
+  // ── Setup screen ──────────────────────────────────────────────────────────
+  if (state.phase === 'setup') {
+    return (
+      <div style={{ maxWidth: 500, margin: '0 auto', padding: '40px 16px', textAlign: 'center' }}>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 16, color: 'var(--c-journal)', marginBottom: 32 }}>♦ JOKER</h1>
+        <div className="pixel-card card-journal" style={{ padding: 28 }}>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: 'var(--muted)', marginBottom: 20 }}>NUMBER OF PLAYERS</div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {[2, 3, 4, 5].map(n => (
+              <button key={n} className="pixel-btn pixel-btn-primary" style={{ fontSize: 14, padding: '14px 20px' }}
+                onClick={() => dispatch({ type: 'START_GAME', numPlayers: n })}>
+                {n}P
+              </button>
+            ))}
+          </div>
+          <div style={{ marginTop: 20, fontSize: 16, color: 'var(--muted)' }}>You are Player 1. Others are AI.</div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Game end / Round end ──────────────────────────────────────────────────
   if (state.phase === 'game-end') {
-    const humanWins = humanTotal < aiTotal
+    const totals = state.players.map((_, pi) => state.roundScores.reduce((s, r) => s + (r[pi] ?? 0), 0))
+    const minScore = Math.min(...totals)
+    const winner = state.players[totals.indexOf(minScore)]
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '28px 16px' }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 13, color: 'var(--c-journal)', marginBottom: 24 }}>♦ JOKER — FINAL</h1>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 13, color: 'var(--c-journal)', marginBottom: 24 }}>♦ FINAL SCORES</h1>
         <div className="pixel-card card-journal" style={{ marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: humanWins ? 'var(--c-weight)' : 'var(--red)', marginBottom: 16 }}>
-            {humanWins ? '🏆 YOU WIN!' : '💀 AI WINS'}
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: winner.isHuman ? 'var(--c-weight)' : 'var(--red)', marginBottom: 16 }}>
+            {winner.isHuman ? '🏆 YOU WIN!' : `💀 ${winner.name} WINS`}
           </div>
-          <div style={{ fontSize: 20, color: 'var(--muted)', marginBottom: 16 }}>You: {humanTotal} · AI: {aiTotal} (lowest wins)</div>
-          <ScoreBoard scores={state.roundScores} />
+          <div style={{ fontSize: 18, color: 'var(--muted)', marginBottom: 16 }}>
+            {state.players.map((p, i) => `${p.isHuman ? 'You' : p.name}: ${totals[i]}`).join(' · ')}<br />(lowest wins)
+          </div>
+          <ScoreBoard players={state.players} roundScores={state.roundScores} />
         </div>
         <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'INIT_ROUND' })}>NEW GAME</button>
       </div>
@@ -668,120 +760,108 @@ export default function JokerGame() {
   }
 
   if (state.phase === 'round-end') {
-    const last = state.roundScores[state.roundScores.length - 1]
+    const last = state.roundScores[state.roundScores.length - 1] ?? []
+    const totals = state.players.map((_, pi) => state.roundScores.reduce((s, r) => s + (r[pi] ?? 0), 0))
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '28px 16px' }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: 'var(--c-journal)', marginBottom: 20 }}>♦ ROUND {state.roundNumber} DONE</h1>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: 'var(--c-journal)', marginBottom: 20 }}>♦ ROUND {state.roundNumber}</h1>
         <div className="pixel-card card-journal" style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 20, marginBottom: 8 }}>
-            You: <span style={{ color: last.human <= 0 ? 'var(--green)' : 'var(--red)' }}>{last.human > 0 ? '+' : ''}{last.human}</span>
-            &nbsp;· AI: <span style={{ color: last.ai <= 0 ? 'var(--green)' : 'var(--red)' }}>{last.ai > 0 ? '+' : ''}{last.ai}</span>
+          <div style={{ fontSize: 18, marginBottom: 8 }}>
+            {state.players.map((p, i) => (
+              <span key={i} style={{ marginRight: 16 }}>
+                {p.isHuman ? 'You' : p.name}: <span style={{ color: (last[i] ?? 0) <= 0 ? 'var(--green)' : 'var(--red)' }}>{(last[i] ?? 0) > 0 ? '+' : ''}{last[i] ?? 0}</span>
+              </span>
+            ))}
           </div>
-          <div style={{ fontSize: 16, color: 'var(--muted)', marginBottom: 16 }}>Running: You {humanTotal} · AI {aiTotal}</div>
-          <ScoreBoard scores={state.roundScores} />
+          <div style={{ fontSize: 16, color: 'var(--muted)', marginBottom: 16 }}>
+            Running: {state.players.map((p, i) => `${p.isHuman ? 'You' : p.name} ${totals[i]}`).join(' · ')}
+          </div>
+          <ScoreBoard players={state.players} roundScores={state.roundScores} />
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {state.roundNumber < 7 && (
-            <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'NEXT_ROUND' })}>
-              NEXT ROUND ({state.roundNumber + 1}/7)
-            </button>
-          )}
-          <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'END_GAME_EARLY' })}>
-            END GAME{state.roundNumber < 7 ? ' (+25 penalty)' : ''}
-          </button>
+          {state.roundNumber < 7 && <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'NEXT_ROUND' })}>ROUND {state.roundNumber + 1}</button>}
+          <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'END_GAME_EARLY' })}>END GAME{state.roundNumber < 7 ? ' (+25)' : ''}</button>
         </div>
       </div>
     )
   }
 
-  // ── Main game ────────────────────────────────────────────────────────────────
-  const inAction = state.phase === 'player-action'
+  // ── Main game ─────────────────────────────────────────────────────────────
   const inDraw   = state.phase === 'player-draw'
+  const inAction = state.phase === 'player-action'
+  const isMyTurn = state.players[state.currentPlayerIndex]?.isHuman
 
   return (
-    <div style={{ maxWidth: 820, margin: '0 auto', padding: '16px', userSelect: 'none' }}>
+    <div style={{ maxWidth: 840, margin: '0 auto', padding: '12px 16px', userSelect: 'none' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: 'var(--c-journal)', margin: 0 }}>♦ JOKER</h1>
-        <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: 'var(--muted)' }}>
-          ROUND {state.roundNumber}/7 · {state.currentPlayer === 'human' ? 'YOUR TURN' : "AI'S TURN"}
-          {state.trumpSuit && ` · TRUMP: ${suitSymbol(state.trumpSuit)}`}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: 'var(--c-journal)', margin: 0 }}>♦ JOKER</h1>
+        <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)' }}>
+          ROUND {state.roundNumber}/7 · {state.trumpSuit ? `TRUMP: ${suitSymbol(state.trumpSuit)}` : 'NO TRUMP'}
         </div>
-        <ScoreBoard scores={state.roundScores} />
+        <ScoreBoard players={state.players} roundScores={state.roundScores} />
       </div>
 
       {/* Message */}
       <div style={{
         background: state.burningMeldId ? 'rgba(251,146,60,0.15)' : 'var(--bg3)',
         border: `1px solid ${state.burningMeldId ? 'var(--c-journal)' : 'var(--border)'}`,
-        padding: '8px 12px', marginBottom: 12, fontSize: 16, minHeight: 36,
+        padding: '7px 10px', marginBottom: 10, fontSize: 15, minHeight: 32,
         color: state.burningMeldId ? 'var(--yellow)' : 'var(--text)',
-      }}>
-        {state.message || '…'}
-      </div>
+      }}>{state.message || '…'}</div>
 
-      {/* AI hand */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: 'var(--c-dash)', marginBottom: 6 }}>
-          AI HAND ({state.aiHand.length}){state.aiHasMelded ? ' · MELDED' : ''}
+      {/* Other players' hands */}
+      {state.players.slice(1).map((p, i) => (
+        <div key={p.id} style={{ marginBottom: 8 }}>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: state.currentPlayerIndex === i + 1 ? 'var(--yellow)' : 'var(--c-dash)', marginBottom: 4 }}>
+            {p.name} ({p.hand.length} cards){p.hasMelded ? ' · MELDED' : ''}{state.currentPlayerIndex === i + 1 ? ' ◄ TURN' : ''}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            {p.hand.map(c => <CardView key={c.id} card={c} faceDown small />)}
+          </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-          {state.aiHand.map(c => <CardView key={c.id} card={c} faceDown small />)}
-        </div>
-      </div>
+      ))}
 
-      {/* Table center */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap' }}>
-        {/* Deck */}
+      {/* Center: deck / discard / trump / staged */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 4 }}>DECK ({state.deck.length})</div>
-          {state.deck.length > 0 ? (
-            <CardView card={state.deck[0]} faceDown onClick={inDraw ? () => dispatch({ type: 'DRAW_DECK' }) : undefined} />
-          ) : (
-            <div style={{ width: 48, height: 68, border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>∅</div>
-          )}
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>DECK ({state.deck.length})</div>
+          {state.deck.length > 0
+            ? <CardView card={state.deck[0]} faceDown onClick={inDraw ? () => dispatch({ type: 'DRAW_DECK' }) : undefined} />
+            : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 11 }}>∅</div>}
         </div>
-        {/* Discard */}
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 4 }}>DISCARD</div>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>DISCARD</div>
           {topDiscard
             ? <CardView card={topDiscard} onClick={inDraw ? () => dispatch({ type: 'DRAW_DISCARD' }) : undefined} />
-            : <div style={{ width: 48, height: 68, border: '2px dashed var(--border)' }} />}
+            : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)' }} />}
         </div>
-        {/* Trump */}
         {state.trumpCard && (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--c-journal)', marginBottom: 4 }}>
-              TRUMP {state.trumpSuit ? suitSymbol(state.trumpSuit) : ''}
-            </div>
+            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--c-journal)', marginBottom: 3 }}>TRUMP</div>
             <CardView card={state.trumpCard} />
           </div>
         )}
-        {/* Staged melds */}
         {state.stagedMelds.length > 0 && (
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--yellow)', marginBottom: 4 }}>
-              STAGED ({totalMeldValue(state.stagedMelds)} pts)
-            </div>
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--yellow)', marginBottom: 3 }}>STAGED ({totalMeldValue(state.stagedMelds)} pts)</div>
             {state.stagedMelds.map((m, i) => (
-              <div key={i} style={{ display: 'flex', gap: 3, marginBottom: 4, flexWrap: 'wrap' }}>
+              <div key={i} style={{ display: 'flex', gap: 2, marginBottom: 3, flexWrap: 'wrap' }}>
                 {m.map(c => <CardView key={c.id} card={c} small />)}
-                <span style={{ fontSize: 13, color: 'var(--muted)', alignSelf: 'center' }}>{meldValue(m)}pt</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>{meldValue(m)}pt</span>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Melds on table */}
+      {/* Table melds */}
       {state.melds.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 6 }}>TABLE</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 5 }}>TABLE</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {state.melds.map(meld => (
-              <MeldView
-                key={meld.id}
-                meld={meld}
+              <MeldView key={meld.id} meld={meld} playerNames={playerNames}
                 burning={meld.id === state.burningMeldId}
                 onAdd={inAction && state.selectedCardIds.length > 0 && meld.id !== state.burningMeldId
                   ? () => dispatch({ type: 'ADD_TO_MELD', meldId: meld.id }) : undefined}
@@ -793,112 +873,64 @@ export default function JokerGame() {
         </div>
       )}
 
-      {/* Player hand */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: 'var(--c-weight)', marginBottom: 6 }}>
-          YOUR HAND ({state.playerHand.length}) {state.playerHasMelded ? '· MELDED' : '· need 51+'}
-          {state.swapMode && <span style={{ color: 'var(--yellow)', marginLeft: 10 }}>SWAP MODE {state.swapFirstCardId ? '— tap 2nd card' : '— tap 1st card'}</span>}
-          {!state.swapMode && state.selectedCardIds.length > 0 && (
-            <span style={{ color: 'var(--yellow)', marginLeft: 10 }}>
-              {state.selectedCardIds.length} selected
-            </span>
-          )}
+      {/* Human hand */}
+      {human && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--c-weight)', marginBottom: 5 }}>
+            YOUR HAND ({human.hand.length}) {human.hasMelded ? '· MELDED' : '· need 51+'}
+            {state.drawnFromDiscardCardId && <span style={{ color: 'var(--yellow)', marginLeft: 8 }}>⚠ use drawn card!</span>}
+            {state.selectedCardIds.length > 0 && <span style={{ color: 'var(--yellow)', marginLeft: 8 }}>{state.selectedCardIds.length} selected</span>}
+          </div>
+          <DraggableHand
+            hand={human.hand}
+            selectedIds={state.selectedCardIds}
+            stagedIds={Array.from(stagedIds)}
+            onToggle={id => inAction && dispatch({ type: 'TOGGLE_CARD', cardId: id })}
+            onReorder={(from, to) => dispatch({ type: 'REORDER_HAND', fromIndex: from, toIndex: to })}
+          />
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {state.playerHand.map(card => (
-            <CardView
-              key={card.id}
-              card={card}
-              selected={!state.swapMode && state.selectedCardIds.includes(card.id)}
-              swapSelected={state.swapMode && state.swapFirstCardId === card.id}
-              onClick={
-                state.swapMode
-                  ? () => dispatch({ type: 'SWAP_CARD', cardId: card.id })
-                  : inAction
-                    ? () => dispatch({ type: 'TOGGLE_CARD', cardId: card.id })
-                    : undefined
-              }
-            />
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Controls */}
-      {inDraw && (
+      {inDraw && isMyTurn && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'DRAW_DECK' })}>DRAW DECK</button>
           <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'DRAW_DISCARD' })}
-            disabled={!topDiscard || (!state.playerHasMelded && topDiscard?.id !== state.trumpCard?.id)}>
+            disabled={!topDiscard || (!human?.hasMelded && topDiscard?.id !== state.trumpCard?.id)}>
             DRAW DISCARD
           </button>
         </div>
       )}
 
-      {inAction && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Swap mode toggle */}
-          <button
-            className={`pixel-btn ${state.swapMode ? 'pixel-btn-warning' : 'pixel-btn-secondary'}`}
-            onClick={() => dispatch({ type: 'TOGGLE_SWAP_MODE' })}
-          >
-            {state.swapMode ? '✓ SWAP MODE' : '⇄ SWAP'}
-          </button>
-
-          {!state.swapMode && (
+      {inAction && isMyTurn && (
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+          {state.burningMeldId ? (
             <>
-              {/* Burning meld actions */}
-              {state.burningMeldId && state.burningHasJoker && state.selectedCardIds.length === 2 && (
-                <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'REPLACE_BURNING_JOKER' })}>
-                  RESCUE JOKER (2 cards)
-                </button>
+              {state.burningHasJoker && state.selectedCardIds.length === 2 && (
+                <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'REPLACE_BURNING_JOKER' })}>RESCUE JOKER (2 cards)</button>
               )}
-              {state.burningMeldId && (
-                <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'BURN_MELD' })}>
-                  🔥 BURN SET
-                </button>
-              )}
-
-              {/* Normal meld actions */}
-              {!state.burningMeldId && (
+              <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'BURN_MELD' })}>🔥 BURN SET</button>
+            </>
+          ) : (
+            <>
+              <button className="pixel-btn pixel-btn-success" onClick={() => dispatch({ type: 'STAGE_MELD' })} disabled={state.selectedCardIds.length < 3}>STAGE MELD</button>
+              {state.stagedMelds.length > 0 && (
                 <>
-                  <button className="pixel-btn pixel-btn-success"
-                    onClick={() => dispatch({ type: 'STAGE_MELD' })}
-                    disabled={state.selectedCardIds.length < 3}>
-                    STAGE MELD
-                  </button>
-                  {state.stagedMelds.length > 0 && (
-                    <>
-                      <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'COMMIT_MELDS' })}>
-                        COMMIT ({totalMeldValue(state.stagedMelds)} pts)
-                      </button>
-                      <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'CLEAR_STAGED' })}>
-                        CLEAR
-                      </button>
-                    </>
-                  )}
+                  <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'COMMIT_MELDS' })}>COMMIT ({totalMeldValue(state.stagedMelds)} pts)</button>
+                  <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'CLEAR_STAGED' })}>CLEAR</button>
                 </>
-              )}
-
-              {/* Discard */}
-              {state.selectedCardIds.length === 1 && (
-                <button className="pixel-btn pixel-btn-warning"
-                  onClick={() => dispatch({ type: 'DISCARD', cardId: state.selectedCardIds[0] })}>
-                  DISCARD
-                </button>
               )}
             </>
           )}
-
-          <div style={{ fontSize: 14, color: 'var(--muted)' }}>
-            {state.swapMode
-              ? 'Tap two cards to swap their positions.'
-              : 'Tap cards to select · STAGE sets · ADD to table · DISCARD 1 card.'}
-          </div>
+          {state.selectedCardIds.length === 1 && !state.burningMeldId && (
+            <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'DISCARD', cardId: state.selectedCardIds[0] })}>DISCARD</button>
+          )}
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Long-press to drag · tap to select · STAGE → COMMIT to meld</div>
         </div>
       )}
 
       {state.phase === 'ai-turn' && (
-        <div style={{ fontSize: 18, color: 'var(--muted)' }}>AI is thinking<span className="blink">…</span></div>
+        <div style={{ fontSize: 17, color: 'var(--muted)' }}>{state.players[state.currentPlayerIndex]?.name} is thinking<span className="blink">…</span></div>
       )}
     </div>
   )
