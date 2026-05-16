@@ -226,6 +226,59 @@ export function totalMeldValue(melds: Card[][]): number {
   return melds.reduce((s, m) => s + meldValue(m), 0)
 }
 
+/**
+ * Find IDs of cards worth keeping — those that contribute to complete melds,
+ * near-melds (pairs that could grow into 3+), or could be added to table sets.
+ */
+export function findUsefulCardIds(hand: Card[], tableMelds?: Meld[]): Set<string> {
+  const useful = new Set<string>()
+
+  // Jokers are always useful
+  hand.filter(c => c.isJoker).forEach(c => useful.add(c.id))
+
+  // Cards in complete melds in hand
+  findMeldsInHand(hand).forEach(m => m.forEach(c => useful.add(c.id)))
+
+  // Cards that can be added to any table meld
+  if (tableMelds) {
+    for (const card of hand) {
+      if (card.isJoker) continue
+      for (const meld of tableMelds) {
+        if (canAddToMeld(meld, [card])) { useful.add(card.id); break }
+      }
+    }
+  }
+
+  // Near-melds: 2+ same rank different suits (potential groups)
+  const byRank: Record<string, Card[]> = {}
+  hand.filter(c => !c.isJoker).forEach(c => {
+    if (!byRank[c.rank]) byRank[c.rank] = []
+    byRank[c.rank].push(c)
+  })
+  for (const cards of Object.values(byRank)) {
+    const unique = cards.filter((c, _, a) => a.findIndex(x => x.suit === c.suit) === cards.indexOf(c))
+    if (unique.length >= 2) unique.forEach(c => useful.add(c.id))
+  }
+
+  // Near-sequences: consecutive or near-consecutive in same suit (pairs within gap of 1)
+  const bySuit: Record<string, Card[]> = {}
+  hand.filter(c => !c.isJoker).forEach(c => {
+    if (!bySuit[c.suit]) bySuit[c.suit] = []
+    bySuit[c.suit].push(c)
+  })
+  for (const cards of Object.values(bySuit)) {
+    const sorted = [...cards].sort((a, b) => RANK_NUM[a.rank] - RANK_NUM[b.rank])
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (RANK_NUM[sorted[i + 1].rank] - RANK_NUM[sorted[i].rank] <= 2) {
+        useful.add(sorted[i].id)
+        useful.add(sorted[i + 1].id)
+      }
+    }
+  }
+
+  return useful
+}
+
 export function isBurningGroup(meld: Meld): boolean {
   return meld.type === 'group' && meld.cards.length === 4
 }

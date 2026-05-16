@@ -31,20 +31,22 @@ export function shuffle<T>(arr: T[]): T[] {
 }
 
 /**
- * Deal cards to N players.
- * firstPlayerIndex gets 15 cards (non-dealer); all others get 14.
- * Cards dealt round-robin starting from firstPlayerIndex.
+ * Deal 14 cards to each of N players, round-robin from firstPlayerIndex.
+ * All players start with equal hands; first player draws from deck at turn start.
  */
-export function dealToPlayers(deck: Card[], numPlayers: number, firstPlayerIndex: number): {
+export function dealToPlayers(deck: Card[], numPlayers: number, firstPlayerIndex = 0): {
   hands: Card[][]
   remaining: Card[]
 } {
   const d = [...deck]
   const hands: Card[][] = Array.from({ length: numPlayers }, () => [])
-  const totalCards = 15 + 14 * (numPlayers - 1)
+  const totalCards = 14 * numPlayers
   for (let i = 0; i < totalCards; i++) {
-    const pi = (firstPlayerIndex + i) % numPlayers
-    hands[pi].push(d.shift()!)
+    hands[(firstPlayerIndex + i) % numPlayers].push(d.shift()!)
+  }
+  // Validate
+  if (process.env.NODE_ENV === 'development') {
+    hands.forEach((h, i) => { if (h.length !== 14) console.warn(`Player ${i} has ${h.length} cards, expected 14`) })
   }
   return { hands, remaining: d }
 }

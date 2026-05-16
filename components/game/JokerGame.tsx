@@ -64,26 +64,31 @@ function createPlayers(numPlayers: number): Player[] {
   return players
 }
 
+// How many complete circles everyone has finished
+function circlesCompleted(players: Player[]): number {
+  if (!players.length) return 0
+  return Math.min(...players.map(p => p.turnCount))
+}
+
 function dealRound(base: GameState): GameState {
   const raw = shuffle(createDeck())
   const d   = [...raw]
 
-  // Flip trump first
+  // Flip trump FIRST (kept separate from discard pile)
   const flipped = d.shift()!
   let trumpCard: Card | null = null
   let trumpSuit: Suit | null = null
   let jokerForFirst: Card | null = null
-  let discardPile: Card[] = []
 
   if (flipped.isJoker) {
-    jokerForFirst = flipped
+    jokerForFirst = flipped  // No trump suit this round
   } else {
     trumpCard = flipped
     trumpSuit = flipped.suit as Suit
-    discardPile = [flipped]
   }
 
   const firstPlayerIndex = nextPlayerIndex(base.dealerIndex, base.numPlayers)
+  // All players get exactly 14 cards; first player draws from deck on turn 1
   const { hands, remaining } = dealToPlayers(d, base.numPlayers, firstPlayerIndex)
 
   const players = base.players.map((p, i) => ({
@@ -93,22 +98,24 @@ function dealRound(base: GameState): GameState {
     turnCount: 0,
   }))
 
-  // Handle Joker-as-trump: give to first player (swap out 1 random)
+  // Joker-as-trump: give to first player (remove 1 random card → back to 14)
   if (jokerForFirst) {
-    const fp = players[firstPlayerIndex]
+    const fp  = players[firstPlayerIndex]
     const rmIdx = Math.floor(Math.random() * fp.hand.length)
     remaining.push(fp.hand.splice(rmIdx, 1)[0])
     fp.hand.push(jokerForFirst)
   }
 
   const firstPhase: Phase = players[firstPlayerIndex].isHuman ? 'player-draw' : 'ai-turn'
-  const jokerMsg = jokerForFirst ? ' Trump was Joker — bonus card given!' : ''
+  const jokerMsg = jokerForFirst ? ' (Trump was Joker — given to you!)' : ''
 
   return {
     ...base,
     roundNumber: base.roundNumber,
-    deck: remaining, discardPile,
-    trumpCard, trumpSuit,
+    deck: remaining,
+    discardPile: [],        // ← EMPTY at round start
+    trumpCard,
+    trumpSuit,
     players,
     melds: [],
     selectedCardIds: [], stagedMelds: [],
@@ -116,7 +123,7 @@ function dealRound(base: GameState): GameState {
     currentPlayerIndex: firstPlayerIndex,
     phase: firstPhase,
     message: players[firstPlayerIndex].isHuman
-      ? `Your turn — draw a card.${jokerMsg}`
+      ? `Your turn — draw from deck.${jokerMsg}`
       : `${players[firstPlayerIndex].name} is playing…`,
     burningMeldId: null, burningHasJoker: false,
   }
@@ -137,6 +144,7 @@ type Action =
   | { type: 'STEAL_JOKER'; meldId: string }
   | { type: 'BURN_MELD' }
   | { type: 'REPLACE_BURNING_JOKER' }
+  | { type: 'TAKE_TRUMP' }
   | { type: 'RETURN_TO_DISCARD' }
   | { type: 'DISCARD'; cardId: string }
   | { type: 'AI_TURN_DONE'; next: Partial<GameState> }
@@ -217,15 +225,25 @@ function reducer(state: GameState, action: Action): GameState {
       if (state.drawnThisTurn || state.phase !== 'player-draw') return state
       const top = state.discardPile[state.discardPile.length - 1]
       if (!top) return { ...state, message: 'Discard pile is empty.' }
-      if (top.id === state.trumpCard?.id && cur.hand.length > 1)
-        return { ...state, message: 'Trump card: only take it if going out this turn!' }
-      if (!cur.hasMelded && top.id !== state.trumpCard?.id)
+      if (!cur.hasMelded)
         return { ...state, message: 'Draw from discard only after your first meld (51+ pts).' }
-      const players = mutPlayer(state, cp, { hand: [...cur.hand, top] })
       return {
-        ...state, discardPile: state.discardPile.slice(0, -1), players,
+        ...state, discardPile: state.discardPile.slice(0, -1),
+        players: mutPlayer(state, cp, { hand: [...cur.hand, top] }),
         drawnThisTurn: true, drawnFromDiscardCardId: top.id, phase: 'player-action',
         message: `Took ${top.isJoker ? 'JOKER' : top.rank + ' ' + suitSymbol(top.suit)} — must use it in a meld this turn!`,
+      }
+    }
+
+    case 'TAKE_TRUMP': {
+      if (state.drawnThisTurn || state.phase !== 'player-draw' || !state.trumpCard) return state
+      const card = state.trumpCard
+      return {
+        ...state,
+        trumpCard: null, trumpSuit: null,
+        players: mutPlayer(state, cp, { hand: [...cur.hand, card] }),
+        drawnThisTurn: true, phase: 'player-action',
+        message: `Took TRUMP ${card.rank} ${suitSymbol(card.suit)}. You MUST go out this turn!`,
       }
     }
 
@@ -247,6 +265,8 @@ function reducer(state: GameState, action: Action): GameState {
     }
 
     case 'STAGE_MELD': {
+      if (circlesCompleted(state.players) < 2)
+        return { ...state, message: `Cannot meld until round 3 (circle ${circlesCompleted(state.players) + 1}/3 now).` }
       if (state.selectedCardIds.length < 3) return { ...state, message: 'Select at least 3 cards.' }
       const selected = cur.hand.filter(c => state.selectedCardIds.includes(c.id))
       if (!isValidMeld(selected)) return { ...state, message: 'Not a valid meld. Check rules.' }
@@ -290,6 +310,8 @@ function reducer(state: GameState, action: Action): GameState {
     }
 
     case 'ADD_TO_MELD': {
+      if (circlesCompleted(state.players) < 2)
+        return { ...state, message: `Cannot add to sets until round 3.` }
       if (!state.selectedCardIds.length) return { ...state, message: 'Select cards to add.' }
       const selected = cur.hand.filter(c => state.selectedCardIds.includes(c.id))
       const meld = state.melds.find(m => m.id === action.meldId)
@@ -316,6 +338,8 @@ function reducer(state: GameState, action: Action): GameState {
     }
 
     case 'STEAL_JOKER': {
+      if (circlesCompleted(state.players) < 2)
+        return { ...state, message: `Cannot steal Joker until round 3.` }
       if (state.selectedCardIds.length !== 1) return { ...state, message: 'Select exactly 1 card.' }
       const realCard = cur.hand.find(c => c.id === state.selectedCardIds[0])!
       const meld = state.melds.find(m => m.id === action.meldId)
@@ -403,9 +427,10 @@ function reducer(state: GameState, action: Action): GameState {
       if (!card) return s
       const newHand = s.players[cp].hand.filter(c => c.id !== action.cardId)
       const pile    = [...s.discardPile, card]
-      if (!newHand.length) return finishRound({ ...s, players: mutPlayer(s, cp, { hand: newHand }), discardPile: pile }, cp, false, card.isJoker)
-      const next = advanceTurn({ ...s, players: mutPlayer(s, cp, { hand: newHand }), discardPile: pile })
-      return next
+      // Increment turnCount so circle tracking is accurate
+      const updatedPlayers = mutPlayer(s, cp, { hand: newHand, turnCount: s.players[cp].turnCount + 1 })
+      if (!newHand.length) return finishRound({ ...s, players: updatedPlayers, discardPile: pile }, cp, false, card.isJoker)
+      return advanceTurn({ ...s, players: updatedPlayers, discardPile: pile })
     }
 
     case 'AI_TURN_DONE': return { ...state, ...action.next }
@@ -580,94 +605,125 @@ function DraggableHand({ hand, selectedIds, stagedIds, onToggle, onReorder }: {
   onReorder: (from: number, to: number) => void
 }) {
   const [drag, setDrag] = useState<DragState>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const CARD_W = 50  // card width + gap
+  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cardElsRef = useRef<Map<string, HTMLElement>>(new Map())
 
   const startDrag = useCallback((cardId: string, fromIndex: number, x: number, y: number) => {
     setDrag({ cardId, fromIndex, toIndex: fromIndex, x, y })
   }, [])
 
-  const calcDropIndex = useCallback((clientX: number) => {
-    if (!containerRef.current) return 0
-    const rect = containerRef.current.getBoundingClientRect()
-    const relX  = clientX - rect.left
-    const idx   = Math.round(relX / CARD_W)
-    return Math.max(0, Math.min(hand.length - 1, idx))
-  }, [hand.length])
+  // Use actual card element positions for multi-row drop support
+  const calcDropIndex = useCallback((clientX: number, clientY: number, dragCardId: string): number => {
+    const positions = hand
+      .filter(c => c.id !== dragCardId)
+      .map((c, logicalIdx) => {
+        const el = cardElsRef.current.get(c.id)
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { origIdx: hand.indexOf(c), cx: r.left + r.width / 2, cy: r.top + r.height / 2, left: r.left, right: r.right }
+      })
+      .filter(Boolean) as { origIdx: number; cx: number; cy: number; left: number; right: number }[]
+
+    if (!positions.length) return 0
+
+    // Find nearest card by 2D distance
+    let minDist = Infinity, nearest = positions[0]
+    for (const pos of positions) {
+      const dist = Math.hypot(clientX - pos.cx, clientY - pos.cy)
+      if (dist < minDist) { minDist = dist; nearest = pos }
+    }
+
+    // Insert before or after nearest based on X
+    return clientX > nearest.cx ? nearest.origIdx + 1 : nearest.origIdx
+  }, [hand])
 
   useEffect(() => {
     if (!drag) return
     const onMove = (e: PointerEvent) => {
-      const toIndex = calcDropIndex(e.clientX)
+      const toIndex = calcDropIndex(e.clientX, e.clientY, drag.cardId)
       setDrag(d => d ? { ...d, x: e.clientX, y: e.clientY, toIndex } : null)
     }
     const onUp = (e: PointerEvent) => {
-      if (drag) {
-        const toIndex = calcDropIndex(e.clientX)
-        if (toIndex !== drag.fromIndex) onReorder(drag.fromIndex, toIndex)
-      }
-      setDrag(null)
+      setDrag(prev => {
+        if (prev) {
+          const to = calcDropIndex(e.clientX, e.clientY, prev.cardId)
+          if (to !== prev.fromIndex) onReorder(prev.fromIndex, to)
+        }
+        return null
+      })
     }
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
     return () => { document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp) }
   }, [drag, calcDropIndex, onReorder])
 
-  // Build rendered hand order with gap
-  const items: { card: Card; origIndex: number }[] = hand
+  // Build display list: omit dragged card, insert gap at toIndex
+  const visible = hand
     .map((card, i) => ({ card, origIndex: i }))
     .filter(item => !drag || item.card.id !== drag.cardId)
 
-  // Insert gap at drop position
   const withGap: ({ type: 'card'; card: Card; origIndex: number } | { type: 'gap' })[] = []
-  let inserted = false
-  for (let i = 0; i <= items.length; i++) {
-    if (!inserted && drag && i === drag.toIndex) {
-      withGap.push({ type: 'gap' })
-      inserted = true
-    }
-    if (i < items.length) withGap.push({ type: 'card', ...items[i] })
+  let gapInserted = false
+  for (let i = 0; i <= visible.length; i++) {
+    const insertHere = drag && !gapInserted && (
+      i === visible.length ||
+      (visible[i] && visible[i].origIndex >= drag.toIndex)
+    )
+    if (insertHere) { withGap.push({ type: 'gap' }); gapInserted = true }
+    if (i < visible.length) withGap.push({ type: 'card', ...visible[i] })
   }
-  if (!inserted && drag) withGap.push({ type: 'gap' })
+  if (drag && !gapInserted) withGap.push({ type: 'gap' })
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, position: 'relative', touchAction: 'none' }}>
-      {withGap.map((item, i) => {
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, position: 'relative', touchAction: 'none' }}>
+      {withGap.map((item, renderIdx) => {
         if (item.type === 'gap') {
-          return <div key="gap" style={{ width: 46, height: 66, border: '2px dashed var(--c-dash)', borderRadius: 3, flexShrink: 0 }} />
+          return (
+            <div key="gap" style={{
+              width: 46, height: 66, borderRadius: 3, flexShrink: 0,
+              border: '2px dashed var(--c-dash)',
+              background: 'rgba(34,211,238,0.08)',
+            }} />
+          )
         }
         const { card, origIndex } = item
-        const isDragged = drag?.cardId === card.id
-        const isSelected = selectedIds.includes(card.id)
+        const isSelected = !drag && selectedIds.includes(card.id)
         const isStaged   = stagedIds.includes(card.id)
         return (
-          <CardView
+          <div
             key={card.id}
-            card={card}
-            selected={isSelected && !isStaged}
-            dimmed={isStaged}
-            lifted={isDragged}
-            onClick={() => onToggle(card.id)}
-            onPointerDown={(e: React.PointerEvent) => {
-              e.currentTarget.setPointerCapture(e.pointerId)
-              const { clientX, clientY } = e
-              timerRef.current = setTimeout(() => {
-                startDrag(card.id, origIndex, clientX, clientY)
-              }, 180)
-            }}
-            onPointerUp={() => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null } }}
-            onPointerMove={(e: React.PointerEvent) => {
-              if (timerRef.current) {
-                const startX = e.currentTarget.getBoundingClientRect().left
-                const dx = Math.abs(e.clientX - startX)
-                if (dx > 8) { clearTimeout(timerRef.current); timerRef.current = null }
-              }
-            }}
-          />
+            ref={el => { if (el) cardElsRef.current.set(card.id, el); else cardElsRef.current.delete(card.id) }}
+            style={{ flexShrink: 0 }}
+          >
+            <CardView
+              card={card}
+              selected={isSelected && !isStaged}
+              dimmed={isStaged}
+              onClick={drag ? undefined : () => onToggle(card.id)}
+              onPointerDown={(e: React.PointerEvent) => {
+                e.preventDefault()
+                e.currentTarget.setPointerCapture(e.pointerId)
+                const { clientX, clientY } = e
+                timerRef.current = setTimeout(() => {
+                  startDrag(card.id, origIndex, clientX, clientY)
+                  timerRef.current = null
+                }, 200)
+              }}
+              onPointerUp={() => {
+                if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+              }}
+              onPointerMove={(e: React.PointerEvent) => {
+                if (timerRef.current) {
+                  if (Math.hypot(e.movementX, e.movementY) > 3) {
+                    clearTimeout(timerRef.current); timerRef.current = null
+                  }
+                }
+              }}
+            />
+          </div>
         )
       })}
-      {/* Floating drag ghost */}
+      {/* Floating ghost */}
       {drag && (() => {
         const dragged = hand.find(c => c.id === drag.cardId)
         if (!dragged) return null
@@ -851,26 +907,58 @@ export default function JokerGame() {
         </div>
       ))}
 
+      {/* Circle indicator */}
+      {(() => {
+        const circles = circlesCompleted(state.players)
+        return (
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: circles >= 2 ? 'var(--c-weight)' : 'var(--yellow)', marginBottom: 8 }}>
+            CIRCLE {circles + 1} {circles < 2 ? `— melding unlocks at circle 3` : '— melding OPEN'}
+          </div>
+        )
+      })()}
+
       {/* Center: deck / discard / trump / staged */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
+        {/* Deck */}
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>DECK ({state.deck.length})</div>
           {state.deck.length > 0
             ? <CardView card={state.deck[0]} faceDown onClick={inDraw ? () => dispatch({ type: 'DRAW_DECK' }) : undefined} />
             : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 11 }}>∅</div>}
         </div>
+
+        {/* Discard pile — starts empty */}
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>DISCARD</div>
           {topDiscard
-            ? <CardView card={topDiscard} onClick={inDraw ? () => dispatch({ type: 'DRAW_DISCARD' }) : undefined} />
-            : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)' }} />}
+            ? <CardView card={topDiscard} onClick={inDraw && human?.hasMelded ? () => dispatch({ type: 'DRAW_DISCARD' }) : undefined} />
+            : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 10 }}>—</div>}
         </div>
-        {state.trumpCard && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--c-journal)', marginBottom: 3 }}>TRUMP</div>
-            <CardView card={state.trumpCard} />
+
+        {/* Trump card — separate, never in discard pile */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--c-journal)', marginBottom: 3 }}>
+            TRUMP {state.trumpSuit ? suitSymbol(state.trumpSuit) : ''}
           </div>
-        )}
+          {state.trumpCard ? (
+            <div>
+              <CardView card={state.trumpCard} />
+              {inDraw && !state.drawnThisTurn && (
+                <button
+                  className="pixel-btn pixel-btn-warning"
+                  onClick={() => dispatch({ type: 'TAKE_TRUMP' })}
+                  style={{ fontSize: 7, padding: '4px 6px', marginTop: 4, width: '100%' }}
+                >
+                  TAKE (go out)
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={{ width: 46, height: 66, border: '2px dashed var(--border)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 10 }}>—</div>
+          )}
+        </div>
+
+        {/* Staged melds preview */}
         {state.stagedMelds.length > 0 && (
           <div style={{ flex: 1, minWidth: 120 }}>
             <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--yellow)', marginBottom: 3 }}>STAGED ({totalMeldValue(state.stagedMelds)} pts)</div>
@@ -923,10 +1011,11 @@ export default function JokerGame() {
       {/* Controls */}
       {inDraw && isMyTurn && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'DRAW_DECK' })}>DRAW DECK</button>
+          <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'DRAW_DECK' })}>DRAW FROM DECK</button>
           <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'DRAW_DISCARD' })}
-            disabled={!topDiscard || (!human?.hasMelded && topDiscard?.id !== state.trumpCard?.id)}>
-            DRAW DISCARD
+            disabled={!topDiscard || !human?.hasMelded}
+            title={!human?.hasMelded ? 'Draw from discard only after first meld (51+)' : ''}>
+            DRAW FROM DISCARD
           </button>
         </div>
       )}
