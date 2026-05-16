@@ -18,13 +18,17 @@ function meldProbability(turnCount: number): number {
 }
 
 export function aiChooseDiscard(hand: Card[], melds: Meld[]): Card {
+  // Never discard a Joker unless it is the only card in hand
+  const nonJokers = hand.filter(c => !c.isJoker)
+  const pool = nonJokers.length > 0 ? nonJokers : hand  // fall back to Joker only if no choice
+
   const usefulIds = new Set<string>()
-  findMeldsInHand(hand).forEach(m => m.forEach(c => usefulIds.add(c.id)))
-  const useless = hand.filter(c => !usefulIds.has(c.id))
+  findMeldsInHand(pool).forEach(m => m.forEach(c => usefulIds.add(c.id)))
+  const useless = pool.filter(c => !usefulIds.has(c.id))
   if (useless.length > 0) {
     return useless.sort((a, b) => handCardValue(b) - handCardValue(a))[0]
   }
-  return [...hand].sort((a, b) => cardPriority(a) - cardPriority(b))[0]
+  return [...pool].sort((a, b) => cardPriority(a) - cardPriority(b))[0]
 }
 
 export interface AIDecision {

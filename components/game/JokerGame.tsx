@@ -137,6 +137,7 @@ type Action =
   | { type: 'STEAL_JOKER'; meldId: string }
   | { type: 'BURN_MELD' }
   | { type: 'REPLACE_BURNING_JOKER' }
+  | { type: 'RETURN_TO_DISCARD' }
   | { type: 'DISCARD'; cardId: string }
   | { type: 'AI_TURN_DONE'; next: Partial<GameState> }
   | { type: 'NEXT_ROUND' }
@@ -155,7 +156,12 @@ function checkBurning(melds: Meld[], triggeredId: string): { burningMeldId: stri
 }
 
 function finishRound(state: GameState, winnerIndex: number, meldedOut: boolean, lastJoker: boolean): GameState {
-  const bonus = meldedOut ? (lastJoker ? -20 : -10) : -5
+  const winner = state.players[winnerIndex]
+  // Melded out all at once: -10 (or -20 if last card was Joker)
+  // Gradual exit (discard last card): -5 for human, -10 for AI
+  const bonus = meldedOut
+    ? (lastJoker ? -20 : -10)
+    : (winner.isHuman ? -5 : -10)
   const scores = state.players.map((p, i) => {
     if (i === winnerIndex) return bonus
     if (!p.hasMelded) return 10
@@ -350,16 +356,39 @@ function reducer(state: GameState, action: Action): GameState {
         message: '🔥 Set burned.' }
     }
 
+    case 'RETURN_TO_DISCARD': {
+      const drawnId = state.drawnFromDiscardCardId
+      if (!drawnId) return state
+      const card = cur.hand.find(c => c.id === drawnId)
+      if (!card) return { ...state, drawnFromDiscardCardId: null, phase: 'player-draw', drawnThisTurn: false }
+      // Remove from hand, clear from staged melds if present, put back on top of discard pile
+      const newHand   = cur.hand.filter(c => c.id !== drawnId)
+      const newStaged = state.stagedMelds
+        .map(m => m.filter(c => c.id !== drawnId))
+        .filter(m => m.length > 0)
+      return {
+        ...state,
+        players: mutPlayer(state, cp, { hand: newHand }),
+        discardPile: [...state.discardPile, card],
+        stagedMelds: newStaged,
+        selectedCardIds: state.selectedCardIds.filter(id => id !== drawnId),
+        drawnThisTurn: false,
+        drawnFromDiscardCardId: null,
+        phase: 'player-draw',
+        message: 'Card returned. Draw from deck or discard again.',
+      }
+    }
+
     case 'DISCARD': {
       if (state.phase !== 'player-action') return state
       if (!state.drawnThisTurn) return { ...state, message: 'Draw a card first.' }
 
-      // Discard-from-pile guard
+      // Discard-from-pile guard — always offer Return to Discard as escape
       if (state.drawnFromDiscardCardId) {
         const stillInHand = cur.hand.some(c => c.id === state.drawnFromDiscardCardId)
         const inStaged    = state.stagedMelds.flat().some(c => c.id === state.drawnFromDiscardCardId)
         if (stillInHand && !inStaged) {
-          return { ...state, message: '⚠ Must meld or add the drawn discard card before discarding!' }
+          return { ...state, message: '⚠ Use the drawn card in a meld — or click RETURN TO DISCARD.' }
         }
       }
 
@@ -925,6 +954,23 @@ export default function JokerGame() {
           {state.selectedCardIds.length === 1 && !state.burningMeldId && (
             <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'DISCARD', cardId: state.selectedCardIds[0] })}>DISCARD</button>
           )}
+          {/* Return to Discard — always visible when drawn-from-discard card is still in hand */}
+          {(() => {
+            const drawnId = state.drawnFromDiscardCardId
+            if (!drawnId) return null
+            const stillUnused = human?.hand.some(c => c.id === drawnId) &&
+              !state.stagedMelds.flat().some(c => c.id === drawnId)
+            if (!stillUnused) return null
+            return (
+              <button
+                className="pixel-btn pixel-btn-secondary"
+                onClick={() => dispatch({ type: 'RETURN_TO_DISCARD' })}
+                style={{ borderColor: 'var(--yellow)', color: 'var(--yellow)' }}
+              >
+                ↩ RETURN TO DISCARD
+              </button>
+            )
+          })()}
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>Long-press to drag · tap to select · STAGE → COMMIT to meld</div>
         </div>
       )}
