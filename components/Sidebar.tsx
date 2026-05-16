@@ -15,6 +15,7 @@ export default function Sidebar({ email }: { email: string }) {
     { href: '/weight',    label: t.nav.weight,    icon: '⚖' },
     { href: '/planner',   label: t.nav.planner,   icon: '◫' },
     { href: '/journal',   label: t.nav.journal,   icon: '📓' },
+    { href: '/game',      label: t.nav.game,       icon: '♦' },
   ]
 
   async function logout() {

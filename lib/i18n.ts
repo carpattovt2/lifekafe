@@ -19,6 +19,7 @@ const en = {
     weight:    'Weight',
     planner:   'Planner',
     journal:   'Journal',
+    game:      'Joker',
     logout:    'LOGOUT',
   },
   dashboard: {
@@ -132,6 +133,7 @@ const ua: typeof en = {
     weight:    'Вага',
     planner:   'Планувальник',
     journal:   'Журнал',
+    game:      'Джокер',
     logout:    'ВИЙТИ',
   },
   dashboard: {
