@@ -8,6 +8,7 @@ import {
   totalMeldValue, findMeldsInHand, isBurningGroup, sortedMeldCards,
 } from '@/lib/game/meld'
 import { computeAITurn } from '@/lib/game/ai'
+import { useLanguage } from '@/lib/LanguageContext'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 let _meldId = 0
@@ -225,13 +226,21 @@ function reducer(state: GameState, action: Action): GameState {
       if (state.drawnThisTurn || state.phase !== 'player-draw') return state
       const top = state.discardPile[state.discardPile.length - 1]
       if (!top) return { ...state, message: 'Discard pile is empty.' }
-      if (!cur.hasMelded)
-        return { ...state, message: 'Draw from discard only after your first meld (51+ pts).' }
+      // Circle restriction — discard draw only available from circle 3
+      if (circlesCompleted(state.players) < 2)
+        return { ...state, message: 'Cannot draw from discard until circle 3.' }
+      // Allow in two cases:
+      //  a) player already melded 51+ → free draw
+      //  b) player not yet melded → must use drawn card for first meld (enforced by drawnFromDiscardCardId)
+      const label = top.isJoker ? 'JOKER' : `${top.rank} ${suitSymbol(top.suit)}`
+      const msg = cur.hasMelded
+        ? `Took ${label} — free draw. Meld or discard.`
+        : `Took ${label} — must use in first meld (51+) this turn!`
       return {
         ...state, discardPile: state.discardPile.slice(0, -1),
         players: mutPlayer(state, cp, { hand: [...cur.hand, top] }),
         drawnThisTurn: true, drawnFromDiscardCardId: top.id, phase: 'player-action',
-        message: `Took ${top.isJoker ? 'JOKER' : top.rank + ' ' + suitSymbol(top.suit)} — must use it in a meld this turn!`,
+        message: msg,
       }
     }
 
@@ -407,11 +416,11 @@ function reducer(state: GameState, action: Action): GameState {
       if (state.phase !== 'player-action') return state
       if (!state.drawnThisTurn) return { ...state, message: 'Draw a card first.' }
 
-      // Discard-from-pile guard — always offer Return to Discard as escape
+      // Discard-from-pile guard — always offer RETURN TO DISCARD as escape
       if (state.drawnFromDiscardCardId) {
-        const stillInHand = cur.hand.some(c => c.id === state.drawnFromDiscardCardId)
-        const inStaged    = state.stagedMelds.flat().some(c => c.id === state.drawnFromDiscardCardId)
-        if (stillInHand && !inStaged) {
+        const drawnCard = cur.hand.find(c => c.id === state.drawnFromDiscardCardId)
+        const inStaged  = state.stagedMelds.flat().some(c => c.id === state.drawnFromDiscardCardId)
+        if (drawnCard && !inStaged) {
           return { ...state, message: '⚠ Use the drawn card in a meld — or click RETURN TO DISCARD.' }
         }
       }
@@ -738,8 +747,9 @@ function DraggableHand({ hand, selectedIds, stagedIds, onToggle, onReorder }: {
 }
 
 // ── Meld view ─────────────────────────────────────────────────────────────────
-function MeldView({ meld, playerNames, onAdd, onSteal, burning }: {
+function MeldView({ meld, playerNames, onAdd, onSteal, burning, addLabel = '+ADD', stealLabel = 'STEAL★' }: {
   meld: Meld; playerNames: string[]; onAdd?: () => void; onSteal?: () => void; burning?: boolean
+  addLabel?: string; stealLabel?: string
 }) {
   const ownerName = playerNames[meld.ownerIndex] ?? `P${meld.ownerIndex}`
   return (
@@ -757,8 +767,8 @@ function MeldView({ meld, playerNames, onAdd, onSteal, burning }: {
       </div>
       {(onAdd || onSteal) && (
         <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
-          {onAdd  && <button onClick={onAdd}  className="pixel-btn pixel-btn-secondary" style={{ fontSize: 6, padding: '3px 5px' }}>+ADD</button>}
-          {onSteal && meld.cards.some(c => c.isJoker) && <button onClick={onSteal} className="pixel-btn pixel-btn-warning" style={{ fontSize: 6, padding: '3px 5px' }}>STEAL★</button>}
+          {onAdd  && <button onClick={onAdd}  className="pixel-btn pixel-btn-secondary" style={{ fontSize: 6, padding: '3px 5px' }}>{addLabel}</button>}
+          {onSteal && meld.cards.some(c => c.isJoker) && <button onClick={onSteal} className="pixel-btn pixel-btn-warning" style={{ fontSize: 6, padding: '3px 5px' }}>{stealLabel}</button>}
         </div>
       )}
     </div>
@@ -766,17 +776,20 @@ function MeldView({ meld, playerNames, onAdd, onSteal, burning }: {
 }
 
 // ── Score board ───────────────────────────────────────────────────────────────
-function ScoreBoard({ players, roundScores }: { players: Player[]; roundScores: number[][] }) {
+function ScoreBoard({ players, roundScores, scoreLabel = 'SCORES', youLabel = 'YOU' }: {
+  players: Player[]; roundScores: number[][]
+  scoreLabel?: string; youLabel?: string
+}) {
   const totals = players.map((_, pi) => roundScores.reduce((s, r) => s + (r[pi] ?? 0), 0))
   return (
     <div style={{ fontFamily: "'VT323',monospace", fontSize: 15, overflowX: 'auto' }}>
-      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 4 }}>SCORES</div>
+      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 4 }}>{scoreLabel}</div>
       <div style={{ display: 'grid', gridTemplateColumns: `auto repeat(7,1fr) auto`, gap: 2, minWidth: 300 }}>
         {['','R1','R2','R3','R4','R5','R6','R7','Σ'].map((h,i) => (
           <div key={i} style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', textAlign: 'center', padding: '1px 3px' }}>{h}</div>
         ))}
         {players.map((p, pi) => (
-          [p.isHuman ? 'YOU' : p.name, ...roundScores.map(r => r[pi] ?? ''), totals[pi]].map((v, i) => (
+          [p.isHuman ? youLabel.toUpperCase() : p.name, ...roundScores.map(r => r[pi] ?? ''), totals[pi]].map((v, i) => (
             <div key={i} style={{ textAlign: 'center', padding: '1px 3px', color: i === 0 ? (p.isHuman ? 'var(--c-weight)' : 'var(--c-dash)') : 'var(--text)', fontSize: 13 }}>{v}</div>
           ))
         ))}
@@ -788,6 +801,8 @@ function ScoreBoard({ players, roundScores }: { players: Player[]; roundScores: 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function JokerGame() {
   const [state, dispatch] = useReducer(reducer, undefined, makeSetupState)
+  const { t } = useLanguage()
+  const tg = t.game
 
   // AI turn automation
   useEffect(() => {
@@ -805,9 +820,9 @@ export default function JokerGame() {
   if (state.phase === 'setup') {
     return (
       <div style={{ maxWidth: 500, margin: '0 auto', padding: '40px 16px', textAlign: 'center' }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 16, color: 'var(--c-journal)', marginBottom: 32 }}>♦ JOKER</h1>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 16, color: 'var(--c-journal)', marginBottom: 32 }}>{tg.title}</h1>
         <div className="pixel-card card-journal" style={{ padding: 28 }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: 'var(--muted)', marginBottom: 20 }}>NUMBER OF PLAYERS</div>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: 'var(--muted)', marginBottom: 20 }}>{tg.choosePlayers}</div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             {[2, 3, 4, 5].map(n => (
               <button key={n} className="pixel-btn pixel-btn-primary" style={{ fontSize: 14, padding: '14px 20px' }}
@@ -816,7 +831,7 @@ export default function JokerGame() {
               </button>
             ))}
           </div>
-          <div style={{ marginTop: 20, fontSize: 16, color: 'var(--muted)' }}>You are Player 1. Others are AI.</div>
+          <div style={{ marginTop: 20, fontSize: 16, color: 'var(--muted)' }}>{tg.youAreP1}</div>
         </div>
       </div>
     )
@@ -827,19 +842,20 @@ export default function JokerGame() {
     const totals = state.players.map((_, pi) => state.roundScores.reduce((s, r) => s + (r[pi] ?? 0), 0))
     const minScore = Math.min(...totals)
     const winner = state.players[totals.indexOf(minScore)]
+    const youLabel = t.nav.dashboard === 'Дашборд' ? 'Ти' : 'You'
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '28px 16px' }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 13, color: 'var(--c-journal)', marginBottom: 24 }}>♦ FINAL SCORES</h1>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 13, color: 'var(--c-journal)', marginBottom: 24 }}>{tg.finalScores}</h1>
         <div className="pixel-card card-journal" style={{ marginBottom: 20 }}>
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: winner.isHuman ? 'var(--c-weight)' : 'var(--red)', marginBottom: 16 }}>
-            {winner.isHuman ? '🏆 YOU WIN!' : `💀 ${winner.name} WINS`}
+            {winner.isHuman ? tg.youWin : `💀 ${winner.name} — ${tg.aiWins}`}
           </div>
           <div style={{ fontSize: 18, color: 'var(--muted)', marginBottom: 16 }}>
-            {state.players.map((p, i) => `${p.isHuman ? 'You' : p.name}: ${totals[i]}`).join(' · ')}<br />(lowest wins)
+            {state.players.map((p, i) => `${p.isHuman ? youLabel : p.name}: ${totals[i]}`).join(' · ')}<br />{tg.lowestWins}
           </div>
-          <ScoreBoard players={state.players} roundScores={state.roundScores} />
+          <ScoreBoard players={state.players} roundScores={state.roundScores} scoreLabel={tg.scores} youLabel={youLabel} />
         </div>
-        <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'INIT_ROUND' })}>NEW GAME</button>
+        <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'INIT_ROUND' })}>{tg.newGame}</button>
       </div>
     )
   }
@@ -847,25 +863,26 @@ export default function JokerGame() {
   if (state.phase === 'round-end') {
     const last = state.roundScores[state.roundScores.length - 1] ?? []
     const totals = state.players.map((_, pi) => state.roundScores.reduce((s, r) => s + (r[pi] ?? 0), 0))
+    const youLabel = t.nav.dashboard === 'Дашборд' ? 'Ти' : 'You'
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '28px 16px' }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: 'var(--c-journal)', marginBottom: 20 }}>♦ ROUND {state.roundNumber}</h1>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: 'var(--c-journal)', marginBottom: 20 }}>{tg.roundDone} {state.roundNumber}</h1>
         <div className="pixel-card card-journal" style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 18, marginBottom: 8 }}>
             {state.players.map((p, i) => (
               <span key={i} style={{ marginRight: 16 }}>
-                {p.isHuman ? 'You' : p.name}: <span style={{ color: (last[i] ?? 0) <= 0 ? 'var(--green)' : 'var(--red)' }}>{(last[i] ?? 0) > 0 ? '+' : ''}{last[i] ?? 0}</span>
+                {p.isHuman ? youLabel : p.name}: <span style={{ color: (last[i] ?? 0) <= 0 ? 'var(--green)' : 'var(--red)' }}>{(last[i] ?? 0) > 0 ? '+' : ''}{last[i] ?? 0}</span>
               </span>
             ))}
           </div>
           <div style={{ fontSize: 16, color: 'var(--muted)', marginBottom: 16 }}>
-            Running: {state.players.map((p, i) => `${p.isHuman ? 'You' : p.name} ${totals[i]}`).join(' · ')}
+            {tg.running} {state.players.map((p, i) => `${p.isHuman ? youLabel : p.name} ${totals[i]}`).join(' · ')}
           </div>
-          <ScoreBoard players={state.players} roundScores={state.roundScores} />
+          <ScoreBoard players={state.players} roundScores={state.roundScores} scoreLabel={tg.scores} youLabel={youLabel} />
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {state.roundNumber < 7 && <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'NEXT_ROUND' })}>ROUND {state.roundNumber + 1}</button>}
-          <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'END_GAME_EARLY' })}>END GAME{state.roundNumber < 7 ? ' (+25)' : ''}</button>
+          {state.roundNumber < 7 && <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'NEXT_ROUND' })}>{tg.nextRound} ({state.roundNumber + 1}/7)</button>}
+          <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'END_GAME_EARLY' })}>{tg.endGame}{state.roundNumber < 7 ? ' (+25)' : ''}</button>
         </div>
       </div>
     )
@@ -875,16 +892,17 @@ export default function JokerGame() {
   const inDraw   = state.phase === 'player-draw'
   const inAction = state.phase === 'player-action'
   const isMyTurn = state.players[state.currentPlayerIndex]?.isHuman
+  const youLabel = t.nav.dashboard === 'Дашборд' ? 'Ти' : 'You'
 
   return (
     <div style={{ maxWidth: 840, margin: '0 auto', padding: '12px 16px', userSelect: 'none' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
-        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: 'var(--c-journal)', margin: 0 }}>♦ JOKER</h1>
+        <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: 'var(--c-journal)', margin: 0 }}>{tg.title}</h1>
         <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)' }}>
-          ROUND {state.roundNumber}/7 · {state.trumpSuit ? `TRUMP: ${suitSymbol(state.trumpSuit)}` : 'NO TRUMP'}
+          R{state.roundNumber}/7 · {state.trumpSuit ? `${tg.trump}: ${suitSymbol(state.trumpSuit)}` : tg.noTrump}
         </div>
-        <ScoreBoard players={state.players} roundScores={state.roundScores} />
+        <ScoreBoard players={state.players} roundScores={state.roundScores} scoreLabel={tg.scores} youLabel={youLabel} />
       </div>
 
       {/* Message */}
@@ -899,7 +917,7 @@ export default function JokerGame() {
       {state.players.slice(1).map((p, i) => (
         <div key={p.id} style={{ marginBottom: 8 }}>
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: state.currentPlayerIndex === i + 1 ? 'var(--yellow)' : 'var(--c-dash)', marginBottom: 4 }}>
-            {p.name} ({p.hand.length} cards){p.hasMelded ? ' · MELDED' : ''}{state.currentPlayerIndex === i + 1 ? ' ◄ TURN' : ''}
+            {p.name} ({p.hand.length}){p.hasMelded ? tg.melded : ''}{state.currentPlayerIndex === i + 1 ? ' ◄' : ''}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {p.hand.map(c => <CardView key={c.id} card={c} faceDown small />)}
@@ -912,44 +930,38 @@ export default function JokerGame() {
         const circles = circlesCompleted(state.players)
         return (
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: circles >= 2 ? 'var(--c-weight)' : 'var(--yellow)', marginBottom: 8 }}>
-            CIRCLE {circles + 1} {circles < 2 ? `— melding unlocks at circle 3` : '— melding OPEN'}
+            {tg.circle} {circles + 1} {circles < 2 ? tg.meldLocked : tg.meldOpen}
           </div>
         )
       })()}
 
       {/* Center: deck / discard / trump / staged */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
-        {/* Deck */}
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>DECK ({state.deck.length})</div>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>{tg.deck} ({state.deck.length})</div>
           {state.deck.length > 0
             ? <CardView card={state.deck[0]} faceDown onClick={inDraw ? () => dispatch({ type: 'DRAW_DECK' }) : undefined} />
             : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 11 }}>∅</div>}
         </div>
 
-        {/* Discard pile — starts empty */}
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>DISCARD</div>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 3 }}>{tg.discardPile}</div>
           {topDiscard
-            ? <CardView card={topDiscard} onClick={inDraw && human?.hasMelded ? () => dispatch({ type: 'DRAW_DISCARD' }) : undefined} />
+            ? <CardView card={topDiscard} onClick={inDraw ? () => dispatch({ type: 'DRAW_DISCARD' }) : undefined} />
             : <div style={{ width: 46, height: 66, border: '2px dashed var(--border)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 10 }}>—</div>}
         </div>
 
-        {/* Trump card — separate, never in discard pile */}
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--c-journal)', marginBottom: 3 }}>
-            TRUMP {state.trumpSuit ? suitSymbol(state.trumpSuit) : ''}
+            {tg.trump} {state.trumpSuit ? suitSymbol(state.trumpSuit) : ''}
           </div>
           {state.trumpCard ? (
             <div>
               <CardView card={state.trumpCard} />
               {inDraw && !state.drawnThisTurn && (
-                <button
-                  className="pixel-btn pixel-btn-warning"
-                  onClick={() => dispatch({ type: 'TAKE_TRUMP' })}
-                  style={{ fontSize: 7, padding: '4px 6px', marginTop: 4, width: '100%' }}
-                >
-                  TAKE (go out)
+                <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'TAKE_TRUMP' })}
+                  style={{ fontSize: 7, padding: '4px 6px', marginTop: 4, width: '100%' }}>
+                  {tg.takeTrump}
                 </button>
               )}
             </div>
@@ -958,10 +970,9 @@ export default function JokerGame() {
           )}
         </div>
 
-        {/* Staged melds preview */}
         {state.stagedMelds.length > 0 && (
           <div style={{ flex: 1, minWidth: 120 }}>
-            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--yellow)', marginBottom: 3 }}>STAGED ({totalMeldValue(state.stagedMelds)} pts)</div>
+            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--yellow)', marginBottom: 3 }}>{tg.staged} ({totalMeldValue(state.stagedMelds)} pts)</div>
             {state.stagedMelds.map((m, i) => (
               <div key={i} style={{ display: 'flex', gap: 2, marginBottom: 3, flexWrap: 'wrap' }}>
                 {m.map(c => <CardView key={c.id} card={c} small />)}
@@ -975,7 +986,7 @@ export default function JokerGame() {
       {/* Table melds */}
       {state.melds.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 5 }}>TABLE</div>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: 'var(--muted)', marginBottom: 5 }}>{tg.table}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {state.melds.map(meld => (
               <MeldView key={meld.id} meld={meld} playerNames={playerNames}
@@ -984,6 +995,7 @@ export default function JokerGame() {
                   ? () => dispatch({ type: 'ADD_TO_MELD', meldId: meld.id }) : undefined}
                 onSteal={inAction && state.selectedCardIds.length === 1 && meld.id !== state.burningMeldId
                   ? () => dispatch({ type: 'STEAL_JOKER', meldId: meld.id }) : undefined}
+                stealLabel={tg.stealJoker} addLabel={tg.addToSet}
               />
             ))}
           </div>
@@ -994,7 +1006,7 @@ export default function JokerGame() {
       {human && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--c-weight)', marginBottom: 5 }}>
-            YOUR HAND ({human.hand.length}) {human.hasMelded ? '· MELDED' : '· need 51+'}
+            {tg.yourHand} ({human.hand.length}) {human.hasMelded ? tg.melded : tg.needPts}
             {state.drawnFromDiscardCardId && <span style={{ color: 'var(--yellow)', marginLeft: 8 }}>⚠ use drawn card!</span>}
             {state.selectedCardIds.length > 0 && <span style={{ color: 'var(--yellow)', marginLeft: 8 }}>{state.selectedCardIds.length} selected</span>}
           </div>
@@ -1011,11 +1023,11 @@ export default function JokerGame() {
       {/* Controls */}
       {inDraw && isMyTurn && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'DRAW_DECK' })}>DRAW FROM DECK</button>
+          <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'DRAW_DECK' })}>{tg.drawDeck}</button>
           <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'DRAW_DISCARD' })}
-            disabled={!topDiscard || !human?.hasMelded}
-            title={!human?.hasMelded ? 'Draw from discard only after first meld (51+)' : ''}>
-            DRAW FROM DISCARD
+            disabled={!topDiscard || circlesCompleted(state.players) < 2}
+            title={circlesCompleted(state.players) < 2 ? tg.noMeldCircle : ''}>
+            {tg.drawDiscard}
           </button>
         </div>
       )}
@@ -1025,25 +1037,24 @@ export default function JokerGame() {
           {state.burningMeldId ? (
             <>
               {state.burningHasJoker && state.selectedCardIds.length === 2 && (
-                <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'REPLACE_BURNING_JOKER' })}>RESCUE JOKER (2 cards)</button>
+                <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'REPLACE_BURNING_JOKER' })}>{tg.rescueJoker}</button>
               )}
-              <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'BURN_MELD' })}>🔥 BURN SET</button>
+              <button className="pixel-btn pixel-btn-danger" onClick={() => dispatch({ type: 'BURN_MELD' })}>{tg.burnSet}</button>
             </>
           ) : (
             <>
-              <button className="pixel-btn pixel-btn-success" onClick={() => dispatch({ type: 'STAGE_MELD' })} disabled={state.selectedCardIds.length < 3}>STAGE MELD</button>
+              <button className="pixel-btn pixel-btn-success" onClick={() => dispatch({ type: 'STAGE_MELD' })} disabled={state.selectedCardIds.length < 3}>{tg.stageMeld}</button>
               {state.stagedMelds.length > 0 && (
                 <>
-                  <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'COMMIT_MELDS' })}>COMMIT ({totalMeldValue(state.stagedMelds)} pts)</button>
-                  <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'CLEAR_STAGED' })}>CLEAR</button>
+                  <button className="pixel-btn pixel-btn-primary" onClick={() => dispatch({ type: 'COMMIT_MELDS' })}>{tg.commitMelds} ({totalMeldValue(state.stagedMelds)} pts)</button>
+                  <button className="pixel-btn pixel-btn-secondary" onClick={() => dispatch({ type: 'CLEAR_STAGED' })}>{tg.clearStaged}</button>
                 </>
               )}
             </>
           )}
           {state.selectedCardIds.length === 1 && !state.burningMeldId && (
-            <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'DISCARD', cardId: state.selectedCardIds[0] })}>DISCARD</button>
+            <button className="pixel-btn pixel-btn-warning" onClick={() => dispatch({ type: 'DISCARD', cardId: state.selectedCardIds[0] })}>{tg.discardBtn}</button>
           )}
-          {/* Return to Discard — always visible when drawn-from-discard card is still in hand */}
           {(() => {
             const drawnId = state.drawnFromDiscardCardId
             if (!drawnId) return null
@@ -1051,21 +1062,19 @@ export default function JokerGame() {
               !state.stagedMelds.flat().some(c => c.id === drawnId)
             if (!stillUnused) return null
             return (
-              <button
-                className="pixel-btn pixel-btn-secondary"
+              <button className="pixel-btn pixel-btn-secondary"
                 onClick={() => dispatch({ type: 'RETURN_TO_DISCARD' })}
-                style={{ borderColor: 'var(--yellow)', color: 'var(--yellow)' }}
-              >
-                ↩ RETURN TO DISCARD
+                style={{ borderColor: 'var(--yellow)', color: 'var(--yellow)' }}>
+                {tg.returnDiscard}
               </button>
             )
           })()}
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Long-press to drag · tap to select · STAGE → COMMIT to meld</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Long-press → drag · tap → select · STAGE → COMMIT</div>
         </div>
       )}
 
       {state.phase === 'ai-turn' && (
-        <div style={{ fontSize: 17, color: 'var(--muted)' }}>{state.players[state.currentPlayerIndex]?.name} is thinking<span className="blink">…</span></div>
+        <div style={{ fontSize: 17, color: 'var(--muted)' }}>{state.players[state.currentPlayerIndex]?.name} {tg.aiThinking}<span className="blink">…</span></div>
       )}
     </div>
   )

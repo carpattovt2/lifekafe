@@ -22,15 +22,28 @@ export function aiChooseDiscard(hand: Card[], tableMelds: Meld[]): Card {
   const nonJokers = hand.filter(c => !c.isJoker)
   const pool = nonJokers.length > 0 ? nonJokers : hand
 
-  // Find cards worth keeping (complete melds, near-melds, addable to table)
+  // Cards that can extend the HUMAN player's (ownerIndex=0) table melds
+  // AI slightly avoids discarding these (competitive: don't feed player useful cards)
+  const humanMelds = tableMelds.filter(m => m.ownerIndex === 0)
+  const usefulToHuman = new Set<string>()
+  for (const card of pool) {
+    for (const meld of humanMelds) {
+      if (canAddToMeld(meld, [card])) { usefulToHuman.add(card.id); break }
+    }
+  }
+
+  // Find cards worth keeping for AI's own melds/near-melds
   const usefulIds = findUsefulCardIds(pool, tableMelds)
   const useless   = pool.filter(c => !usefulIds.has(c.id))
 
-  if (useless.length > 0) {
-    // Discard highest-value useless card first
-    return useless.sort((a, b) => handCardValue(b) - handCardValue(a))[0]
+  // Among useless cards: prefer discarding ones that can't help human (less generous)
+  const notUsefulToHuman = useless.filter(c => !usefulToHuman.has(c.id))
+  const candidates = notUsefulToHuman.length > 0 ? notUsefulToHuman : useless
+
+  if (candidates.length > 0) {
+    return candidates.sort((a, b) => handCardValue(b) - handCardValue(a))[0]
   }
-  // All somewhat useful — discard lowest-priority card
+  // All somewhat useful to AI — discard lowest-priority
   return [...pool].sort((a, b) => cardPriority(a) - cardPriority(b))[0]
 }
 

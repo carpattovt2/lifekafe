@@ -167,15 +167,35 @@ export function canStealJoker(meld: Meld, realCard: Card): { canSteal: boolean; 
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
 
+// Ace value depends on context: group→10, sequence A-2-3→1, sequence Q-K-A→10
+function acePointValue(cards: Card[]): number {
+  if (isValidGroup(cards)) return 10
+  // In a sequence: low ace (A-2-3...) = 1, high ace (...Q-K-A) = 10
+  const real = cards.filter(c => !c.isJoker)
+  return real.some(c => c.rank === '2') ? 1 : 10
+}
+
+function cardPoints(rank: string, aceVal: number): number {
+  if (rank === 'A') return aceVal
+  if (['10','J','Q','K'].includes(rank)) return 10
+  return parseInt(rank) || 0
+}
+
 export function meldValue(cards: Card[]): number {
   const jokers = cards.filter(c => c.isJoker)
   const real   = cards.filter(c => !c.isJoker)
-  let total = real.reduce((s, c) => s + meldCardValue(c.rank), 0)
+  const hasAce = real.some(c => c.rank === 'A')
+  const aceVal = hasAce ? acePointValue(cards) : 10  // irrelevant if no ace
+
+  let total = real.reduce((s, c) => s + cardPoints(c.rank, aceVal), 0)
+
   if (jokers.length > 0) {
     if (isValidGroup(cards)) {
-      const rank = real[0]?.rank
-      if (rank) total += jokers.length * meldCardValue(rank)
+      // Joker adopts value of the group's rank
+      const rank = real[0]?.rank ?? '0'
+      total += jokers.length * cardPoints(rank, 10)  // Ace in group = 10
     } else {
+      // Joker in sequence: approximate as 8
       total += jokers.length * 8
     }
   }
