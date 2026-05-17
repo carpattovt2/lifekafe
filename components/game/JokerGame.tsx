@@ -23,35 +23,44 @@ function useGameSounds(enabled: boolean) {
     if (ctxRef.current.state === 'suspended') ctxRef.current.resume()
     return ctxRef.current
   }
-  const play = useCallback((type: 'draw'|'discard'|'meld'|'burn') => {
-    if (!enabled) return
+  function noise(duration: number, gainVal: number) {
     try {
       const ctx = getCtx(); if (!ctx) return
-      const gain = ctx.createGain(); gain.connect(ctx.destination)
-      const osc  = ctx.createOscillator(); osc.connect(gain); const now = ctx.currentTime
-      switch (type) {
-        case 'draw':
-          osc.type='sine'; osc.frequency.setValueAtTime(520,now); osc.frequency.linearRampToValueAtTime(780,now+0.12)
-          gain.gain.setValueAtTime(0.18,now); gain.gain.exponentialRampToValueAtTime(0.001,now+0.18)
-          osc.start(now); osc.stop(now+0.18); break
-        case 'discard':
-          osc.type='triangle'; osc.frequency.setValueAtTime(280,now)
-          gain.gain.setValueAtTime(0.22,now); gain.gain.exponentialRampToValueAtTime(0.001,now+0.09)
-          osc.start(now); osc.stop(now+0.09); break
-        case 'meld': {
-          const o2=ctx.createOscillator(),g2=ctx.createGain(); o2.connect(g2); g2.connect(ctx.destination)
-          osc.type='sine'; o2.type='sine'; osc.frequency.value=523; o2.frequency.value=659
-          gain.gain.setValueAtTime(0.16,now); gain.gain.exponentialRampToValueAtTime(0.001,now+0.28)
-          g2.gain.setValueAtTime(0.12,now); g2.gain.exponentialRampToValueAtTime(0.001,now+0.28)
-          osc.start(now); o2.start(now); osc.stop(now+0.3); o2.stop(now+0.3); break }
-        case 'burn':
-          osc.type='sawtooth'; osc.frequency.setValueAtTime(180,now); osc.frequency.linearRampToValueAtTime(40,now+0.5)
-          gain.gain.setValueAtTime(0.3,now); gain.gain.exponentialRampToValueAtTime(0.001,now+0.5)
-          osc.start(now); osc.stop(now+0.5); break
-      }
+      const sr = ctx.sampleRate, buf = ctx.createBuffer(1, sr*duration, sr)
+      const data = buf.getChannelData(0); for(let i=0;i<data.length;i++) data[i]=Math.random()*2-1
+      const src = ctx.createBufferSource(); src.buffer=buf
+      const g = ctx.createGain(); g.gain.setValueAtTime(gainVal,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+duration)
+      src.connect(g); g.connect(ctx.destination); src.start(); src.stop(ctx.currentTime+duration)
     } catch {}
+  }
+
+  function tone(freq: number, duration: number, gainVal: number, type: OscillatorType='sine', delay=0) {
+    try {
+      const ctx = getCtx(); if (!ctx) return
+      const osc=ctx.createOscillator(), g=ctx.createGain()
+      osc.type=type; osc.frequency.value=freq
+      g.gain.setValueAtTime(0.001,ctx.currentTime+delay); g.gain.linearRampToValueAtTime(gainVal,ctx.currentTime+delay+0.01)
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+delay+duration)
+      osc.connect(g); g.connect(ctx.destination); osc.start(ctx.currentTime+delay); osc.stop(ctx.currentTime+delay+duration+0.05)
+    } catch {}
+  }
+
+  const play = useCallback((type: 'draw'|'discard'|'meld'|'burn'|'select'|'invalid'|'aiTick'|'roundWin'|'gameWin'|'shuffle') => {
+    if (!enabled) return
+    switch (type) {
+      case 'select':   tone(880,0.05,0.12,'sine'); break
+      case 'draw':     tone(520,0.08,0.15,'sine'); tone(780,0.1,0.12,'sine',0.07); break
+      case 'discard':  tone(200,0.1,0.22,'triangle'); break
+      case 'meld':     tone(523,0.15,0.18,'sine'); tone(659,0.15,0.14,'sine',0.15); tone(784,0.18,0.16,'sine',0.3); break
+      case 'burn':     noise(0.12,0.35); noise(0.15,0.25); noise(0.2,0.15); break
+      case 'invalid':  tone(150,0.2,0.25,'sawtooth'); break
+      case 'aiTick':   tone(600,0.06,0.08,'sine'); break
+      case 'shuffle':  noise(0.08,0.2); noise(0.06,0.15); noise(0.08,0.18); noise(0.06,0.12); break
+      case 'roundWin': [523,587,659,698,784].forEach((f,i)=>tone(f,0.12,0.18,'sine',i*0.1)); break
+      case 'gameWin':  [523,587,659,698,784,880,988,1047].forEach((f,i)=>tone(f,0.14,0.2,'sine',i*0.15)); break
+    }
   }, [enabled])
-  return { play }
+  return { play, noise, tone }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -262,8 +271,25 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void) {
   const usedIds=new Set<string>()
   if(decision.drawFromDiscard&&discardPile.length){hand=[...hand,discardPile[discardPile.length-1]];discardPile=discardPile.slice(0,-1)}
   else if(deck.length){hand=[...hand,deck[0]];deck=deck.slice(1)}
-  if(decision.meldsToPlay.length){for(const mc of decision.meldsToPlay){melds=[...melds,makeMeld(mc,cp)];mc.forEach(c=>usedIds.add(c.id))};hasMelded=true;hand=hand.filter(c=>!usedIds.has(c.id))}
-  if(hasMelded){for(const{meldId,cards}of decision.cardsToAddToMeld){const meld=melds.find(m=>m.id===meldId);if(!meld)continue;const nm=updatedMeld(meld,cards);melds=melds.map(m=>m.id===meldId?nm:m);cards.forEach(c=>usedIds.add(c.id));hand=hand.filter(c=>!cards.map(x=>x.id).includes(c.id))}}
+  if(decision.meldsToPlay.length){
+    for(const mc of decision.meldsToPlay){
+      if(!isValidMeld(mc)) continue  // strict validation — no invalid melds
+      melds=[...melds,makeMeld(mc,cp)]
+      mc.forEach(c=>usedIds.add(c.id))
+    }
+    hasMelded=true; hand=hand.filter(c=>!usedIds.has(c.id))
+  }
+  if(hasMelded){
+    for(const{meldId,cards}of decision.cardsToAddToMeld){
+      const meld=melds.find(m=>m.id===meldId); if(!meld) continue
+      // Strict validation: check duplicates + group max-4 + sequence validity
+      if(!canAddToMeld(meld,cards)) continue
+      const nm=updatedMeld(meld,cards)
+      melds=melds.map(m=>m.id===meldId?nm:m)
+      cards.forEach(c=>usedIds.add(c.id))
+      hand=hand.filter(c=>!cards.map(x=>x.id).includes(c.id))
+    }
+  }
   let burningMeldId=s.burningMeldId,burningHasJoker=s.burningHasJoker
   const newBurning=melds.find(m=>isBurningGroup(m)&&m.id!==burningMeldId)
   if(newBurning&&!burningMeldId){burningMeldId=newBurning.id;burningHasJoker=newBurning.cards.some(c=>c.isJoker)}
@@ -532,6 +558,26 @@ export default function JokerGame(){
     }
   },[state.drawnThisTurn])
 
+  // AI tick-tock while AI thinks
+  const aiTickRef=useRef<ReturnType<typeof setInterval>|null>(null)
+  useEffect(()=>{
+    if(state.phase==='ai-turn'&&soundEnabled){
+      aiTickRef.current=setInterval(()=>play('aiTick'),600)
+    }else{
+      if(aiTickRef.current){clearInterval(aiTickRef.current);aiTickRef.current=null}
+    }
+    return()=>{if(aiTickRef.current){clearInterval(aiTickRef.current);aiTickRef.current=null}}
+  },[state.phase,soundEnabled])
+
+  // Round / game win sounds
+  const prevPhase=useRef<string>('')
+  useEffect(()=>{
+    if(state.phase===prevPhase.current)return
+    prevPhase.current=state.phase
+    if(state.phase==='round-end')play('roundWin')
+    if(state.phase==='game-end')play('gameWin')
+  },[state.phase])
+
   const human=state.players[0],topDiscard=state.discardPile[state.discardPile.length-1]
   const stagedIds=new Set(state.stagedMelds.flat().map(c=>c.id))
   const playerNames=state.players.map(p=>p.isHuman?'You':p.name)
@@ -650,7 +696,7 @@ export default function JokerGame(){
       )}
 
       {/* ZONE 1: AI Players */}
-      <div style={{background:'rgba(0,0,0,0.45)',borderBottom:'1px solid rgba(255,255,255,0.06)',padding:'10px 16px'}}>
+      <div className="ai-zone" style={{borderBottom:'1px solid rgba(255,255,255,0.06)',padding:'10px 16px'}}>
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'rgba(255,255,255,0.3)',marginBottom:8}}>{tg.aiZone}</div>
         <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
           {state.players.slice(1).map((p,i)=>{
@@ -694,9 +740,15 @@ export default function JokerGame(){
             <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'#ffd700',marginBottom:6}}>{tg.trump} {state.trumpSuit?suitSymbol(state.trumpSuit):''}</div>
             {state.trumpCard?(
               <div>
-                <div style={{boxShadow:'0 0 14px #ffd700, 0 6px 18px rgba(0,0,0,0.55)',display:'inline-block',borderRadius:4}}><CardView card={state.trumpCard} tableCard/></div>
-                {inDraw&&!state.drawnThisTurn&&circles>=2&&(
+                <div style={{boxShadow:'0 0 14px #ffd700, 0 6px 18px rgba(0,0,0,0.55)',display:'inline-block',borderRadius:4,opacity:human?.hasMelded?0.4:1,filter:human?.hasMelded?'grayscale(0.5)':undefined}}>
+                  <CardView card={state.trumpCard} tableCard/>
+                </div>
+                {/* Trump only available BEFORE player's first meld */}
+                {inDraw&&!state.drawnThisTurn&&circles>=2&&!human?.hasMelded&&(
                   <button className="pixel-btn pixel-btn-warning" onClick={()=>dispatch({type:'TAKE_TRUMP'})} style={{fontSize:8,padding:'4px 6px',marginTop:6,width:'100%'}}>{tg.takeTrump}</button>
+                )}
+                {human?.hasMelded&&(
+                  <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:6,color:'rgba(255,215,0,0.45)',marginTop:4,textAlign:'center'}}>NOT AVAILABLE</div>
                 )}
               </div>
             ):<div style={{width:62,height:88,border:'2px dashed rgba(255,215,0,0.3)',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,215,0,0.4)',fontSize:18}}>—</div>}
@@ -715,11 +767,11 @@ export default function JokerGame(){
           )}
         </div>
 
-        {/* Melds */}
+        {/* Melds — flex-wrap, max 2 rows, scroll if more */}
         {state.melds.length>0&&(
           <div>
             <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'rgba(255,255,255,0.35)',marginBottom:6}}>{tg.tableZone} ({state.melds.length})</div>
-            <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:4,WebkitOverflowScrolling:'touch' as any}}>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,maxHeight:240,overflowY:'auto',paddingBottom:4}}>
               {state.melds.map(meld=>(
                 <MeldView key={meld.id} meld={meld} playerNames={playerNames} cardBack={cardBack} burning={meld.id===state.burningMeldId} addLabel={tg.addToSet} stealLabel={tg.stealJoker}
                   onAdd={inAction&&state.selectedCardIds.length>0&&meld.id!==state.burningMeldId?()=>dispatch({type:'ADD_TO_MELD',meldId:meld.id}):undefined}
@@ -732,7 +784,7 @@ export default function JokerGame(){
       </div>
 
       {/* ZONE 3: Player hand */}
-      <div className={`hand-zone ${isMyTurn?'player-turn-bar':''}`} style={{padding:'12px 16px',borderTop:`3px solid ${isMyTurn?'#00ff88':'transparent'}`}}>
+      <div className={`hand-zone ${isMyTurn?'player-turn-bar':''} game-safe-bottom`} style={{padding:'12px 16px 130px',borderTop:`3px solid ${isMyTurn?'#00ff88':'transparent'}`}}>
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:isMyTurn?'#00ff88':'rgba(255,255,255,0.35)',marginBottom:8}}>{tg.handZone}</div>
 
         {human&&(
@@ -744,44 +796,64 @@ export default function JokerGame(){
               <button onClick={handleSort} className="pixel-btn pixel-btn-secondary" style={{fontSize:9,padding:'5px 10px',marginLeft:'auto'}}>{tg.sortLabel}: {sortMode==='none'?tg.sortNone:sortMode==='suit'?tg.sortSuit:tg.sortRank}</button>
             </div>
             <DraggableHand hand={human.hand} selectedIds={state.selectedCardIds} stagedIds={Array.from(stagedIds)} drawnCardId={drawnCardId} cardBack={cardBack} highlights={highlights}
-              onToggle={id=>inAction&&dispatch({type:'TOGGLE_CARD',cardId:id})}
+              onToggle={id=>{if(inAction){play('select');dispatch({type:'TOGGLE_CARD',cardId:id})}}}
               onReorder={(from,to)=>dispatch({type:'REORDER_HAND',fromIndex:from,toIndex:to})}
             />
           </>
         )}
 
         {/* Action buttons */}
-        <div style={{marginTop:12}}>
-          {inDraw&&isMyTurn&&(
-            <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-              <button className="pixel-btn" onClick={()=>dispatch({type:'DRAW_DECK'})} style={{flex:1,minWidth:140,justifyContent:'center',fontSize:14,padding:'14px 18px',background:'#1d4ed8',color:'#fff',border:'2px solid #3b82f6',boxShadow:'4px 4px 0 rgba(0,0,0,0.6)'}}>{tg.drawDeck}</button>
-              <button className="pixel-btn" onClick={()=>dispatch({type:'DRAW_DISCARD'})} disabled={!topDiscard||circles<2} style={{flex:1,minWidth:140,justifyContent:'center',fontSize:14,padding:'14px 18px',background:circles>=2&&topDiscard?'#b45309':'#3a3a5a',color:'#fff',border:`2px solid ${circles>=2&&topDiscard?'#fb923c':'var(--border)'}`,opacity:!topDiscard||circles<2?0.55:1,boxShadow:'4px 4px 0 rgba(0,0,0,0.6)'}}>{tg.drawDiscard}</button>
+      </div>
+
+      {/* ── Fixed bottom action bar ── */}
+      {isMyTurn&&(
+        <div className="fixed-actions">
+          {inDraw&&(
+            <div style={{display:'flex',gap:8}}>
+              <button className="pixel-btn" onClick={()=>dispatch({type:'DRAW_DECK'})}
+                style={{flex:1,justifyContent:'center',fontSize:13,padding:'13px 16px',background:'#1e3a5f',color:'#c8dcf0',border:'2px solid #2a5491',boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
+                {tg.drawDeck}
+              </button>
+              <button className="pixel-btn" onClick={()=>dispatch({type:'DRAW_DISCARD'})}
+                disabled={!topDiscard||circles<2}
+                title={circles<2?tg.noMeldCircle:''}
+                style={{flex:1,justifyContent:'center',fontSize:13,padding:'13px 16px',background:circles>=2&&topDiscard?'#5c3a1e':'#2a2a3a',color:circles>=2&&topDiscard?'#f0d0a8':'#666',border:`2px solid ${circles>=2&&topDiscard?'#8b5a2b':'#444'}`,opacity:!topDiscard||circles<2?0.5:1,boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
+                {tg.drawDiscard}
+              </button>
             </div>
           )}
-
-          {inAction&&isMyTurn&&(
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+          {inAction&&(
+            <div style={{display:'flex',gap:7,flexWrap:'wrap',alignItems:'center'}}>
               {state.takenTrumpCard&&(
                 <button className="pixel-btn pixel-btn-secondary" onClick={()=>dispatch({type:'RETURN_TRUMP'})} style={{borderColor:'#ffd700',color:'#ffd700',fontSize:9}}>{tg.returnTrump}</button>
               )}
               {state.burningMeldId?(
                 <>
-                  {state.burningHasJoker&&state.selectedCardIds.length===2&&<button className="pixel-btn pixel-btn-warning" onClick={()=>{play('meld');dispatch({type:'REPLACE_BURNING_JOKER'})}}>{tg.rescueJoker}</button>}
-                  <button className="pixel-btn pixel-btn-danger" onClick={()=>{play('burn');dispatch({type:'BURN_MELD'})}}>{tg.burnSet}</button>
+                  {state.burningHasJoker&&state.selectedCardIds.length===2&&(
+                    <button className="pixel-btn pixel-btn-warning" onClick={()=>{play('meld');dispatch({type:'REPLACE_BURNING_JOKER'})}} style={{fontSize:10}}>{tg.rescueJoker}</button>
+                  )}
+                  <button className="pixel-btn pixel-btn-danger" onClick={()=>{play('burn');dispatch({type:'BURN_MELD'})}} style={{fontSize:11}}>{tg.burnSet}</button>
                 </>
               ):(
                 <>
-                  <button className="pixel-btn pixel-btn-success" onClick={()=>dispatch({type:'STAGE_MELD'})} disabled={state.selectedCardIds.length<3} style={{fontSize:11,padding:'10px 14px'}}>{tg.stageMeld}</button>
+                  <button className="pixel-btn" onClick={()=>dispatch({type:'STAGE_MELD'})} disabled={state.selectedCardIds.length<3}
+                    style={{fontSize:12,padding:'10px 14px',background:'#1a4a28',color:'#90d4a0',border:'2px solid #2a7a3a',boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
+                    {tg.stageMeld}
+                  </button>
                   {state.stagedMelds.length>0&&(
                     <>
-                      <button className="pixel-btn pixel-btn-primary" onClick={()=>{play('meld');dispatch({type:'COMMIT_MELDS'})}} style={{fontSize:11,padding:'10px 14px'}}>{tg.commitMelds} ({totalMeldValue(state.stagedMelds)} pts)</button>
+                      <button className="pixel-btn" onClick={()=>{play('meld');dispatch({type:'COMMIT_MELDS'})}}
+                        style={{fontSize:12,padding:'10px 14px',background:'#1a2a5a',color:'#90b0e0',border:'2px solid #2a4a8a',boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
+                        {tg.commitMelds} ({totalMeldValue(state.stagedMelds)} pts)
+                      </button>
                       <button className="pixel-btn pixel-btn-secondary" onClick={()=>dispatch({type:'CLEAR_STAGED'})} style={{fontSize:9}}>{tg.clearStaged}</button>
                     </>
                   )}
                 </>
               )}
               {state.selectedCardIds.length===1&&!state.burningMeldId&&(
-                <button className="pixel-btn" onClick={()=>{play('discard');dispatch({type:'DISCARD',cardId:state.selectedCardIds[0]})}} style={{background:'#7c2d12',color:'#fff',border:'2px solid #ea580c',fontSize:14,padding:'12px 20px'}}>
+                <button className="pixel-btn" onClick={()=>{play('discard');dispatch({type:'DISCARD',cardId:state.selectedCardIds[0]})}}
+                  style={{flex:1,justifyContent:'center',fontSize:14,padding:'12px 18px',background:'#4a1a1a',color:'#e0a0a0',border:'2px solid #7a2a2a',boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
                   {tg.discardBtn}
                 </button>
               )}
@@ -789,12 +861,12 @@ export default function JokerGame(){
                 const drawnId=state.drawnFromDiscardCardId;if(!drawnId)return null
                 const stillUnused=human?.hand.some(c=>c.id===drawnId)&&!state.stagedMelds.flat().some(c=>c.id===drawnId)
                 if(!stillUnused)return null
-                return <button className="pixel-btn pixel-btn-secondary" onClick={()=>dispatch({type:'RETURN_TO_DISCARD'})} style={{borderColor:'var(--yellow)',color:'var(--yellow)',fontSize:9}}>{tg.returnDiscard}</button>
+                return<button className="pixel-btn pixel-btn-secondary" onClick={()=>dispatch({type:'RETURN_TO_DISCARD'})} style={{borderColor:'var(--yellow)',color:'var(--yellow)',fontSize:9}}>{tg.returnDiscard}</button>
               })()}
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

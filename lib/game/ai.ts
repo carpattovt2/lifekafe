@@ -1,5 +1,5 @@
 import type { Card, GameState, Meld } from './types'
-import { meldValue, findMeldsInHand, totalMeldValue, canAddToMeld, isValidMeld, isBurningGroup, findUsefulCardIds } from './meld'
+import { meldValue, findMeldsInHand, totalMeldValue, canAddToMeld, isValidMeld, isBurningGroup, findUsefulCardIds, isValidGroup } from './meld'
 import { handCardValue } from './cards'
 
 function cardPriority(card: Card): number {
@@ -18,12 +18,9 @@ function meldProbability(turnCount: number): number {
 }
 
 export function aiChooseDiscard(hand: Card[], tableMelds: Meld[]): Card {
-  // Never discard a Joker if other cards available
   const nonJokers = hand.filter(c => !c.isJoker)
   const pool = nonJokers.length > 0 ? nonJokers : hand
 
-  // Cards that can extend the HUMAN player's (ownerIndex=0) table melds
-  // AI slightly avoids discarding these (competitive: don't feed player useful cards)
   const humanMelds = tableMelds.filter(m => m.ownerIndex === 0)
   const usefulToHuman = new Set<string>()
   for (const card of pool) {
@@ -32,18 +29,14 @@ export function aiChooseDiscard(hand: Card[], tableMelds: Meld[]): Card {
     }
   }
 
-  // Find cards worth keeping for AI's own melds/near-melds
   const usefulIds = findUsefulCardIds(pool, tableMelds)
   const useless   = pool.filter(c => !usefulIds.has(c.id))
-
-  // Among useless cards: prefer discarding ones that can't help human (less generous)
   const notUsefulToHuman = useless.filter(c => !usefulToHuman.has(c.id))
   const candidates = notUsefulToHuman.length > 0 ? notUsefulToHuman : useless
 
   if (candidates.length > 0) {
     return candidates.sort((a, b) => handCardValue(b) - handCardValue(a))[0]
   }
-  // All somewhat useful to AI — discard lowest-priority
   return [...pool].sort((a, b) => cardPriority(a) - cardPriority(b))[0]
 }
 
@@ -60,14 +53,15 @@ export function computeAITurn(state: GameState, playerIndex: number): AIDecision
   const player     = state.players[playerIndex]
   const hand       = [...player.hand]
   const topDiscard = state.discardPile[state.discardPile.length - 1]
+  const topDeck    = state.deck[0]  // peek at deck top (not drawn yet, but used for planning)
 
-  // How many complete circles have all players done
   const circlesCompleted = state.players.length
     ? Math.min(...state.players.map(p => p.turnCount))
     : 0
   const meldingAllowed = circlesCompleted >= 2
 
-  // Decide draw from discard (only if already melded — consistent with human rule)
+  // ── Choose draw source ──────────────────────────────────────────────────
+  // Prefer discard only if already melded AND it significantly improves melds
   let drawFromDiscard = false
   if (topDiscard && player.hasMelded) {
     const withD    = findMeldsInHand([topDiscard, ...hand])
@@ -77,18 +71,24 @@ export function computeAITurn(state: GameState, playerIndex: number): AIDecision
     }
   }
 
-  const workingHand = drawFromDiscard ? [topDiscard, ...hand] : hand
+  // ── Working hand: includes the card AI is about to draw ─────────────────
+  // This lets AI plan melds with its full 15-card hand (pre-discard)
+  const drawnCard   = drawFromDiscard ? topDiscard : topDeck
+  const workingHand = drawnCard ? [...hand, drawnCard] : hand
 
   const meldsToPlay: Card[][] = []
   const usedIds = new Set<string>()
 
   if (!meldingAllowed) {
-    // Circles 1 & 2: cannot meld at all
+    // Circles 1 & 2: no melding allowed
   } else if (!player.hasMelded) {
-    // Find combination totalling 51+
+    // Find valid meld combinations totalling 51+
     const candidates = findMeldsInHand(workingHand)
     for (const m of candidates) {
       if (m.some(c => usedIds.has(c.id))) continue
+      // Hard validation: no more than 4 cards in a group (must be valid meld)
+      if (!isValidMeld(m)) continue
+      if (isValidGroup(m) && m.length > 4) continue
       meldsToPlay.push(m)
       m.forEach(c => usedIds.add(c.id))
       if (totalMeldValue(meldsToPlay) >= 51) break
@@ -97,28 +97,34 @@ export function computeAITurn(state: GameState, playerIndex: number): AIDecision
       meldsToPlay.length = 0
       usedIds.clear()
     } else {
-      // Probability gate
       const prob = meldProbability(player.turnCount)
-      if (Math.random() > prob) { meldsToPlay.length = 0; usedIds.clear() }
+      const roll = Math.random()
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[AI ${playerIndex}] turn=${player.turnCount} prob=${prob.toFixed(2)} roll=${roll.toFixed(2)} meldVal=${totalMeldValue(meldsToPlay)} hand=${workingHand.length}`)
+      }
+      if (roll > prob) { meldsToPlay.length = 0; usedIds.clear() }
     }
   } else {
-    // Already melded — lay down any valid sets
+    // Already melded — lay down any additional valid sets
     const candidates = findMeldsInHand(workingHand)
     for (const m of candidates) {
       if (m.some(c => usedIds.has(c.id))) continue
+      if (!isValidMeld(m)) continue
+      if (isValidGroup(m) && m.length > 4) continue
       meldsToPlay.push(m)
       m.forEach(c => usedIds.add(c.id))
     }
   }
 
-  // Add to table melds — only after first meld
+  // ── Add single cards to existing table melds ───────────────────────────
   const cardsToAddToMeld: { meldId: string; cards: Card[] }[] = []
   if (meldingAllowed && (player.hasMelded || meldsToPlay.length > 0)) {
     const remaining = workingHand.filter(c => !usedIds.has(c.id))
     for (const card of remaining) {
       for (const meld of state.melds) {
-        if (isBurningGroup(meld)) continue
-        if (!canAddToMeld(meld, [card])) continue
+        if (isBurningGroup(meld)) continue           // never add to 4-card group (burns)
+        if (meld.cards.length >= 4 && meld.type === 'group') continue  // hard cap
+        if (!canAddToMeld(meld, [card])) continue    // validates duplicate + validity
         cardsToAddToMeld.push({ meldId: meld.id, cards: [card] })
         usedIds.add(card.id)
         break
@@ -126,7 +132,7 @@ export function computeAITurn(state: GameState, playerIndex: number): AIDecision
     }
   }
 
-  // Burning meld resolution
+  // ── Burning meld resolution ────────────────────────────────────────────
   let burnAction: 'steal' | 'burn' | null = null
   const jokerReplacementCards: Card[] = []
   if (state.burningMeldId && state.burningHasJoker) {
