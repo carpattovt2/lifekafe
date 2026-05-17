@@ -285,17 +285,17 @@ function reducer(state: GameState, action: Action): GameState {
 }
 
 // ── AI runner ─────────────────────────────────────────────────────────────────
-function runAITurn(state: GameState, dispatch: (a:Action)=>void, log: (msg:string)=>void) {
+function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToast: (t:string)=>void) {
   const cp=state.currentPlayerIndex,player=state.players[cp]
   let s=reshuffleIfEmpty({...state});const decision=computeAITurn(s,cp)
   let hand=[...player.hand],deck=[...s.deck],discardPile=[...s.discardPile],melds=[...s.melds],hasMelded=player.hasMelded
   const usedIds=new Set<string>()
   if(decision.drawFromDiscard&&discardPile.length){
     hand=[...hand,discardPile[discardPile.length-1]];discardPile=discardPile.slice(0,-1)
-    log(`${player.name}:drawDiscard`)
+    addToast(`${player.name} ${tg.logDrawDiscard}`)
   } else if(deck.length){
     hand=[...hand,deck[0]];deck=deck.slice(1)
-    log(`${player.name}:drawDeck`)
+    addToast(`${player.name} ${tg.logDrawDeck}`)
   }
   if(decision.meldsToPlay.length){
     for(const mc of decision.meldsToPlay){
@@ -305,7 +305,7 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, log: (msg:strin
     }
     hasMelded=true; hand=hand.filter(c=>!usedIds.has(c.id))
     const meldVal=totalMeldValue(decision.meldsToPlay)
-    log(`${player.name}:meld:${meldVal}`)
+    addToast(`${player.name} ${tg.logMelds} (${meldVal} ${tg.logPoints})`)
   }
   if(hasMelded){
     for(const{meldId,cards}of decision.cardsToAddToMeld){
@@ -315,7 +315,7 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, log: (msg:strin
       melds=melds.map(m=>m.id===meldId?nm:m)
       cards.forEach(c=>usedIds.add(c.id))
       hand=hand.filter(c=>!cards.map(x=>x.id).includes(c.id))
-      log(`${player.name}:add:${cards.map(c=>c.rank+suitSymbol(c.suit)).join(',')}`)
+      addToast(`${player.name} ${tg.logAdds} [${cards.map(c=>c.rank+suitSymbol(c.suit)).join(' ')}]`)
     }
   }
   let burningMeldId=s.burningMeldId,burningHasJoker=s.burningHasJoker
@@ -337,13 +337,13 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, log: (msg:strin
   // allAtOnce: true only if this was AI's first meld this round and it ran out of cards
   const aiAllAtOnce = !player.hasMelded
   if(!dc){
-    log(`${player.name}:wins`)
+    addToast(`🏆 ${player.name} ${tg.logWins}`)
     dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,aiAllAtOnce,false)});return
   }
   const finalHand=newPlayers[cp].hand;discardPile=[...discardPile,dc]
-  log(`${player.name}:discard:${dc.rank}${suitSymbol(dc.suit)}`)
+  addToast(`${player.name} ${tg.logDiscards} [${dc.rank}${suitSymbol(dc.suit)}]`)
   if(!finalHand.length){
-    log(`${player.name}:wins`)
+    addToast(`🏆 ${player.name} ${tg.logWins}`)
     dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,false,dc.isJoker)});return
   }
   const ni=nextIdx(cp,state.numPlayers),nxt=newPlayers[ni]
@@ -366,10 +366,10 @@ function renderCardBack(back: CardBack) {
 }
 
 // ── CardView ──────────────────────────────────────────────────────────────────
-function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick, small=false, glow=false, lifted=false, animClass='', cardBack='night' as CardBack, highlight=null as 'green'|'yellow'|null, tableCard=false, onPointerDown, onPointerUp, onPointerMove }: {
+function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick, small=false, glow=false, lifted=false, animClass='', cardBack='night' as CardBack, highlight=null as 'green'|'yellow'|null, tableCard=false, extraStyle={} as React.CSSProperties, onPointerDown, onPointerUp, onPointerMove }: {
   card:Card; faceDown?:boolean; selected?:boolean; dimmed?:boolean; onClick?:()=>void
   small?:boolean; glow?:boolean; lifted?:boolean; animClass?:string; cardBack?:CardBack
-  highlight?:'green'|'yellow'|null; tableCard?:boolean
+  highlight?:'green'|'yellow'|null; tableCard?:boolean; extraStyle?:React.CSSProperties
   onPointerDown?:(e:React.PointerEvent)=>void; onPointerUp?:(e:React.PointerEvent)=>void; onPointerMove?:(e:React.PointerEvent)=>void
 }) {
   // Table cards slightly bigger than hand (small), player hand is full-size
@@ -394,6 +394,7 @@ function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick,
         transition:'transform 0.1s,box-shadow 0.1s,opacity 0.12s',
         userSelect:'none',
         display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+        ...extraStyle,
       }}
     >
       {faceDown ? renderCardBack(cardBack)
@@ -430,10 +431,10 @@ function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick,
 
 // ── DraggableHand ─────────────────────────────────────────────────────────────
 type DragState={cardId:string;fromIndex:number;toIndex:number;x:number;y:number}|null
-function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorder,cardBack,highlights}:{
+function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorder,cardBack,highlights,dealAnimating=false}:{
   hand:Card[];selectedIds:string[];stagedIds:string[];drawnCardId?:string|null
   onToggle:(id:string)=>void;onReorder:(from:number,to:number)=>void
-  cardBack:CardBack;highlights:Map<string,'green'|'yellow'>
+  cardBack:CardBack;highlights:Map<string,'green'|'yellow'>;dealAnimating?:boolean
 }){
   const[drag,setDrag]=useState<DragState>(null)
   const timerRef=useRef<ReturnType<typeof setTimeout>|null>(null)
@@ -466,7 +467,9 @@ function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorde
         const{card,origIndex}=item,isSel=!drag&&selectedIds.includes(card.id),isStaged=stagedIds.includes(card.id),isDrawn=card.id===drawnCardId
         return(
           <div key={card.id} ref={el=>{if(el)cardElsRef.current.set(card.id,el);else cardElsRef.current.delete(card.id)}} style={{flexShrink:0}}>
-            <CardView card={card} selected={isSel&&!isStaged} dimmed={isStaged} cardBack={cardBack} animClass={isDrawn?'card-draw-in':''}
+            <CardView card={card} selected={isSel&&!isStaged} dimmed={isStaged} cardBack={cardBack}
+              animClass={isDrawn?'card-draw-in':dealAnimating?'card-deal-in':''}
+              extraStyle={dealAnimating?{animationDelay:`${origIndex*52}ms`}:{}}
               highlight={!isSel&&!isStaged?(highlights.get(card.id)??null):null}
               onClick={drag?undefined:()=>onToggle(card.id)}
               onPointerDown={(e:React.PointerEvent)=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);const{clientX,clientY}=e;timerRef.current=setTimeout(()=>{setDrag({cardId:card.id,fromIndex:origIndex,toIndex:origIndex,x:clientX,y:clientY});timerRef.current=null},200)}}
@@ -571,40 +574,88 @@ export default function JokerGame(){
   const[sortMode,setSortMode]=useState<'none'|'suit'|'rank'>('none')
   const[origOrder,setOrigOrder]=useState<string[]>([])
   const[drawnCardId,setDrawnCardId]=useState<string|null>(null)
-  const[turnBanner,setTurnBanner]=useState<{text:string;color:string;entering:boolean}|null>(null)
-  const[aiLog,setAiLog]=useState<{id:number;text:string;fading:boolean}[]>([])
-  const logIdRef=useRef(0)
+  const[turnBanner,setTurnBanner]=useState<{text:string;color:string;exiting:boolean}|null>(null)
+
+  // ── Toast overlay state ───────────────────────────────────────────
+  const[toasts,setToasts]=useState<{id:number;text:string;exiting:boolean}[]>([])
+  const toastIdRef=useRef(0)
+
+  // ── Animation state ───────────────────────────────────────────────
+  const[deckBounce,setDeckBounce]=useState(false)
+  const[deckReshuffle,setDeckReshuffle]=useState(false)
+  const[discardFlash,setDiscardFlash]=useState(false)
+  const[trumpFlash,setTrumpFlash]=useState(false)
+  const[newMeldIds,setNewMeldIds]=useState(new Set<string>())
+  const[flashMeldId,setFlashMeldId]=useState<string|null>(null)
+  const[dealAnimating,setDealAnimating]=useState(false)
+  const prevMeldIds=useRef<string[]>([])
+  const prevDeckLen=useRef(0)
+  const prevDiscardLen=useRef(0)
+  const prevRoundRef=useRef(-1)
 
   const{play,unlockAudio}=useGameSounds(soundEnabled)
 
-  // Build human-readable AI log line from raw log token
-  function parseLogToken(token:string,tg:any):string {
-    const parts=token.split(':')
-    const name=parts[0],action=parts[1],extra=parts[2]||''
-    if(action==='drawDeck')    return `${name} ${tg.logDrawDeck}`
-    if(action==='drawDiscard') return `${name} ${tg.logDrawDiscard}`
-    if(action==='meld')        return `${name} ${tg.logMelds} (${extra} ${tg.logPoints})`
-    if(action==='add')         return `${name} ${tg.logAdds} [${extra}]`
-    if(action==='discard')     return `${name} ${tg.logDiscards} [${extra}]`
-    if(action==='wins')        return `${name} ${tg.logWins}`
-    return token
+  // ── Toast helper ──────────────────────────────────────────────────
+  function addToast(text:string){
+    const id=++toastIdRef.current
+    setToasts(prev=>[...prev.slice(-4),{id,text,exiting:false}])
+    setTimeout(()=>setToasts(prev=>prev.map(t=>t.id===id?{...t,exiting:true}:t)),1700)
+    setTimeout(()=>setToasts(prev=>prev.filter(t=>t.id!==id)),2000)
   }
 
-  function addLog(token:string) {
-    const id=++logIdRef.current
-    setAiLog(prev=>[...prev.slice(-4),{id,text:token,fading:false}])
-    setTimeout(()=>setAiLog(prev=>prev.map(l=>l.id===id?{...l,fading:true}:l)),2500)
-    setTimeout(()=>setAiLog(prev=>prev.filter(l=>l.id!==id)),3000)
-  }
-
-  // AI turn — pass log callback
+  // ── AI turn — pass tg + addToast ─────────────────────────────────
   useEffect(()=>{
     if(state.phase!=='ai-turn')return
-    const t=setTimeout(()=>runAITurn(state,dispatch,addLog),1200)
-    return()=>clearTimeout(t)
+    const timer=setTimeout(()=>runAITurn(state,dispatch,tg,addToast),1200)
+    return()=>clearTimeout(timer)
   },[state.phase,state.currentPlayerIndex,state.roundNumber])
 
-  // Turn banner
+  // ── Animation triggers ────────────────────────────────────────────
+  // Deck bounce + reshuffle detection
+  useEffect(()=>{
+    if(prevDeckLen.current===0&&state.deck.length>5){
+      setDeckReshuffle(true); setTimeout(()=>setDeckReshuffle(false),600)
+      addToast('🔀 Reshuffle...')
+    }
+    prevDeckLen.current=state.deck.length
+  },[state.deck.length])
+
+  // New melds animate in; track which set got added to
+  useEffect(()=>{
+    const cur=state.melds.map(m=>m.id)
+    const fresh=new Set(cur.filter(id=>!prevMeldIds.current.includes(id)))
+    if(fresh.size>0){
+      setNewMeldIds(fresh)
+      setTimeout(()=>setNewMeldIds(new Set()),500)
+    }
+    // Detect enlarged meld (add-to-set): same IDs but one meld got bigger
+    const changedId=state.melds.find(m=>prevMeldIds.current.includes(m.id)&&!fresh.has(m.id))?.id
+    if(changedId){
+      setFlashMeldId(changedId)
+      setTimeout(()=>setFlashMeldId(null),400)
+    }
+    prevMeldIds.current=cur
+  },[state.melds])
+
+  // Discard pile flash when new card lands
+  useEffect(()=>{
+    if(state.discardPile.length>prevDiscardLen.current){
+      setDiscardFlash(true); setTimeout(()=>setDiscardFlash(false),350)
+    }
+    prevDiscardLen.current=state.discardPile.length
+  },[state.discardPile.length])
+
+  // Deal stagger animation on new round
+  useEffect(()=>{
+    if(state.roundNumber!==prevRoundRef.current&&state.roundNumber>0){
+      prevRoundRef.current=state.roundNumber
+      setDealAnimating(true)
+      const cnt=state.players[0]?.hand.length??14
+      setTimeout(()=>setDealAnimating(false),cnt*55+350)
+    }
+  },[state.roundNumber])
+
+  // Turn banner (fixed overlay, slides from top)
   const prevPlayer=useRef(-1)
   useEffect(()=>{
     if(state.phase==='setup'||state.phase==='round-end'||state.phase==='game-end')return
@@ -614,17 +665,18 @@ export default function JokerGame(){
     const isHuman=cur?.isHuman
     const text=isHuman?(state.phase==='player-draw'?tg.yourTurnDraw:tg.yourTurnAction):`${tg.aiTurnBanner} — ${cur?.name}`
     const color=isHuman?'#00ff88':AI_COLORS[state.currentPlayerIndex-1]||'#ff4444'
-    setTurnBanner({text,color,entering:true})
-    const t1=setTimeout(()=>setTurnBanner(b=>b?{...b,entering:false}:null),800)
-    const t2=setTimeout(()=>setTurnBanner(null),2200)
+    setTurnBanner({text,color,exiting:false})
+    const t1=setTimeout(()=>setTurnBanner(b=>b?{...b,exiting:true}:null),1100)
+    const t2=setTimeout(()=>setTurnBanner(null),1450)
     return()=>{clearTimeout(t1);clearTimeout(t2)}
   },[state.currentPlayerIndex,state.phase])
 
-  // Animate drawn card
+  // Animate drawn card + bounce deck
   useEffect(()=>{
     if(state.phase==='player-action'&&state.drawnThisTurn){
+      setDeckBounce(true); setTimeout(()=>setDeckBounce(false),250)
       const h=state.players[0]?.hand,last=h?.[h.length-1]
-      if(last){setDrawnCardId(last.id);play('draw');setTimeout(()=>setDrawnCardId(null),220)}
+      if(last){setDrawnCardId(last.id);play('draw');setTimeout(()=>setDrawnCardId(null),300)}
     }
   },[state.drawnThisTurn])
 
@@ -739,9 +791,28 @@ export default function JokerGame(){
   return(
     <div style={{maxWidth:860,margin:'0 auto',userSelect:'none',overflow:'hidden'}} onPointerDown={unlockAudio}>
 
-      {/* Turn banner */}
+      {/* ── Fixed overlay: toasts ── */}
+      <div style={{position:'fixed',top:80,left:'50%',zIndex:400,display:'flex',flexDirection:'column',gap:6,alignItems:'center',pointerEvents:'none',minWidth:200,maxWidth:'82vw'}}>
+        {toasts.map(t=>(
+          <div key={t.id} style={{
+            background:'rgba(10,20,18,0.92)',color:'#e8f5f0',
+            fontFamily:"'VT323',monospace",fontSize:18,
+            padding:'8px 18px',borderRadius:4,border:'1px solid rgba(255,255,255,0.18)',
+            backdropFilter:'blur(8px)',whiteSpace:'nowrap',textAlign:'center',
+            animation:t.exiting?'toastOut 0.28s ease forwards':'toastIn 0.25s ease forwards',
+          }}>{t.text}</div>
+        ))}
+      </div>
+
+      {/* ── Fixed overlay: turn banner ── */}
       {turnBanner&&(
-        <div className={turnBanner.entering?'turn-banner-enter':''} style={{background:`${turnBanner.color}22`,border:`2px solid ${turnBanner.color}`,padding:'10px 16px',textAlign:'center',fontFamily:"'Press Start 2P',monospace",fontSize:12,color:turnBanner.color,letterSpacing:1,transition:'all 0.3s'}}>
+        <div style={{
+          position:'fixed',top:90,left:'50%',zIndex:350,pointerEvents:'none',
+          background:`${turnBanner.color}28`,border:`2px solid ${turnBanner.color}`,
+          padding:'10px 28px',borderRadius:4,
+          fontFamily:"'Press Start 2P',monospace",fontSize:11,color:turnBanner.color,letterSpacing:1,
+          animation:turnBanner.exiting?'bannerSlideUp 0.32s ease forwards':'bannerSlideDown 0.3s ease forwards',
+        }}>
           {turnBanner.text}
         </div>
       )}
@@ -790,49 +861,40 @@ export default function JokerGame(){
           })}
         </div>
 
-        {/* AI action log */}
-        {aiLog.length>0&&(
-          <div style={{marginTop:6,display:'flex',flexDirection:'column',gap:2}}>
-            {aiLog.slice(-3).map(entry=>(
-              <div key={entry.id} style={{fontSize:14,color:'rgba(255,255,255,0.75)',fontFamily:"'VT323',monospace",transition:'opacity 0.5s',opacity:entry.fading?0:1,paddingLeft:4,borderLeft:'2px solid rgba(255,255,255,0.15)'}}>
-                {parseLogToken(entry.text,tg)}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* ZONE 2: Table (felt) */}
       <div className="felt-zone" style={{padding:'14px 16px',borderBottom:'2px solid rgba(255,255,255,0.08)'}}>
-        <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'rgba(255,255,255,0.35)',marginBottom:10}}>{tg.tableZone}</div>
-
         {/* Deck / Discard / Trump */}
         <div style={{display:'flex',gap:18,alignItems:'flex-start',justifyContent:'center',marginBottom:12,flexWrap:'wrap'}}>
-          {/* Deck */}
+          {/* Deck — bounce on draw, flicker on reshuffle */}
           <div style={{textAlign:'center'}}>
             <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:6}}>{tg.deck} ({state.deck.length})</div>
             {state.deck.length>0
-              ?<CardView card={state.deck[0]} faceDown cardBack={cardBack} tableCard onClick={inDraw?()=>dispatch({type:'DRAW_DECK'}):undefined}/>
+              ?<div className={deckBounce?'deck-bounce':deckReshuffle?'deck-reshuffle':''}>
+                 <CardView card={state.deck[0]} faceDown cardBack={cardBack} tableCard onClick={inDraw?()=>dispatch({type:'DRAW_DECK'}):undefined}/>
+               </div>
               :<div style={{width:62,height:88,border:'2px dashed rgba(255,255,255,0.2)',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.3)',fontSize:18}}>∅</div>}
           </div>
-          {/* Discard */}
+          {/* Discard — flash orange when card lands */}
           <div style={{textAlign:'center'}}>
             <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:6}}>{tg.discardPile}</div>
-            {topDiscard
-              ?<CardView card={topDiscard} tableCard onClick={inDraw?()=>dispatch({type:'DRAW_DISCARD'}):undefined}/>
-              :<div style={{width:62,height:88,border:'2px dashed rgba(255,255,255,0.2)',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.3)',fontSize:18}}>—</div>}
+            <div className={discardFlash?'discard-flash':''}>
+              {topDiscard
+                ?<CardView card={topDiscard} tableCard onClick={inDraw?()=>dispatch({type:'DRAW_DISCARD'}):undefined}/>
+                :<div style={{width:62,height:88,border:'2px dashed rgba(255,255,255,0.2)',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.3)',fontSize:18}}>—</div>}
+            </div>
           </div>
-          {/* Trump */}
+          {/* Trump — gold pulse */}
           <div style={{textAlign:'center'}}>
             <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'#ffd700',marginBottom:6}}>{tg.trump} {state.trumpSuit?suitSymbol(state.trumpSuit):''}</div>
             {state.trumpCard?(
               <div>
-                <div style={{boxShadow:'0 0 14px #ffd700, 0 6px 18px rgba(0,0,0,0.55)',display:'inline-block',borderRadius:4,opacity:human?.hasMelded?0.4:1,filter:human?.hasMelded?'grayscale(0.5)':undefined}}>
+                <div className={trumpFlash?'trump-pulse':''} style={{boxShadow:'0 0 14px #ffd700, 0 6px 18px rgba(0,0,0,0.55)',display:'inline-block',borderRadius:4,opacity:human?.hasMelded?0.4:1,filter:human?.hasMelded?'grayscale(0.5)':undefined}}>
                   <CardView card={state.trumpCard} tableCard/>
                 </div>
-                {/* Trump only available BEFORE player's first meld */}
                 {inDraw&&!state.drawnThisTurn&&circles>=2&&!human?.hasMelded&&(
-                  <button className="pixel-btn pixel-btn-warning" onClick={()=>dispatch({type:'TAKE_TRUMP'})} style={{fontSize:8,padding:'4px 6px',marginTop:6,width:'100%'}}>{tg.takeTrump}</button>
+                  <button className="pixel-btn pixel-btn-warning" onClick={()=>{setTrumpFlash(true);setTimeout(()=>setTrumpFlash(false),600);dispatch({type:'TAKE_TRUMP'})}} style={{fontSize:8,padding:'4px 6px',marginTop:6,width:'100%'}}>{tg.takeTrump}</button>
                 )}
                 {human?.hasMelded&&(
                   <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:6,color:'rgba(255,215,0,0.45)',marginTop:4,textAlign:'center'}}>NOT AVAILABLE</div>
@@ -854,23 +916,25 @@ export default function JokerGame(){
           )}
         </div>
 
-        {/* Melds — flex-wrap, max 2 rows, scroll if more */}
+        {/* Melds — scale-in for new, flash-blue for add-to-set */}
         {state.melds.length>0&&(
           <div>
             <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'rgba(255,255,255,0.35)',marginBottom:6}}>{tg.tableZone} ({state.melds.length})</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:8,maxHeight:240,overflowY:'auto',paddingBottom:4}}>
               {state.melds.map(meld=>(
-                <MeldView key={meld.id} meld={meld} playerNames={playerNames} cardBack={cardBack} burning={meld.id===state.burningMeldId} addLabel={tg.addToSet} stealLabel={tg.stealJoker}
-                  onAdd={inAction&&state.selectedCardIds.length>0&&meld.id!==state.burningMeldId?()=>dispatch({type:'ADD_TO_MELD',meldId:meld.id}):undefined}
-                  onSteal={inAction&&state.selectedCardIds.length===1&&meld.id!==state.burningMeldId?()=>dispatch({type:'STEAL_JOKER',meldId:meld.id}):undefined}
-                />
+                <div key={meld.id} className={newMeldIds.has(meld.id)?'meld-appear':flashMeldId===meld.id?'set-flash-blue':''}>
+                  <MeldView meld={meld} playerNames={playerNames} cardBack={cardBack} burning={meld.id===state.burningMeldId} addLabel={tg.addToSet} stealLabel={tg.stealJoker}
+                    onAdd={inAction&&state.selectedCardIds.length>0&&meld.id!==state.burningMeldId?()=>dispatch({type:'ADD_TO_MELD',meldId:meld.id}):undefined}
+                    onSteal={inAction&&state.selectedCardIds.length===1&&meld.id!==state.burningMeldId?()=>dispatch({type:'STEAL_JOKER',meldId:meld.id}):undefined}
+                  />
+                </div>
               ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* ZONE 3: Player hand */}
+      {/* ZONE 3: Player hand — cards stagger-animate in on new round */}
       <div className={`hand-zone ${isMyTurn?'player-turn-bar':''} game-safe-bottom`} style={{padding:'12px 16px 130px',borderTop:`3px solid ${isMyTurn?'#00ff88':'transparent'}`}}>
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:isMyTurn?'#00ff88':'rgba(255,255,255,0.35)',marginBottom:8}}>{tg.handZone}</div>
 
@@ -882,7 +946,8 @@ export default function JokerGame(){
               {state.selectedCardIds.length>0&&<span style={{color:'var(--yellow)',fontSize:18}}>{state.selectedCardIds.length} selected</span>}
               <button onClick={handleSort} className="pixel-btn pixel-btn-secondary" style={{fontSize:9,padding:'5px 10px',marginLeft:'auto'}}>{tg.sortLabel}: {sortMode==='none'?tg.sortNone:sortMode==='suit'?tg.sortSuit:tg.sortRank}</button>
             </div>
-            <DraggableHand hand={human.hand} selectedIds={state.selectedCardIds} stagedIds={Array.from(stagedIds)} drawnCardId={drawnCardId} cardBack={cardBack} highlights={highlights}
+            {/* Pass dealAnimating so DraggableHand can stagger card appearances */}
+            <DraggableHand hand={human.hand} selectedIds={state.selectedCardIds} stagedIds={Array.from(stagedIds)} drawnCardId={drawnCardId} cardBack={cardBack} highlights={highlights} dealAnimating={dealAnimating}
               onToggle={id=>{if(inAction){play('select');dispatch({type:'TOGGLE_CARD',cardId:id})}}}
               onReorder={(from,to)=>dispatch({type:'REORDER_HAND',fromIndex:from,toIndex:to})}
             />
