@@ -279,8 +279,10 @@ h1, h2, h3, .pixel-font {
 .hamburger-btn {
   display: none;
   position: fixed;
-  top: 12px;
-  left: 12px;
+  /* Clear Dynamic Island / notch: use safe-area-inset-top with a 12px gap,
+     but enforce a minimum of 60px so the button is always fully tappable */
+  top: max(60px, calc(env(safe-area-inset-top, 0px) + 12px));
+  left: max(16px, env(safe-area-inset-left, 16px));
   z-index: 150;
   background: var(--bg2);
   border: 2px solid var(--border);
@@ -309,7 +311,10 @@ h1, h2, h3, .pixel-font {
   position: fixed;
   top: 0;
   left: 0;
-  height: 100vh;
+  /* Full height including safe areas; padding-top pushes content below Dynamic Island */
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   width: min(300px, 88vw);
   background: var(--bg2);
   border-right: 2px solid var(--border);
@@ -329,8 +334,11 @@ h1, h2, h3, .pixel-font {
   .lang-toggle-desktop  { display: none !important; }
   .hamburger-btn        { display: flex !important; }
 
-  /* Offset content below the fixed hamburger button */
-  .main-content { padding-top: 68px; }
+  /* Offset content below hamburger + Dynamic Island.
+     max() ensures we clear whichever is taller: safe-area + button, or 108px floor. */
+  .main-content {
+    padding-top: max(108px, calc(env(safe-area-inset-top, 0px) + 68px));
+  }
 
   /* Make weight/planner table+grid scrollable */
   .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
