@@ -7,6 +7,7 @@ export interface Card {
   suit: Suit | 'joker'
   rank: Rank
   isJoker: boolean
+  jokerNum?: 1 | 2   // distinguishes the two jokers (1=white/gold, 2=gold/black)
 }
 
 export interface Meld {

@@ -14,12 +14,29 @@ import { useLanguage } from '@/lib/LanguageContext'
 const AI_COLORS = ['#ef4444', '#3b82f6', '#f97316', '#a855f7']
 const CARD_BACKS: CardBack[] = ['night','elegant','dragon','runes','poker','sea','vip','vegas']
 
-// ── Sound hook ────────────────────────────────────────────────────────────────
+// ── Sound hook — iOS-safe (AudioContext created on first user interaction) ────
 function useGameSounds(enabled: boolean) {
   const ctxRef = useRef<AudioContext | null>(null)
+  const readyRef = useRef(false)  // true once user has interacted
+
+  // Call this on any user gesture (touch/click) to unlock Web Audio on iOS
+  function unlockAudio() {
+    if (readyRef.current) return
+    readyRef.current = true
+    if (typeof window === 'undefined') return
+    try {
+      if (!ctxRef.current) {
+        ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      }
+      if (ctxRef.current.state === 'suspended') ctxRef.current.resume()
+    } catch {}
+  }
+
   function getCtx() {
-    if (typeof window === 'undefined') return null
-    if (!ctxRef.current) ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+    if (!readyRef.current || typeof window === 'undefined') return null
+    if (!ctxRef.current) {
+      try { ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)() } catch { return null }
+    }
     if (ctxRef.current.state === 'suspended') ctxRef.current.resume()
     return ctxRef.current
   }
@@ -60,7 +77,7 @@ function useGameSounds(enabled: boolean) {
       case 'gameWin':  [523,587,659,698,784,880,988,1047].forEach((f,i)=>tone(f,0.14,0.2,'sine',i*0.15)); break
     }
   }, [enabled])
-  return { play, noise, tone }
+  return { play, noise, tone, unlockAudio }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -107,9 +124,10 @@ function dealRound(base: GameState): GameState {
     currentPlayerIndex:firstIdx,phase:firstPhase,message:'',burningMeldId:null,burningHasJoker:false,
   }
 }
-function finishRound(state: GameState, winnerIdx: number, meldedOut: boolean, lastJoker: boolean): GameState {
-  const winner=state.players[winnerIdx]
-  const bonus=meldedOut?(lastJoker?-20:-10):(winner.isHuman?-5:-10)
+// allAtOnce=true  → player emptied hand in a single turn, first meld of the round → -10 (or -20 with joker)
+// allAtOnce=false → player had already melded 51+ before, then disposed remaining → -5
+function finishRound(state: GameState, winnerIdx: number, allAtOnce: boolean, lastJoker: boolean): GameState {
+  const bonus = allAtOnce ? (lastJoker ? -20 : -10) : -5
   const scores=state.players.map((p,i)=>{if(i===winnerIdx)return bonus;if(!p.hasMelded)return 10;return calcPenalty(p.hand)})
   return {
     ...state,roundScores:[...state.roundScores,scores],phase:'round-end',message:'',
@@ -183,13 +201,15 @@ function reducer(state: GameState, action: Action): GameState {
       const newHand=cur.hand.filter(c=>!usedIds.has(c.id))
       const allMelds=[...state.melds,...newMelds]
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
+      // allAtOnce: true only if this was the player's FIRST meld this round
+      const allAtOnce = !cur.hasMelded
       const burning=newMelds.find(m=>isBurningGroup(m))
       if(burning){
         const hasJ=burning.cards.some(c=>c.isJoker)
-        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,true,false)
+        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
         return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:burning.id,burningHasJoker:hasJ,message:hasJ?'🔥 4-of-a-kind JOKER!':'🔥 4-of-a-kind! Burns on discard.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,true,false)
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
       return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
     }
     case 'ADD_TO_MELD':{
@@ -204,10 +224,11 @@ function reducer(state: GameState, action: Action): GameState {
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
       if(isBurningGroup(newMeld)){
         const hasJ=newMeld.cards.some(c=>c.isJoker)
-        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,true,false)
+        // ADD_TO_MELD requires prior melding, so never "all at once"
+        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,false,false)
         return{...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:newMeld.id,burningHasJoker:hasJ,message:'🔥 Burns on discard.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,true,false)
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,false,false)
       return{...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
     }
     case 'STEAL_JOKER':{
@@ -264,30 +285,37 @@ function reducer(state: GameState, action: Action): GameState {
 }
 
 // ── AI runner ─────────────────────────────────────────────────────────────────
-function runAITurn(state: GameState, dispatch: (a:Action)=>void) {
+function runAITurn(state: GameState, dispatch: (a:Action)=>void, log: (msg:string)=>void) {
   const cp=state.currentPlayerIndex,player=state.players[cp]
   let s=reshuffleIfEmpty({...state});const decision=computeAITurn(s,cp)
   let hand=[...player.hand],deck=[...s.deck],discardPile=[...s.discardPile],melds=[...s.melds],hasMelded=player.hasMelded
   const usedIds=new Set<string>()
-  if(decision.drawFromDiscard&&discardPile.length){hand=[...hand,discardPile[discardPile.length-1]];discardPile=discardPile.slice(0,-1)}
-  else if(deck.length){hand=[...hand,deck[0]];deck=deck.slice(1)}
+  if(decision.drawFromDiscard&&discardPile.length){
+    hand=[...hand,discardPile[discardPile.length-1]];discardPile=discardPile.slice(0,-1)
+    log(`${player.name}:drawDiscard`)
+  } else if(deck.length){
+    hand=[...hand,deck[0]];deck=deck.slice(1)
+    log(`${player.name}:drawDeck`)
+  }
   if(decision.meldsToPlay.length){
     for(const mc of decision.meldsToPlay){
-      if(!isValidMeld(mc)) continue  // strict validation — no invalid melds
+      if(!isValidMeld(mc)) continue
       melds=[...melds,makeMeld(mc,cp)]
       mc.forEach(c=>usedIds.add(c.id))
     }
     hasMelded=true; hand=hand.filter(c=>!usedIds.has(c.id))
+    const meldVal=totalMeldValue(decision.meldsToPlay)
+    log(`${player.name}:meld:${meldVal}`)
   }
   if(hasMelded){
     for(const{meldId,cards}of decision.cardsToAddToMeld){
       const meld=melds.find(m=>m.id===meldId); if(!meld) continue
-      // Strict validation: check duplicates + group max-4 + sequence validity
       if(!canAddToMeld(meld,cards)) continue
       const nm=updatedMeld(meld,cards)
       melds=melds.map(m=>m.id===meldId?nm:m)
       cards.forEach(c=>usedIds.add(c.id))
       hand=hand.filter(c=>!cards.map(x=>x.id).includes(c.id))
+      log(`${player.name}:add:${cards.map(c=>c.rank+suitSymbol(c.suit)).join(',')}`)
     }
   }
   let burningMeldId=s.burningMeldId,burningHasJoker=s.burningHasJoker
@@ -306,9 +334,18 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void) {
   }
   const dc=hand.find(c=>c.id===decision.discardCard.id)??hand[hand.length-1]
   const newPlayers=state.players.map((p,i)=>i===cp?{...p,hand:dc?hand.filter(c=>c.id!==dc.id):[],hasMelded,turnCount:p.turnCount+1}:p)
-  if(!dc){dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,true,false)});return}
+  // allAtOnce: true only if this was AI's first meld this round and it ran out of cards
+  const aiAllAtOnce = !player.hasMelded
+  if(!dc){
+    log(`${player.name}:wins`)
+    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,aiAllAtOnce,false)});return
+  }
   const finalHand=newPlayers[cp].hand;discardPile=[...discardPile,dc]
-  if(!finalHand.length){dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,false,dc.isJoker)});return}
+  log(`${player.name}:discard:${dc.rank}${suitSymbol(dc.suit)}`)
+  if(!finalHand.length){
+    log(`${player.name}:wins`)
+    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,false,dc.isJoker)});return
+  }
   const ni=nextIdx(cp,state.numPlayers),nxt=newPlayers[ni]
   dispatch({type:'AI_TURN_DONE',next:{players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false,currentPlayerIndex:ni,phase:nxt.isHuman?'player-draw':'ai-turn',drawnThisTurn:false,drawnFromDiscardCardId:null,selectedCardIds:[],stagedMelds:[],message:'',takenTrumpCard:null}})
 }
@@ -361,10 +398,21 @@ function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick,
     >
       {faceDown ? renderCardBack(cardBack)
       : card.isJoker ? (
-        <div style={{width:'100%',height:'100%',borderRadius:3,background:'linear-gradient(135deg,#5b21b6 0%,#9333ea 40%,#fbbf24 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',boxShadow:'inset 0 0 14px rgba(251,191,36,0.4)'}}>
-          <div style={{fontSize:small?22:32,lineHeight:1,color:'#ffd700',textShadow:'0 0 10px rgba(255,215,0,0.95)'}}>★</div>
-          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:small?6:8,color:'#ffd700',marginTop:3,letterSpacing:1}}>JKR</div>
-        </div>
+        card.jokerNum === 2 ? (
+          /* ── Joker 2: gold card, black star, black bold text ── */
+          <div style={{width:'100%',height:'100%',borderRadius:3,background:'linear-gradient(145deg,#f5c800,#ffd700,#e8b800)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'2px solid #a07800',position:'relative'}}>
+            <div style={{position:'absolute',top:2,left:3,fontFamily:"'Press Start 2P',monospace",fontSize:small?4:6,color:'#1a1a1a',fontWeight:900}}>J2</div>
+            <div style={{fontSize:small?22:34,lineHeight:1,color:'#1a1a1a'}}>★</div>
+            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:small?5:7,color:'#1a1a1a',marginTop:2,letterSpacing:1,fontWeight:900}}>JOKER</div>
+          </div>
+        ) : (
+          /* ── Joker 1: white card, gold star, rainbow-gradient "JOKER" ── */
+          <div style={{width:'100%',height:'100%',borderRadius:3,background:'#fffff5',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'2px solid #ffd700',position:'relative',boxShadow:'inset 0 0 8px rgba(255,215,0,0.25)'}}>
+            <div style={{position:'absolute',top:2,left:3,fontFamily:"'Press Start 2P',monospace",fontSize:small?4:6,color:'#aaa',fontWeight:700}}>J1</div>
+            <div style={{fontSize:small?22:34,lineHeight:1,color:'#ffd700',textShadow:'0 0 8px rgba(255,215,0,0.9), 0 0 3px #ff8800'}}>★</div>
+            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:small?5:7,marginTop:2,letterSpacing:1,fontWeight:700,background:'linear-gradient(90deg,#e63946,#f97316,#fbbf24,#22c55e,#3b82f6,#8b5cf6)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>JOKER</div>
+          </div>
+        )
       ) : (
         <>
           <div style={{position:'absolute',top:3,left:4,color:suitColor,fontWeight:800,fontSize:rankFs,lineHeight:1}}>{card.rank}</div>
@@ -524,13 +572,35 @@ export default function JokerGame(){
   const[origOrder,setOrigOrder]=useState<string[]>([])
   const[drawnCardId,setDrawnCardId]=useState<string|null>(null)
   const[turnBanner,setTurnBanner]=useState<{text:string;color:string;entering:boolean}|null>(null)
+  const[aiLog,setAiLog]=useState<{id:number;text:string;fading:boolean}[]>([])
+  const logIdRef=useRef(0)
 
-  const{play}=useGameSounds(soundEnabled)
+  const{play,unlockAudio}=useGameSounds(soundEnabled)
 
-  // AI turn
+  // Build human-readable AI log line from raw log token
+  function parseLogToken(token:string,tg:any):string {
+    const parts=token.split(':')
+    const name=parts[0],action=parts[1],extra=parts[2]||''
+    if(action==='drawDeck')    return `${name} ${tg.logDrawDeck}`
+    if(action==='drawDiscard') return `${name} ${tg.logDrawDiscard}`
+    if(action==='meld')        return `${name} ${tg.logMelds} (${extra} ${tg.logPoints})`
+    if(action==='add')         return `${name} ${tg.logAdds} [${extra}]`
+    if(action==='discard')     return `${name} ${tg.logDiscards} [${extra}]`
+    if(action==='wins')        return `${name} ${tg.logWins}`
+    return token
+  }
+
+  function addLog(token:string) {
+    const id=++logIdRef.current
+    setAiLog(prev=>[...prev.slice(-4),{id,text:token,fading:false}])
+    setTimeout(()=>setAiLog(prev=>prev.map(l=>l.id===id?{...l,fading:true}:l)),2500)
+    setTimeout(()=>setAiLog(prev=>prev.filter(l=>l.id!==id)),3000)
+  }
+
+  // AI turn — pass log callback
   useEffect(()=>{
     if(state.phase!=='ai-turn')return
-    const t=setTimeout(()=>runAITurn(state,dispatch),1200)
+    const t=setTimeout(()=>runAITurn(state,dispatch,addLog),1200)
     return()=>clearTimeout(t)
   },[state.phase,state.currentPlayerIndex,state.roundNumber])
 
@@ -667,7 +737,7 @@ export default function JokerGame(){
 
   // ── Main game ────────────────────────────────────────────────────────────
   return(
-    <div style={{maxWidth:860,margin:'0 auto',userSelect:'none',overflow:'hidden'}}>
+    <div style={{maxWidth:860,margin:'0 auto',userSelect:'none',overflow:'hidden'}} onPointerDown={unlockAudio}>
 
       {/* Turn banner */}
       {turnBanner&&(
@@ -696,23 +766,40 @@ export default function JokerGame(){
       )}
 
       {/* ZONE 1: AI Players */}
-      <div className="ai-zone" style={{borderBottom:'1px solid rgba(255,255,255,0.06)',padding:'10px 16px'}}>
-        <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'rgba(255,255,255,0.3)',marginBottom:8}}>{tg.aiZone}</div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+      <div className="ai-zone" style={{borderBottom:'1px solid rgba(255,255,255,0.06)',padding:'8px 16px'}}>
+        <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
           {state.players.slice(1).map((p,i)=>{
             const color=AI_COLORS[i]||'#888'
             const isCurrent=state.currentPlayerIndex===i+1
             return(
-              <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,background:isCurrent?`${color}22`:'rgba(0,0,0,0.3)',border:`2px solid ${isCurrent?color:'rgba(255,255,255,0.1)'}`,padding:'6px 12px',borderRadius:4,transition:'all 0.3s'}}>
-                <div style={{width:14,height:14,borderRadius:'50%',background:color,flexShrink:0,boxShadow:isCurrent?`0 0 8px ${color}`:undefined}}/>
-                <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color}}>{p.name}</span>
-                <span style={{fontSize:22,color:'white',fontWeight:700}}>{p.hand.length}</span>
-                {p.hasMelded?<span style={{fontSize:16,color}}>✓</span>:<span style={{fontSize:14,color:'rgba(255,255,255,0.4)'}}>○</span>}
-                {isCurrent&&<span className="ai-spinner" style={{fontSize:14,color}}>⟳</span>}
+              <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,background:isCurrent?`${color}22`:'rgba(0,0,0,0.3)',border:`2px solid ${isCurrent?color:'rgba(255,255,255,0.08)'}`,padding:'5px 10px',borderRadius:4,transition:'all 0.3s'}}>
+                <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color}}>{p.name}</span>
+                {/* Mini card backs — show up to 3 then count */}
+                <div style={{display:'flex',gap:2,alignItems:'center'}}>
+                  {Array.from({length:Math.min(3,p.hand.length)}).map((_,j)=>(
+                    <div key={j} style={{width:11,height:16,borderRadius:2,overflow:'hidden',flexShrink:0,boxShadow:'0 1px 2px rgba(0,0,0,0.4)'}}>
+                      {renderCardBack(cardBack)}
+                    </div>
+                  ))}
+                </div>
+                <span style={{fontSize:20,color:'white',fontWeight:700,minWidth:18,textAlign:'center'}}>{p.hand.length}</span>
+                {p.hasMelded?<span style={{fontSize:14,color}}>✓</span>:<span style={{fontSize:12,color:'rgba(255,255,255,0.3)'}}>○</span>}
+                {isCurrent&&<span className="ai-spinner" style={{fontSize:13,color}}>⟳</span>}
               </div>
             )
           })}
         </div>
+
+        {/* AI action log */}
+        {aiLog.length>0&&(
+          <div style={{marginTop:6,display:'flex',flexDirection:'column',gap:2}}>
+            {aiLog.slice(-3).map(entry=>(
+              <div key={entry.id} style={{fontSize:14,color:'rgba(255,255,255,0.75)',fontFamily:"'VT323',monospace",transition:'opacity 0.5s',opacity:entry.fading?0:1,paddingLeft:4,borderLeft:'2px solid rgba(255,255,255,0.15)'}}>
+                {parseLogToken(entry.text,tg)}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ZONE 2: Table (felt) */}

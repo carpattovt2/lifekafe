@@ -16,8 +16,8 @@ export function createDeck(): Card[] {
       }
     }
   }
-  cards.push({ id: uid(), suit: 'joker', rank: 'Joker', isJoker: true })
-  cards.push({ id: uid(), suit: 'joker', rank: 'Joker', isJoker: true })
+  cards.push({ id: uid(), suit: 'joker', rank: 'Joker', isJoker: true, jokerNum: 1 })
+  cards.push({ id: uid(), suit: 'joker', rank: 'Joker', isJoker: true, jokerNum: 2 })
   return cards
 }
 

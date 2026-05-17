@@ -205,6 +205,14 @@ const en = {
     backSea:        '🌊 Sea',
     backVip:        '💎 VIP',
     backVegas:      '🌟 Vegas',
+    // AI action log
+    logDrawDeck:    'draws from deck',
+    logDrawDiscard: 'draws from discard',
+    logMelds:       'melds',
+    logAdds:        'adds to set',
+    logDiscards:    'discards',
+    logWins:        'wins the round!',
+    logPoints:      'pts',
   },
 }
 
@@ -396,6 +404,13 @@ const ua: typeof en = {
     backSea:        '🌊 Море',
     backVip:        '💎 VIP',
     backVegas:      '🌟 Vegas',
+    logDrawDeck:    'тягне з колоди',
+    logDrawDiscard: 'тягне зі скиду',
+    logMelds:       'скидає на стіл',
+    logAdds:        'докладає до сету',
+    logDiscards:    'викидає',
+    logWins:        'виграє раунд!',
+    logPoints:      'оч.',
   },
 }
 
