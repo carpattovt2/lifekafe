@@ -1,5 +1,40 @@
 import type { Card, Meld, Suit } from './types'
-import { RANK_NUM, meldCardValue } from './cards'
+import { RANK_NUM, meldCardValue, numToRank } from './cards'
+
+// ── Joker position helpers ────────────────────────────────────────────────────
+
+/** Given a staged sequence with a joker, return the rank options the joker can represent. */
+export function getJokerPositionOptions(
+  cards: Card[],
+  jokerId: string,
+): { rank: string; num: number; suit: string }[] {
+  const nonJokers = cards.filter(c => !c.isJoker)
+  const suit      = nonJokers[0]?.suit as string
+  if (!suit || nonJokers.length === 0) {
+    // No context: offer all 13 ranks
+    return Array.from({ length: 13 }, (_, i) => ({ rank: numToRank(i + 1), num: i + 1, suit: suit || 'hearts' }))
+  }
+  const nums = nonJokers.map(c => RANK_NUM[c.rank]).sort((a, b) => a - b)
+  const existing = new Set(nums)
+  const options: { rank: string; num: number; suit: string }[] = []
+
+  // Internal gaps first
+  for (let i = 1; i < nums.length; i++) {
+    for (let n = nums[i - 1] + 1; n < nums[i]; n++) {
+      if (!existing.has(n)) options.push({ rank: numToRank(n), num: n, suit })
+    }
+  }
+
+  // Extension at ends if no internal gaps (or always add ends)
+  const min = nums[0], max = nums[nums.length - 1]
+  if (options.length === 0) {
+    if (min > 1)  options.push({ rank: numToRank(min - 1), num: min - 1, suit })
+    if (max < 13) options.push({ rank: numToRank(max + 1), num: max + 1, suit })
+    if (max === 13) options.push({ rank: 'A', num: 14, suit })   // high ace
+  }
+
+  return options
+}
 
 const SUIT_ORDER: Record<string, number> = { spades: 0, hearts: 1, diamonds: 2, clubs: 3, joker: 9 }
 
@@ -145,6 +180,33 @@ export function canAddToMeld(meld: Meld, cards: Card[]): boolean {
   if (hasDuplicateInMeld(meld, cards)) return false
   const combined = [...meld.cards, ...cards]
   if (meld.type === 'group') return isValidGroup(combined)
+
+  // For sequences with locked joker positions: treat locked jokers as real cards
+  if (meld.jokerPositions && Object.keys(meld.jokerPositions).length > 0) {
+    const suit = meld.cards.find(c => !c.isJoker)?.suit as Suit
+    const effectiveNums = [
+      ...meld.cards.map(c => c.isJoker && meld.jokerPositions![c.id]
+        ? meld.jokerPositions![c.id]
+        : c.isJoker ? null : RANK_NUM[c.rank]),
+      ...cards.map(c => c.isJoker ? null : RANK_NUM[c.rank]),
+    ].filter(n => n !== null) as number[]
+
+    // Check no card matches a locked joker position
+    for (const card of cards) {
+      if (card.isJoker) continue
+      for (const [jid, pos] of Object.entries(meld.jokerPositions)) {
+        if (RANK_NUM[card.rank] === pos) return false  // conflicts with locked position
+      }
+    }
+    // Ensure all cards same suit
+    if (cards.some(c => !c.isJoker && c.suit !== suit)) return false
+    // Validate as full sequence
+    const sorted = Array.from(new Set(effectiveNums)).sort((a, b) => a - b)
+    if (sorted.length < 2) return true
+    const range = sorted[sorted.length - 1] - sorted[0] + 1
+    return range === sorted.length  // no gaps remain
+  }
+
   return isValidSequence(combined)
 }
 

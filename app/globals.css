@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Playfair Display — applied ONLY inside .game-container */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
 :root {
   /* Lightened backgrounds */
   --bg:      #2d2d44;
@@ -212,6 +215,37 @@ h1, h2, h3, .pixel-font {
   }
 }
 
+/* ── Playfair Display: game only ─────────────────────────────────────────── */
+.game-container * {
+  font-family: 'Playfair Display', Georgia, serif !important;
+}
+
+/* ── Animation speed multiplier (set on .game-container) ─────────────────── */
+.game-container { --anim-mult: 1; }
+.anim-speed-normal { --anim-mult: 1.5 !important; }
+.anim-speed-slow   { --anim-mult: 2   !important; }
+
+/* ── Game themes ─────────────────────────────────────────────────────────── */
+.game-theme-pastel .felt-zone {
+  background-color: #f5e6d3 !important;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(180,130,80,0.06) 3px, rgba(180,130,80,0.06) 4px) !important;
+}
+.game-theme-pastel .hand-zone {
+  background-color: #faf0e6 !important;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(180,130,80,0.05) 3px, rgba(180,130,80,0.05) 4px) !important;
+}
+.game-theme-pastel .ai-zone {
+  background-color: #ede0d0 !important;
+}
+.game-theme-pastel .pixel-card {
+  background: #fff8f0 !important;
+  border-color: #d4b896 !important;
+}
+.game-theme-pastel .player-turn-bar {
+  background-color: #e8f5e8 !important;
+}
+.game-theme-pastel { color: #4a3728; }
+
 /* ── Toast overlay ───────────────────────────────────────────────────────── */
 @keyframes toastIn {
   from { transform: translateX(-50%) translateY(-14px); opacity: 0; }
@@ -227,14 +261,14 @@ h1, h2, h3, .pixel-font {
   from { transform: translateX(48px) rotate(6deg); opacity: 0; }
   to   { transform: none; opacity: 1; }
 }
-.card-draw-in { animation: slideInCard 0.22s cubic-bezier(0.4,0,0.2,1); }
+.card-draw-in { animation: slideInCard calc(0.22s * var(--anim-mult,1)) cubic-bezier(0.4,0,0.2,1); }
 
 /* Deal stagger */
 @keyframes dealCardIn {
   from { transform: translateY(60px) rotate(4deg); opacity: 0; }
   to   { transform: none; opacity: 1; }
 }
-.card-deal-in { animation: dealCardIn 0.3s cubic-bezier(0.4,0,0.2,1) both; }
+.card-deal-in { animation: dealCardIn calc(0.3s * var(--anim-mult,1)) cubic-bezier(0.4,0,0.2,1) both; }
 
 /* Deck bounce on draw */
 @keyframes deckBounce {
@@ -242,7 +276,7 @@ h1, h2, h3, .pixel-font {
   40%  { transform: scale(1.12); }
   100% { transform: scale(1); }
 }
-.deck-bounce { animation: deckBounce 0.22s cubic-bezier(0.4,0,0.2,1); }
+.deck-bounce { animation: deckBounce calc(0.22s * var(--anim-mult,1)) cubic-bezier(0.4,0,0.2,1); }
 
 /* Deck reshuffle flicker */
 @keyframes deckFlicker {
@@ -250,7 +284,7 @@ h1, h2, h3, .pixel-font {
   25%, 75%  { opacity: 0.25; }
   50%        { opacity: 0.85; transform: scale(0.92); }
 }
-.deck-reshuffle { animation: deckFlicker 0.55s ease; }
+.deck-reshuffle { animation: deckFlicker calc(0.55s * var(--anim-mult,1)) ease; }
 
 /* New meld scales in with gold flash */
 @keyframes meldAppear {
@@ -258,7 +292,7 @@ h1, h2, h3, .pixel-font {
   55%  { transform: scale(1.05); opacity: 1; box-shadow: 0 0 20px rgba(255,215,0,0.85); }
   100% { transform: scale(1);    opacity: 1; box-shadow: 0 0 0 rgba(255,215,0,0); }
 }
-.meld-appear { animation: meldAppear 0.38s cubic-bezier(0.4,0,0.2,1) forwards; }
+.meld-appear { animation: meldAppear calc(0.38s * var(--anim-mult,1)) cubic-bezier(0.4,0,0.2,1) forwards; }
 
 /* Existing set flashes blue on add */
 @keyframes setFlashBlue {
@@ -266,7 +300,7 @@ h1, h2, h3, .pixel-font {
   40%  { box-shadow: 0 0 18px rgba(59,130,246,0.9); transform: scale(1.05); }
   100% { box-shadow: 0 0 0 rgba(59,130,246,0);   transform: scale(1); }
 }
-.set-flash-blue { animation: setFlashBlue 0.35s ease forwards; }
+.set-flash-blue { animation: setFlashBlue calc(0.35s * var(--anim-mult,1)) ease forwards; }
 
 /* Discard pile flashes orange when card lands */
 @keyframes discardFlash {
@@ -274,7 +308,7 @@ h1, h2, h3, .pixel-font {
   40%  { box-shadow: 0 0 22px rgba(249,115,22,0.95); }
   100% { box-shadow: 0 0 0 rgba(249,115,22,0); }
 }
-.discard-flash { animation: discardFlash 0.3s ease forwards; }
+.discard-flash { animation: discardFlash calc(0.3s * var(--anim-mult,1)) ease forwards; }
 
 /* Trump pulses gold */
 @keyframes trumpPulse {
@@ -282,7 +316,7 @@ h1, h2, h3, .pixel-font {
   50%  { box-shadow: 0 0 36px #ffd700, 0 0 70px rgba(255,215,0,0.55); }
   100% { box-shadow: 0 0 14px #ffd700; }
 }
-.trump-pulse { animation: trumpPulse 0.55s ease; }
+.trump-pulse { animation: trumpPulse calc(0.55s * var(--anim-mult,1)) ease; }
 
 /* Turn banner — fixed, slides from top */
 @keyframes bannerSlideDown {

@@ -213,6 +213,26 @@ const en = {
     logDiscards:    'discards',
     logWins:        'wins the round!',
     logPoints:      'pts',
+    // Joker position dialog
+    jokerPosTitle:  'Where does the Joker go?',
+    jokerPosHint:   'Select the rank the Joker represents:',
+    // Animation speed
+    animSpeedLabel: 'ANIMATION SPEED',
+    speedFast:      '🐇 Fast',
+    speedNormal:    '🚶 Normal',
+    speedSlow:      '🐢 Slow',
+    // Theme
+    themeLabel:     'THEME',
+    themeDark:      '🌙 Dark',
+    themePastel:    '🌸 Pastel',
+    // Missing game strings
+    cardsLabel:     'cards',
+    selectedLabel:  'selected',
+    notAvail:       'NOT AVAILABLE',
+    mustUseCard:    '⚠ Use the drawn card in a meld — or RETURN TO DISCARD.',
+    stealGroupHint: 'Select 2 cards to rescue Joker from group set',
+    jokerRescuedBurn: 'Joker rescued! Group burned. ★',
+    addedToSet:     'Added!',
   },
 }
 
@@ -411,6 +431,22 @@ const ua: typeof en = {
     logDiscards:    'викидає',
     logWins:        'виграє раунд!',
     logPoints:      'оч.',
+    jokerPosTitle:  'Куди ставимо Джокера?',
+    jokerPosHint:   'Оберіть ранг, який представляє Джокер:',
+    animSpeedLabel: 'ШВИДКІСТЬ АНІМАЦІЇ',
+    speedFast:      '🐇 Швидко',
+    speedNormal:    '🚶 Нормально',
+    speedSlow:      '🐢 Повільно',
+    themeLabel:     'ТЕМА',
+    themeDark:      '🌙 Темна',
+    themePastel:    '🌸 Пастельна',
+    cardsLabel:     'карт',
+    selectedLabel:  'обрано',
+    notAvail:       'НЕДОСТУПНО',
+    mustUseCard:    '⚠ Використай карту в сеті — або ПОВЕРНУТИ В СКИД.',
+    stealGroupHint: 'Обери 2 карти для порятунку Джокера з групового сету',
+    jokerRescuedBurn: 'Джокера врятовано! Групу спалено. ★',
+    addedToSet:     'Додано!',
   },
 }
 

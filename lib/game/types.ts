@@ -15,6 +15,8 @@ export interface Meld {
   cards: Card[]
   ownerIndex: number
   type: 'group' | 'sequence'
+  // For sequences: maps each joker's card ID → rank number it represents (1-14)
+  jokerPositions?: Record<string, number>
 }
 
 export interface Player {

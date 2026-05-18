@@ -51,6 +51,14 @@ export function dealToPlayers(deck: Card[], numPlayers: number, firstPlayerIndex
   return { hands, remaining: d }
 }
 
+export function numToRank(n: number): string {
+  if (n === 1 || n === 14) return 'A'
+  if (n === 11) return 'J'
+  if (n === 12) return 'Q'
+  if (n === 13) return 'K'
+  return String(n)
+}
+
 export const RANK_NUM: Record<string, number> = {
   'A': 1, '2': 2, '3': 3, '4': 4, '5': 5,
   '6': 6, '7': 7, '8': 8, '9': 9, '10': 10,

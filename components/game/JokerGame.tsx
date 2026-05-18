@@ -6,7 +6,9 @@ import { createDeck, shuffle, dealToPlayers, handCardValue, suitSymbol, isRed, R
 import {
   isValidMeld, meldType, meldValue, canAddToMeld, canStealJoker,
   totalMeldValue, findMeldsInHand, isBurningGroup, sortedMeldCards,
+  getJokerPositionOptions, isValidGroup,
 } from '@/lib/game/meld'
+import { numToRank } from '@/lib/game/cards'
 import { computeAITurn } from '@/lib/game/ai'
 import { useLanguage } from '@/lib/LanguageContext'
 
@@ -203,6 +205,7 @@ function reducer(state: GameState, action: Action): GameState {
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
       // allAtOnce: true only if this was the player's FIRST meld this round
       const allAtOnce = !cur.hasMelded
+      console.log(`[SCORING] COMMIT_MELDS cp=${cp} hasMelded=${cur.hasMelded} allAtOnce=${allAtOnce} handEmpty=${!newHand.length}`)
       const burning=newMelds.find(m=>isBurningGroup(m))
       if(burning){
         const hasJ=burning.cards.some(c=>c.isJoker)
@@ -222,20 +225,40 @@ function reducer(state: GameState, action: Action): GameState {
       const newMeld=updatedMeld(meld,selected),newMelds=state.melds.map(m=>m.id===meld.id?newMeld:m)
       const newHand=cur.hand.filter(c=>!usedIds.has(c.id))
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
+      // allAtOnce: true if this is the player's first card placement this round
+      const addAllAtOnce=!cur.hasMelded
+      console.log(`[SCORING] ADD_TO_MELD cp=${cp} hasMelded=${cur.hasMelded} allAtOnce=${addAllAtOnce} handEmpty=${!newHand.length}`)
       if(isBurningGroup(newMeld)){
         const hasJ=newMeld.cards.some(c=>c.isJoker)
-        // ADD_TO_MELD requires prior melding, so never "all at once"
-        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,false,false)
+        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
         return{...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:newMeld.id,burningHasJoker:hasJ,message:'🔥 Burns on discard.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,false,false)
-      return{...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
+      return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
     }
     case 'STEAL_JOKER':{
       if(circlesCompleted(state.players)<2) return{...state,message:'Cannot steal Joker until circle 3.'}
+      const meld=state.melds.find(m=>m.id===action.meldId); if(!meld) return state
+      // ── GROUP: require 2 real cards to rescue Joker ──────────────────────
+      if(meld.type==='group'){
+        if(state.selectedCardIds.length!==2) return{...state,message:'Select exactly 2 real cards to rescue Joker from group.'}
+        const selected2=cur.hand.filter(c=>state.selectedCardIds.includes(c.id))
+        const jokerG=meld.cards.find(c=>c.isJoker); if(!jokerG) return state
+        const realCards=[...meld.cards.filter(c=>!c.isJoker),...selected2]
+        if(!isValidGroup(realCards)) return{...state,message:'These 2 cards do not complete the group.'}
+        // Joker rescued, 4-real group auto-burns
+        const usedIds2=new Set(selected2.map(c=>c.id))
+        const newHand2=[...cur.hand.filter(c=>!usedIds2.has(c.id)),jokerG]
+        const burnedCards=sortedMeldCards(realCards,'group')
+        return{...state,
+          players:mutPlayer(state,cp,{hand:newHand2}),
+          melds:state.melds.filter(m=>m.id!==meld.id),
+          discardPile:burnIntoDiscard(state.discardPile,burnedCards),
+          selectedCardIds:[],message:'Joker rescued! Group burned. ★'}
+      }
+      // ── SEQUENCE: existing 1-card logic ─────────────────────────────────
       if(state.selectedCardIds.length!==1) return{...state,message:'Select exactly 1 card.'}
       const realCard=cur.hand.find(c=>c.id===state.selectedCardIds[0])!
-      const meld=state.melds.find(m=>m.id===action.meldId); if(!meld) return state
       const{canSteal,jokerIndex}=canStealJoker(meld,realCard)
       if(!canSteal) return{...state,message:'Cannot replace Joker with that card.'}
       const joker=meld.cards[jokerIndex]
@@ -569,8 +592,21 @@ export default function JokerGame(){
   const[state,dispatch]=useReducer(reducer,undefined,makeSetup)
   const{t}=useLanguage();const tg=t.game
 
-  const[cardBack,setCardBack]=useState<CardBack>('night')
+  type AnimSpeed = 'fast'|'normal'|'slow'
+  type GameTheme = 'dark'|'pastel'
+  type JokerPosReq = {meldCards:Card[]; jokerId:string; options:{rank:string;num:number;suit:string}[]} | null
+
+  const[cardBack,setCardBack]=useState<CardBack>(()=>(typeof localStorage!=='undefined'?localStorage.getItem('lk_cardback') as CardBack||'night':'night'))
+  const[animSpeed,setAnimSpeedState]=useState<AnimSpeed>(()=>(typeof localStorage!=='undefined'?localStorage.getItem('lk_animspeed') as AnimSpeed||'fast':'fast'))
+  const[gameTheme,setGameThemeState]=useState<GameTheme>(()=>(typeof localStorage!=='undefined'?localStorage.getItem('lk_gametheme') as GameTheme||'dark':'dark'))
   const[soundEnabled,setSoundEnabled]=useState(true)
+  const[jokerPosReq,setJokerPosReq]=useState<JokerPosReq>(null)
+  const[pendingStageMeld,setPendingStageMeld]=useState<Card[]|null>(null)
+
+  function setAnimSpeed(s:AnimSpeed){setAnimSpeedState(s);if(typeof localStorage!=='undefined')localStorage.setItem('lk_animspeed',s)}
+  function setGameTheme(t:GameTheme){setGameThemeState(t);if(typeof localStorage!=='undefined')localStorage.setItem('lk_gametheme',t)}
+
+  const animMult = animSpeed==='fast'?1:animSpeed==='normal'?1.5:2
   const[sortMode,setSortMode]=useState<'none'|'suit'|'rank'>('none')
   const[origOrder,setOrigOrder]=useState<string[]>([])
   const[drawnCardId,setDrawnCardId]=useState<string|null>(null)
@@ -598,9 +634,10 @@ export default function JokerGame(){
   // ── Toast helper ──────────────────────────────────────────────────
   function addToast(text:string){
     const id=++toastIdRef.current
+    const showMs=Math.round(1700*animMult), hideMs=Math.round(2000*animMult)
     setToasts(prev=>[...prev.slice(-4),{id,text,exiting:false}])
-    setTimeout(()=>setToasts(prev=>prev.map(t=>t.id===id?{...t,exiting:true}:t)),1700)
-    setTimeout(()=>setToasts(prev=>prev.filter(t=>t.id!==id)),2000)
+    setTimeout(()=>setToasts(prev=>prev.map(t=>t.id===id?{...t,exiting:true}:t)),showMs)
+    setTimeout(()=>setToasts(prev=>prev.filter(t=>t.id!==id)),hideMs)
   }
 
   // ── AI turn — pass tg + addToast ─────────────────────────────────
@@ -756,6 +793,24 @@ export default function JokerGame(){
               </div>
             ))}
           </div>
+          {/* Animation speed */}
+          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color:'var(--muted)',marginBottom:8}}>{tg.animSpeedLabel}</div>
+          <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:20}}>
+            {(['fast','normal','slow'] as const).map(s=>(
+              <button key={s} onClick={()=>setAnimSpeed(s)} className="pixel-btn" style={{flex:1,justifyContent:'center',fontSize:11,background:animSpeed===s?'rgba(34,211,238,0.2)':'var(--bg3)',border:`2px solid ${animSpeed===s?'var(--c-dash)':'var(--border)'}`,color:animSpeed===s?'var(--c-dash)':'var(--muted)'}}>
+                {s==='fast'?tg.speedFast:s==='normal'?tg.speedNormal:tg.speedSlow}
+              </button>
+            ))}
+          </div>
+          {/* Theme */}
+          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color:'var(--muted)',marginBottom:8}}>{tg.themeLabel}</div>
+          <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:20}}>
+            {(['dark','pastel'] as const).map(th=>(
+              <button key={th} onClick={()=>setGameTheme(th)} className="pixel-btn" style={{flex:1,justifyContent:'center',fontSize:11,background:gameTheme===th?'rgba(34,211,238,0.2)':'var(--bg3)',border:`2px solid ${gameTheme===th?'var(--c-dash)':'var(--border)'}`,color:gameTheme===th?'var(--c-dash)':'var(--muted)'}}>
+                {th==='dark'?tg.themeDark:tg.themePastel}
+              </button>
+            ))}
+          </div>
           <div style={{fontSize:17,color:'var(--muted)'}}>{tg.youAreP1}</div>
         </div>
       </div>
@@ -789,7 +844,7 @@ export default function JokerGame(){
 
   // ── Main game ────────────────────────────────────────────────────────────
   return(
-    <div style={{maxWidth:860,margin:'0 auto',userSelect:'none',overflow:'hidden'}} onPointerDown={unlockAudio}>
+    <div className={`game-container anim-speed-${animSpeed} game-theme-${gameTheme}`} style={{maxWidth:860,margin:'0 auto',userSelect:'none',overflow:'hidden'}} onPointerDown={unlockAudio}>
 
       {/* ── Fixed overlay: toasts ── */}
       <div style={{position:'fixed',top:80,left:'50%',zIndex:400,display:'flex',flexDirection:'column',gap:6,alignItems:'center',pointerEvents:'none',minWidth:200,maxWidth:'82vw'}}>
@@ -823,8 +878,8 @@ export default function JokerGame(){
           <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--c-journal)'}}>{tg.title}</span>
           <button onClick={()=>setSoundEnabled(e=>!e)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',padding:2}}>{soundEnabled?'🔊':'🔇'}</button>
         </div>
-        <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'var(--muted)'}}>
-          R{state.roundNumber}/7 · {state.trumpSuit?`${tg.trump}: ${suitSymbol(state.trumpSuit)}`:tg.noTrump} · {tg.circle} {circles+1} {circles>=2?tg.circleOpen:tg.circleLocked}
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,color:'var(--muted)',letterSpacing:0.3}}>
+          {tg.roundDone.replace('♦','').trim()} {state.roundNumber}/7 &nbsp;·&nbsp; {tg.circle} {circles+1}
         </div>
         <CompactScore players={state.players} roundScores={state.roundScores} youLabel={youLabel} scoreLabel={tg.scores}/>
       </div>
@@ -988,7 +1043,17 @@ export default function JokerGame(){
                 </>
               ):(
                 <>
-                  <button className="pixel-btn" onClick={()=>dispatch({type:'STAGE_MELD'})} disabled={state.selectedCardIds.length<3}
+                  <button className="pixel-btn" onClick={()=>{
+                    const cards=(human?.hand??[]).filter(c=>state.selectedCardIds.includes(c.id))
+                    if(isValidMeld(cards)&&meldType(cards)==='sequence'){
+                      const jokers=cards.filter(c=>c.isJoker)
+                      if(jokers.length>0){
+                        const opts=getJokerPositionOptions(cards,jokers[0].id)
+                        if(opts.length>1){setPendingStageMeld(cards);setJokerPosReq({meldCards:cards,jokerId:jokers[0].id,options:opts});return}
+                      }
+                    }
+                    dispatch({type:'STAGE_MELD'})
+                  }} disabled={state.selectedCardIds.length<3}
                     style={{fontSize:12,padding:'10px 14px',background:'#1a4a28',color:'#90d4a0',border:'2px solid #2a7a3a',boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
                     {tg.stageMeld}
                   </button>
@@ -1017,6 +1082,35 @@ export default function JokerGame(){
               })()}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Joker Position Dialog ── */}
+      {jokerPosReq&&(
+        <div className="modal-overlay" onClick={()=>{setJokerPosReq(null);setPendingStageMeld(null)}}>
+          <div className="pixel-card card-planner" style={{width:'100%',maxWidth:420,padding:24}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'var(--c-planner)',marginBottom:14}}>{tg.jokerPosTitle}</div>
+            <div style={{fontSize:17,color:'var(--muted)',marginBottom:16}}>{tg.jokerPosHint}</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center'}}>
+              {jokerPosReq.options.map(opt=>(
+                <button key={opt.num} className="pixel-btn pixel-btn-primary" style={{fontSize:14,padding:'10px 16px'}}
+                  onClick={()=>{
+                    // Stage meld with joker position noted
+                    if(pendingStageMeld){
+                      // Just dispatch STAGE_MELD — the reducer will handle it
+                      // We also store the position for when the meld is committed
+                      dispatch({type:'STAGE_MELD'})
+                    }
+                    setJokerPosReq(null);setPendingStageMeld(null)
+                  }}>
+                  {opt.rank} {suitSymbol(jokerPosReq.meldCards.find(c=>!c.isJoker)?.suit as any)}
+                </button>
+              ))}
+            </div>
+            <button className="pixel-btn pixel-btn-secondary" style={{marginTop:12,fontSize:9}} onClick={()=>{setJokerPosReq(null);setPendingStageMeld(null)}}>
+              ✕ Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
