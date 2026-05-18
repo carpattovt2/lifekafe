@@ -214,6 +214,10 @@ const en = {
     logWins:        'wins the round!',
     logPoints:      'pts',
     // Joker position dialog
+    startGame:      'START GAME',
+    gameOver:       '🏆 GAME OVER!',
+    exitGame:       'Exit to Dashboard',
+    allRounds:      'All Rounds',
     jokerPosTitle:  'Where does the Joker go?',
     jokerPosHint:   'Select the rank the Joker represents:',
     // Animation speed
@@ -431,6 +435,10 @@ const ua: typeof en = {
     logDiscards:    'викидає',
     logWins:        'виграє раунд!',
     logPoints:      'оч.',
+    startGame:      'ПОЧАТИ ГРУ',
+    gameOver:       '🏆 ГРА ЗАВЕРШЕНА!',
+    exitGame:       'Повернутися на дашборд',
+    allRounds:      'Всі раунди',
     jokerPosTitle:  'Куди ставимо Джокера?',
     jokerPosHint:   'Оберіть ранг, який представляє Джокер:',
     animSpeedLabel: 'ШВИДКІСТЬ АНІМАЦІЇ',

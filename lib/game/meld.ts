@@ -55,13 +55,27 @@ function isAceHighInCards(cards: Card[]): boolean {
 }
 
 // ── Sort meld cards for display ───────────────────────────────────────────────
-export function sortedMeldCards(cards: Card[], type: 'group' | 'sequence'): Card[] {
+export function sortedMeldCards(cards: Card[], type: 'group' | 'sequence', jokerPositions?: Record<string, number>): Card[] {
   if (type === 'group') {
     return [...cards].sort((a, b) => {
       if (a.isJoker && b.isJoker) return 0
       if (a.isJoker) return 1
       if (b.isJoker) return -1
       return (SUIT_ORDER[a.suit] ?? 9) - (SUIT_ORDER[b.suit] ?? 9)
+    })
+  }
+
+  // Sequence with fixed joker positions: sort by effective rank
+  if (jokerPositions && Object.keys(jokerPositions).length > 0) {
+    const aceHigh = isAceHighInCards(cards)
+    return [...cards].sort((a, b) => {
+      const aNum = a.isJoker
+        ? (jokerPositions[a.id] ?? 99)
+        : (a.rank === 'A' && aceHigh ? 14 : RANK_NUM[a.rank] ?? 0)
+      const bNum = b.isJoker
+        ? (jokerPositions[b.id] ?? 99)
+        : (b.rank === 'A' && aceHigh ? 14 : RANK_NUM[b.rank] ?? 0)
+      return aNum - bNum
     })
   }
 

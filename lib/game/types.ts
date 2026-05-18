@@ -59,6 +59,8 @@ export interface GameState {
   drawnThisTurn: boolean
   drawnFromDiscardCardId: string | null
   message: string
+  // Tracks when player's first meld leaves exactly 1 card (will discard for -10)
+  firstMeldSingleCardLeft: boolean
 
   burningMeldId: string | null
   burningHasJoker: boolean

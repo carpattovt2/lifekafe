@@ -244,7 +244,16 @@ h1, h2, h3, .pixel-font {
 .game-theme-pastel .player-turn-bar {
   background-color: #e8f5e8 !important;
 }
-.game-theme-pastel { color: #4a3728; }
+.game-theme-pastel { color: #3d2b1f; }
+.game-theme-pastel { --text: #3d2b1f; --muted: #8b6e5a; --border: #c8a882; }
+/* Pastel theme: force dark readable text on all game elements */
+.game-theme-pastel .widget-label,
+.game-theme-pastel [style*="color:"] { color: #3d2b1f; }
+.game-theme-pastel .ai-zone * { color: #3d2b1f !important; }
+.game-theme-pastel .felt-zone * { color: #2d1f15; }
+.game-theme-pastel .hand-zone * { color: #2d1f15; }
+.game-theme-pastel .fixed-actions { background: rgba(245,225,195,0.97) !important; border-top: 1px solid #c8a882 !important; }
+.game-theme-pastel .fixed-actions * { color: #2d1f15 !important; }
 
 /* ── Toast overlay ───────────────────────────────────────────────────────── */
 @keyframes toastIn {

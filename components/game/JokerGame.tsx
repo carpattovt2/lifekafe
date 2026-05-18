@@ -82,13 +82,21 @@ function useGameSounds(enabled: boolean) {
   return { play, noise, tone, unlockAudio }
 }
 
+// ── Module-level ref for AI flash meld ID (Fix 8) ────────────────────────────
+const aiFlashMeldIdRef = { current: null as string | null }
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 let _meldId = 0
 const mkMeldId = () => `m${++_meldId}`
 function makeMeld(cards: Card[], owner: number): Meld { const type=meldType(cards); return {id:mkMeldId(),cards:sortedMeldCards(cards,type),ownerIndex:owner,type} }
 function updatedMeld(meld: Meld, extra: Card[]): Meld { return {...meld,cards:sortedMeldCards([...meld.cards,...extra],meld.type)} }
 function burnIntoDiscard(pile: Card[], burned: Card[]): Card[] { const mid=Math.floor(pile.length/2); return [...pile.slice(0,mid),...burned,...pile.slice(mid)] }
-function calcPenalty(hand: Card[]): number { if(!hand.length)return 0; return Math.min(10,Math.round(hand.reduce((s,c)=>s+handCardValue(c),0)/10)) }
+function calcPenalty(hand: Card[], hasMelded: boolean): number {
+  if(!hand.length) return 0
+  // Fix 3: if player melded AND still has a Joker in hand → flat +10 penalty
+  if(hasMelded && hand.some(c=>c.isJoker)) return 10
+  return Math.min(10,Math.round(hand.reduce((s,c)=>s+handCardValue(c),0)/10))
+}
 function reshuffleIfEmpty(s: GameState): GameState { if(s.deck.length>0)return s; const top=s.discardPile[s.discardPile.length-1],rest=s.discardPile.slice(0,-1); return {...s,deck:shuffle(rest),discardPile:top?[top]:[]} }
 function nextIdx(cur: number, n: number) { return (cur+1)%n }
 function circlesCompleted(players: Player[]) { return players.length?Math.min(...players.map(p=>p.turnCount)):0 }
@@ -101,7 +109,7 @@ function makeSetup(): GameState {
     deck:[],discardPile:[],trumpCard:null,trumpSuit:null,takenTrumpCard:null,
     players:[],melds:[],roundScores:[],
     selectedCardIds:[],stagedMelds:[],drawnThisTurn:false,drawnFromDiscardCardId:null,message:'',
-    burningMeldId:null,burningHasJoker:false,
+    burningMeldId:null,burningHasJoker:false,firstMeldSingleCardLeft:false,
   }
 }
 function createPlayers(n: number): Player[] {
@@ -123,17 +131,20 @@ function dealRound(base: GameState): GameState {
   return {
     ...base,roundNumber:base.roundNumber,deck:remaining,discardPile:[],trumpCard,trumpSuit,takenTrumpCard:null,
     players,melds:[],selectedCardIds:[],stagedMelds:[],drawnThisTurn:false,drawnFromDiscardCardId:null,
-    currentPlayerIndex:firstIdx,phase:firstPhase,message:'',burningMeldId:null,burningHasJoker:false,
+    currentPlayerIndex:firstIdx,phase:firstPhase,message:'',burningMeldId:null,burningHasJoker:false,firstMeldSingleCardLeft:false,
   }
 }
 // allAtOnce=true  → player emptied hand in a single turn, first meld of the round → -10 (or -20 with joker)
 // allAtOnce=false → player had already melded 51+ before, then disposed remaining → -5
 function finishRound(state: GameState, winnerIdx: number, allAtOnce: boolean, lastJoker: boolean): GameState {
   const bonus = allAtOnce ? (lastJoker ? -20 : -10) : -5
-  const scores=state.players.map((p,i)=>{if(i===winnerIdx)return bonus;if(!p.hasMelded)return 10;return calcPenalty(p.hand)})
+  const scores=state.players.map((p,i)=>{if(i===winnerIdx)return bonus;if(!p.hasMelded)return 10;return calcPenalty(p.hand,p.hasMelded)})
+  // After final round: go directly to game-end (no round-end intermediate)
+  const nextPhase: Phase = state.roundNumber >= 7 ? 'game-end' : 'round-end'
   return {
-    ...state,roundScores:[...state.roundScores,scores],phase:'round-end',message:'',
+    ...state,roundScores:[...state.roundScores,scores],phase:nextPhase,message:'',
     selectedCardIds:[],stagedMelds:[],burningMeldId:null,burningHasJoker:false,takenTrumpCard:null,
+    firstMeldSingleCardLeft:false,
   }
 }
 function advanceTurn(state: GameState): GameState {
@@ -146,7 +157,7 @@ type Action =
   |{type:'START_GAME';numPlayers:number}|{type:'INIT_ROUND'}
   |{type:'DRAW_DECK'}|{type:'DRAW_DISCARD'}|{type:'TAKE_TRUMP'}|{type:'RETURN_TRUMP'}
   |{type:'TOGGLE_CARD';cardId:string}|{type:'REORDER_HAND';fromIndex:number;toIndex:number}|{type:'REORDER_HAND_TO';hand:Card[]}
-  |{type:'STAGE_MELD'}|{type:'CLEAR_STAGED'}|{type:'COMMIT_MELDS'}
+  |{type:'STAGE_MELD'}|{type:'CLEAR_STAGED'}|{type:'COMMIT_MELDS';jokerPositions?:Record<string,number>}
   |{type:'ADD_TO_MELD';meldId:string}|{type:'STEAL_JOKER';meldId:string}
   |{type:'BURN_MELD'}|{type:'REPLACE_BURNING_JOKER'}|{type:'RETURN_TO_DISCARD'}
   |{type:'DISCARD';cardId:string}|{type:'AI_TURN_DONE';next:Partial<GameState>}
@@ -199,21 +210,38 @@ function reducer(state: GameState, action: Action): GameState {
       const total=totalMeldValue(state.stagedMelds)
       if(!cur.hasMelded&&total<51) return{...state,message:`First meld needs 51+ pts. You have ${total}.`}
       const usedIds=new Set(state.stagedMelds.flat().map(c=>c.id))
-      const newMelds=state.stagedMelds.map(cards=>makeMeld(cards,cp))
+      // Apply joker positions passed from dialog (Fix 5)
+      const jp=action.jokerPositions
+      const newMelds=state.stagedMelds.map(cards=>{
+        const type=meldType(cards)
+        if(type==='sequence'&&jp){
+          const jokers=cards.filter(c=>c.isJoker)
+          if(jokers.length>0){
+            const positions:Record<string,number>={}
+            jokers.forEach(j=>{if(jp[j.id])positions[j.id]=jp[j.id]})
+            if(Object.keys(positions).length>0){
+              const sorted=sortedMeldCards(cards,'sequence',positions)
+              return{id:mkMeldId(),cards:sorted,ownerIndex:cp,type:'sequence' as const,jokerPositions:positions}
+            }
+          }
+        }
+        return makeMeld(cards,cp)
+      })
       const newHand=cur.hand.filter(c=>!usedIds.has(c.id))
       const allMelds=[...state.melds,...newMelds]
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
-      // allAtOnce: true only if this was the player's FIRST meld this round
-      const allAtOnce = !cur.hasMelded
-      console.log(`[SCORING] COMMIT_MELDS cp=${cp} hasMelded=${cur.hasMelded} allAtOnce=${allAtOnce} handEmpty=${!newHand.length}`)
+      const allAtOnce = !cur.hasMelded  // true if this was player's FIRST meld this round
+      // Fix 2: track when first meld leaves exactly 1 card (discard will score as -10)
+      const isFirstMeldOneLeft = !cur.hasMelded && newHand.length === 1
+      console.log(`[SCORING] COMMIT_MELDS cp=${cp} hasMelded=${cur.hasMelded} allAtOnce=${allAtOnce} newHandLen=${newHand.length} firstMeldOneLeft=${isFirstMeldOneLeft}`)
       const burning=newMelds.find(m=>isBurningGroup(m))
       if(burning){
         const hasJ=burning.cards.some(c=>c.isJoker)
         if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
         return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:burning.id,burningHasJoker:hasJ,message:hasJ?'🔥 4-of-a-kind JOKER!':'🔥 4-of-a-kind! Burns on discard.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
-      return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],firstMeldSingleCardLeft:false},cp,allAtOnce,false)
+      return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,firstMeldSingleCardLeft:isFirstMeldOneLeft,message:''}
     }
     case 'ADD_TO_MELD':{
       if(circlesCompleted(state.players)<2) return{...state,message:'Cannot add to sets until circle 3.'}
@@ -297,7 +325,10 @@ function reducer(state: GameState, action: Action): GameState {
       const newHand=s.players[cp].hand.filter(c=>c.id!==action.cardId)
       const pile=[...s.discardPile,card]
       const upd=mutPlayer(s,cp,{hand:newHand,turnCount:s.players[cp].turnCount+1})
-      if(!newHand.length) return finishRound({...s,players:upd,discardPile:pile},cp,false,card.isJoker)
+      // Fix 2: if this was the first-meld-one-card-left scenario, treat discard as allAtOnce (-10)
+      const discardAllAtOnce = s.firstMeldSingleCardLeft
+      console.log(`[SCORING] DISCARD cp=${cp} firstMeldSingleCardLeft=${s.firstMeldSingleCardLeft} allAtOnce=${discardAllAtOnce} handEmpty=${!newHand.length}`)
+      if(!newHand.length) return finishRound({...s,players:upd,discardPile:pile,firstMeldSingleCardLeft:false},cp,discardAllAtOnce,card.isJoker)
       return advanceTurn({...s,players:upd,discardPile:pile})
     }
     case 'AI_TURN_DONE': return{...state,...action.next}
@@ -312,6 +343,8 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToa
   const cp=state.currentPlayerIndex,player=state.players[cp]
   let s=reshuffleIfEmpty({...state});const decision=computeAITurn(s,cp)
   let hand=[...player.hand],deck=[...s.deck],discardPile=[...s.discardPile],melds=[...s.melds],hasMelded=player.hasMelded
+  let aiFirstMeldOneCard=false  // Fix 2: track when AI first melds with 1 card remaining
+  let lastModifiedMeldId:string|null=null  // Fix 8: track which meld was last modified
   const usedIds=new Set<string>()
   if(decision.drawFromDiscard&&discardPile.length){
     hand=[...hand,discardPile[discardPile.length-1]];discardPile=discardPile.slice(0,-1)
@@ -327,6 +360,8 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToa
       mc.forEach(c=>usedIds.add(c.id))
     }
     hasMelded=true; hand=hand.filter(c=>!usedIds.has(c.id))
+    // Fix 2: if this was first meld and exactly 1 card left
+    if(!player.hasMelded && hand.length===1) aiFirstMeldOneCard=true
     const meldVal=totalMeldValue(decision.meldsToPlay)
     addToast(`${player.name} ${tg.logMelds} (${meldVal} ${tg.logPoints})`)
   }
@@ -339,6 +374,7 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToa
       cards.forEach(c=>usedIds.add(c.id))
       hand=hand.filter(c=>!cards.map(x=>x.id).includes(c.id))
       addToast(`${player.name} ${tg.logAdds} [${cards.map(c=>c.rank+suitSymbol(c.suit)).join(' ')}]`)
+      lastModifiedMeldId=meldId   // Fix 8: track which set was modified for animation
     }
   }
   let burningMeldId=s.burningMeldId,burningHasJoker=s.burningHasJoker
@@ -367,10 +403,14 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToa
   addToast(`${player.name} ${tg.logDiscards} [${dc.rank}${suitSymbol(dc.suit)}]`)
   if(!finalHand.length){
     addToast(`🏆 ${player.name} ${tg.logWins}`)
-    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,false,dc.isJoker)});return
+    // Fix 2: if AI first melded with 1 card left and now discards it, treat as allAtOnce
+    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false,firstMeldSingleCardLeft:false},cp,aiFirstMeldOneCard,dc.isJoker)});return
   }
   const ni=nextIdx(cp,state.numPlayers),nxt=newPlayers[ni]
-  dispatch({type:'AI_TURN_DONE',next:{players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false,currentPlayerIndex:ni,phase:nxt.isHuman?'player-draw':'ai-turn',drawnThisTurn:false,drawnFromDiscardCardId:null,selectedCardIds:[],stagedMelds:[],message:'',takenTrumpCard:null}})
+  // Fix 8: pass the last meld ID that was modified so animation highlights the correct set
+  // Store lastModifiedMeldId in a module-level ref for the animation effect to pick up
+  aiFlashMeldIdRef.current = lastModifiedMeldId
+  dispatch({type:'AI_TURN_DONE',next:{players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false,currentPlayerIndex:ni,phase:nxt.isHuman?'player-draw':'ai-turn',drawnThisTurn:false,drawnFromDiscardCardId:null,selectedCardIds:[],stagedMelds:[],message:'',takenTrumpCard:null,firstMeldSingleCardLeft:false}})
 }
 
 // ── Card back renderer ────────────────────────────────────────────────────────
@@ -596,6 +636,8 @@ export default function JokerGame(){
   type GameTheme = 'dark'|'pastel'
   type JokerPosReq = {meldCards:Card[]; jokerId:string; options:{rank:string;num:number;suit:string}[]} | null
 
+  const[setupNumPlayers,setSetupNumPlayers]=useState(2)
+  const[pendingJokerPositions,setPendingJokerPositions]=useState<Record<string,number>>({})
   const[cardBack,setCardBack]=useState<CardBack>(()=>(typeof localStorage!=='undefined'?localStorage.getItem('lk_cardback') as CardBack||'night':'night'))
   const[animSpeed,setAnimSpeedState]=useState<AnimSpeed>(()=>(typeof localStorage!=='undefined'?localStorage.getItem('lk_animspeed') as AnimSpeed||'fast':'fast'))
   const[gameTheme,setGameThemeState]=useState<GameTheme>(()=>(typeof localStorage!=='undefined'?localStorage.getItem('lk_gametheme') as GameTheme||'dark':'dark'))
@@ -665,8 +707,9 @@ export default function JokerGame(){
       setNewMeldIds(fresh)
       setTimeout(()=>setNewMeldIds(new Set()),500)
     }
-    // Detect enlarged meld (add-to-set): same IDs but one meld got bigger
-    const changedId=state.melds.find(m=>prevMeldIds.current.includes(m.id)&&!fresh.has(m.id))?.id
+    // Fix 8: use AI-provided meld ID if available, otherwise detect by size change
+    const aiHint = aiFlashMeldIdRef.current; aiFlashMeldIdRef.current = null
+    const changedId = aiHint || state.melds.find(m=>prevMeldIds.current.includes(m.id)&&!fresh.has(m.id))?.id
     if(changedId){
       setFlashMeldId(changedId)
       setTimeout(()=>setFlashMeldId(null),400)
@@ -782,7 +825,12 @@ export default function JokerGame(){
         <div className="pixel-card card-journal" style={{padding:24,marginBottom:12}}>
           <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--muted)',marginBottom:16}}>{tg.choosePlayers}</div>
           <div style={{display:'flex',gap:10,justifyContent:'center',marginBottom:24}}>
-            {[2,3,4,5].map(n=><button key={n} className="pixel-btn pixel-btn-primary" style={{fontSize:14,padding:'14px 22px'}} onClick={()=>dispatch({type:'START_GAME',numPlayers:n})}>{n}P</button>)}
+            {[2,3,4,5].map(n=>(
+              <button key={n} className="pixel-btn" onClick={()=>setSetupNumPlayers(n)}
+                style={{fontSize:14,padding:'14px 22px',background:setupNumPlayers===n?'var(--c-dash)':'var(--bg3)',color:setupNumPlayers===n?'#000':'var(--muted)',border:`2px solid ${setupNumPlayers===n?'var(--c-dash)':'var(--border)'}`,boxShadow:setupNumPlayers===n?'0 0 10px rgba(34,211,238,0.4)':undefined}}>
+                {n}P
+              </button>
+            ))}
           </div>
           <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color:'var(--muted)',marginBottom:12}}>{tg.cardBackLabel}</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:10,justifyContent:'center',marginBottom:16}}>
@@ -811,7 +859,11 @@ export default function JokerGame(){
               </button>
             ))}
           </div>
-          <div style={{fontSize:17,color:'var(--muted)'}}>{tg.youAreP1}</div>
+          <div style={{fontSize:17,color:'var(--muted)',marginBottom:20}}>{tg.youAreP1}</div>
+          <button className="pixel-btn pixel-btn-success" onClick={()=>dispatch({type:'START_GAME',numPlayers:setupNumPlayers})}
+            style={{width:'100%',justifyContent:'center',fontSize:14,padding:'16px 0',letterSpacing:2}}>
+            {tg.startGame} ▶
+          </button>
         </div>
       </div>
     )
@@ -828,16 +880,48 @@ export default function JokerGame(){
   // ── Game end ─────────────────────────────────────────────────────────────
   if(state.phase==='game-end'){
     const totals=state.players.map((_,pi)=>state.roundScores.reduce((s,r)=>s+(r[pi]??0),0))
-    const minScore=Math.min(...totals),winner=state.players[totals.indexOf(minScore)]
+    const minScore=Math.min(...totals),winnerIdx=totals.indexOf(minScore),winner=state.players[winnerIdx]
     return(
-      <div style={{maxWidth:700,margin:'0 auto',padding:'28px 16px'}}>
-        <h1 style={{fontFamily:"'Press Start 2P',monospace",fontSize:13,color:'var(--c-journal)',marginBottom:24}}>{tg.finalScores}</h1>
-        <div className="pixel-card card-journal" style={{marginBottom:20}}>
-          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:winner.isHuman?'var(--c-weight)':'var(--red)',marginBottom:16}}>{winner.isHuman?tg.youWin:`💀 ${winner.name} — ${tg.aiWins}`}</div>
-          <div style={{fontSize:18,color:'var(--muted)',marginBottom:16}}>{state.players.map((p,i)=>`${p.isHuman?youLabel:p.name}: ${totals[i]}`).join(' · ')}<br/>{tg.lowestWins}</div>
-          <CompactScore players={state.players} roundScores={state.roundScores} youLabel={youLabel} scoreLabel={tg.scores}/>
+      <div className={`game-container anim-speed-${animSpeed} game-theme-${gameTheme}`}>
+        {/* Full-screen game-over overlay */}
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'20px 16px',overflowY:'auto',backdropFilter:'blur(6px)'}}>
+          <div className="round-end-panel" style={{width:'100%',maxWidth:700,background:'linear-gradient(180deg,#0d1a10 0%,#142018 100%)',border:'3px solid #ffd700',padding:'28px 20px',borderRadius:4,boxShadow:'0 0 40px rgba(255,215,0,0.3)'}}>
+            <h1 style={{fontFamily:"'Press Start 2P',monospace",fontSize:14,color:'#ffd700',textAlign:'center',textShadow:'0 0 20px rgba(255,215,0,0.6)',marginBottom:8}}>
+              {tg.gameOver}
+            </h1>
+            <div style={{textAlign:'center',marginBottom:20}}>
+              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:12,color:winner.isHuman?'var(--c-weight)':'var(--red)',marginBottom:8,textShadow:`0 0 12px ${winner.isHuman?'rgba(74,222,128,0.6)':'rgba(239,68,68,0.6)'}`}}>
+                {winner.isHuman?tg.youWin:`🏆 ${winner.name} ${tg.aiWins}`}
+              </div>
+              <div style={{fontSize:17,color:'var(--muted)'}}>{tg.lowestWins}</div>
+            </div>
+
+            {/* Full scores table */}
+            <div style={{marginBottom:20,overflowX:'auto'}}>
+              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'var(--muted)',marginBottom:8}}>{tg.allRounds}</div>
+              <div style={{display:'grid',gridTemplateColumns:`auto repeat(${state.roundScores.length},1fr) auto`,gap:2,minWidth:320,fontFamily:"'VT323',monospace",fontSize:18}}>
+                {['', ...state.roundScores.map((_,i)=>`R${i+1}`), 'Σ'].map((h,i)=>(
+                  <div key={i} style={{fontFamily:"'Press Start 2P',monospace",fontSize:7,color:'var(--muted)',textAlign:'center',padding:'3px 4px'}}>{h}</div>
+                ))}
+                {state.players.map((p,pi)=>{
+                  const pColor=pi===winnerIdx?'#ffd700':playerColor(p,pi)
+                  return([p.isHuman?youLabel.toUpperCase():p.name,...state.roundScores.map(r=>r[pi]??''),totals[pi]].map((v,i)=>(
+                    <div key={i} style={{textAlign:'center',padding:'3px 4px',color:i===0?pColor:'var(--text)',fontWeight:pi===winnerIdx&&i===state.roundScores.length+1?700:400}}>{v}</div>
+                  )))
+                })}
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
+              <button className="pixel-btn pixel-btn-primary" onClick={()=>dispatch({type:'INIT_ROUND'})} style={{fontSize:12,padding:'14px 28px'}}>
+                {tg.newGame}
+              </button>
+              <a href="/dashboard" className="pixel-btn pixel-btn-secondary" style={{fontSize:11,padding:'12px 20px',textDecoration:'none'}}>
+                {tg.exitGame}
+              </a>
+            </div>
+          </div>
         </div>
-        <button className="pixel-btn pixel-btn-primary" onClick={()=>dispatch({type:'INIT_ROUND'})}>{tg.newGame}</button>
       </div>
     )
   }
@@ -1059,7 +1143,7 @@ export default function JokerGame(){
                   </button>
                   {state.stagedMelds.length>0&&(
                     <>
-                      <button className="pixel-btn" onClick={()=>{play('meld');dispatch({type:'COMMIT_MELDS'})}}
+                      <button className="pixel-btn" onClick={()=>{play('meld');dispatch({type:'COMMIT_MELDS',jokerPositions:pendingJokerPositions});setPendingJokerPositions({})}}
                         style={{fontSize:12,padding:'10px 14px',background:'#1a2a5a',color:'#90b0e0',border:'2px solid #2a4a8a',boxShadow:'3px 3px 0 rgba(0,0,0,0.5)'}}>
                         {tg.commitMelds} ({totalMeldValue(state.stagedMelds)} pts)
                       </button>
@@ -1093,17 +1177,16 @@ export default function JokerGame(){
             <div style={{fontSize:17,color:'var(--muted)',marginBottom:16}}>{tg.jokerPosHint}</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center'}}>
               {jokerPosReq.options.map(opt=>(
-                <button key={opt.num} className="pixel-btn pixel-btn-primary" style={{fontSize:14,padding:'10px 16px'}}
+                <button key={opt.num} className="pixel-btn pixel-btn-primary" style={{fontSize:16,padding:'10px 16px'}}
                   onClick={()=>{
-                    // Stage meld with joker position noted
-                    if(pendingStageMeld){
-                      // Just dispatch STAGE_MELD — the reducer will handle it
-                      // We also store the position for when the meld is committed
-                      dispatch({type:'STAGE_MELD'})
-                    }
+                    // Store the selected joker position
+                    const newPositions={...pendingJokerPositions,[jokerPosReq.jokerId]:opt.num}
+                    setPendingJokerPositions(newPositions)
+                    // Stage the meld (the position will be used when committing)
+                    if(pendingStageMeld) dispatch({type:'STAGE_MELD'})
                     setJokerPosReq(null);setPendingStageMeld(null)
                   }}>
-                  {opt.rank} {suitSymbol(jokerPosReq.meldCards.find(c=>!c.isJoker)?.suit as any)}
+                  {opt.rank} {suitSymbol((jokerPosReq.meldCards.find(c=>!c.isJoker)?.suit??'hearts') as any)}
                 </button>
               ))}
             </div>
