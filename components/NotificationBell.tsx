@@ -19,6 +19,7 @@ export default function NotificationBell() {
   const supabase = createClient()
   const { t } = useLanguage()
   const tf = t.friends
+  if (!tf) return null
 
   const [userId, setUserId] = useState<string | null>(null)
   const [notifs, setNotifs] = useState<Notif[]>([])

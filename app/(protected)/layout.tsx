@@ -4,6 +4,7 @@ import { LanguageProvider } from '@/lib/LanguageContext'
 import Sidebar from '@/components/Sidebar'
 import LanguageToggle from '@/components/LanguageToggle'
 import MobileNav from '@/components/MobileNav'
+import NotificationBell from '@/components/NotificationBell'
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -24,6 +25,11 @@ export default async function ProtectedLayout({ children }: { children: React.Re
 
         {/* Desktop language toggle — hidden on mobile via CSS class */}
         <LanguageToggle />
+
+        {/* Single NotificationBell instance — positioned via CSS for desktop/mobile */}
+        <div className="notif-bell-layout">
+          <NotificationBell />
+        </div>
 
         <main className="main-content" style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
           {children}

@@ -455,6 +455,15 @@ h1, h2, h3, .pixel-font {
 }
 .mobile-menu.open { transform: translateX(0); }
 
+/* ── Notification bell — single instance, positioned for desktop and mobile ── */
+.notif-bell-layout {
+  position: fixed;
+  /* Desktop: sit in the top-right of the 220px sidebar logo section */
+  top: 20px;
+  left: 168px;
+  z-index: 200;
+}
+
 /* ── Responsive breakpoints ──────────────────────────────────────────────── */
 @media (max-width: 767px) {
   .sidebar-desktop      { display: none !important; }
@@ -469,6 +478,13 @@ h1, h2, h3, .pixel-font {
 
   /* Make weight/planner table+grid scrollable */
   .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Notification bell: move to top-right corner on mobile */
+  .notif-bell-layout {
+    top: max(60px, calc(env(safe-area-inset-top, 0px) + 12px));
+    left: auto;
+    right: 72px; /* leave room for the hamburger on the left side of screen */
+  }
 
   /* Reduce page padding on mobile */
   .page-content { padding: 70px 14px 20px !important; }
