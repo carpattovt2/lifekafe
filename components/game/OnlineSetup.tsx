@@ -150,6 +150,22 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
 
   async function inviteFriend(seatIndex: number, friend: FriendProfile) {
     if (!userId || !roomId) return
+
+    // Guard: don't double-invite someone already in a slot
+    if (slots.some(s => s.userId === friend.user_id)) return
+
+    // Pre-reserve the seat in room_players so the host's lobby reflects it immediately
+    const { error: rpErr } = await supabase.from('room_players').insert({
+      room_id: roomId,
+      user_id: friend.user_id,
+      nickname: friend.nickname || friend.email || '?',
+      seat_index: seatIndex,
+      is_bot: false,
+      is_ready: false,
+      is_connected: false,
+    })
+    if (rpErr) return // seat already taken or other DB error
+
     const { data: inv } = await supabase.from('game_invitations').insert({
       room_id: roomId,
       sender_id: userId,
@@ -163,6 +179,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
       type: 'game_invite',
     })
 
+    // Local state is also updated instantly (subscription will confirm)
     setSlots(prev => prev.map(s => s.seatIndex === seatIndex
       ? { seatIndex, status: 'pending', nickname: friend.nickname || friend.email || '?', userId: friend.user_id, invitationId: inv?.id }
       : s
@@ -193,8 +210,15 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     const slot = slots.find(s => s.seatIndex === seatIndex)
     if (!slot) return
     await supabase.from('room_players').delete().eq('room_id', roomId).eq('seat_index', seatIndex)
+    // Decline the pending invitation — prefer invitationId, fall back to receiver lookup
     if (slot.invitationId) {
       await supabase.from('game_invitations').update({ status: 'declined' }).eq('id', slot.invitationId)
+    } else if (slot.userId) {
+      await supabase.from('game_invitations')
+        .update({ status: 'declined' })
+        .eq('room_id', roomId)
+        .eq('receiver_id', slot.userId)
+        .eq('status', 'pending')
     }
     setSlots(prev => prev.map(s => s.seatIndex === seatIndex ? { seatIndex, status: 'empty' } : s))
   }
@@ -207,23 +231,23 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
         async () => {
           const { data } = await supabase.from('room_players').select('*').eq('room_id', roomId).order('seat_index')
           if (!data) return
+          // is_ready=false means invited but not yet accepted; is_ready=true means joined
           const newSlots: SlotInfo[] = data.map(p => ({
             seatIndex: p.seat_index,
-            status: p.is_bot ? 'bot' : 'accepted',
+            status: p.is_bot ? 'bot' : (p.is_ready ? 'accepted' : 'pending'),
             nickname: p.nickname,
             userId: p.user_id,
           }))
-          // Keep empty slots
+          // Fill remaining empty seats
           const filled = new Set(newSlots.map(s => s.seatIndex))
           for (let i = 0; i < settings.numPlayers; i++) {
             if (!filled.has(i)) newSlots.push({ seatIndex: i, status: 'empty' })
           }
-          // Preserve pending status from local state for unconfirmed invites
+          // Only preserve invitationId from previous local state (not the status — DB is the source of truth)
           setSlots(prev => {
-            return newSlots.sort((a,b) => a.seatIndex - b.seatIndex).map(ns => {
+            return newSlots.sort((a, b) => a.seatIndex - b.seatIndex).map(ns => {
               const old = prev.find(s => s.seatIndex === ns.seatIndex)
-              if (ns.status === 'empty' && old?.status === 'pending') return old
-              return ns
+              return { ...ns, invitationId: old?.invitationId }
             })
           })
         }
@@ -236,9 +260,10 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     if (!roomId || !userId) return
     setStartingGame(true)
 
-    // Load confirmed room players
-    const { data: roomPlayers } = await supabase.from('room_players').select('*').eq('room_id', roomId).order('seat_index')
-    if (!roomPlayers || roomPlayers.length < settings.numPlayers) { setStartingGame(false); return }
+    // Load confirmed room players — only is_ready rows (bots are always ready; pending invites are not)
+    const { data: allPlayers } = await supabase.from('room_players').select('*').eq('room_id', roomId).order('seat_index')
+    const roomPlayers = (allPlayers ?? []).filter((rp: any) => rp.is_ready || rp.is_bot)
+    if (roomPlayers.length < settings.numPlayers) { setStartingGame(false); return }
 
     // Build initial game state
     const players = roomPlayers.map(rp => ({

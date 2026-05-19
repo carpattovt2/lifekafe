@@ -235,12 +235,16 @@ export default function OnlineRoomPage({ params }: { params: { roomId: string } 
   const save = useCallback(async (ns: OnlineGameState) => {
     if (savingRef.current) return
     savingRef.current = true
-    await supabase.from('game_rooms').update({
-      game_state: ns,
-      status: ns.phase === 'game-end' ? 'finished' : 'in_progress',
-      updated_at: new Date().toISOString(),
-    }).eq('id', params.roomId)
-    savingRef.current = false
+    try {
+      const { error } = await supabase.from('game_rooms').update({
+        game_state: ns,
+        status: ns.phase === 'game-end' ? 'finished' : 'in_progress',
+        updated_at: new Date().toISOString(),
+      }).eq('id', params.roomId)
+      if (error) console.error('[save] game_rooms update failed:', error.message)
+    } finally {
+      savingRef.current = false
+    }
   }, [params.roomId])
 
   // Stats on game-end

@@ -150,7 +150,7 @@ export default function NotificationBell() {
   async function handleAcceptGameInvite(n: Notif) {
     if (!userId || !n.room_id || !n.invitation_id) return
 
-    // Get user's nickname
+    // Get user's actual nickname
     const { data: profile } = await supabase
       .from('game_profiles')
       .select('nickname')
@@ -158,37 +158,46 @@ export default function NotificationBell() {
       .single()
     const nickname = profile?.nickname || 'Player'
 
-    // Get room info to find an empty seat
-    const { data: room } = await supabase
-      .from('game_rooms')
-      .select('max_players')
-      .eq('id', n.room_id)
-      .single()
-
-    if (!room) return
-
-    const { data: existingPlayers } = await supabase
+    // Update the pre-reserved room_players row (host pre-inserted it when sending invite)
+    const { data: updated } = await supabase
       .from('room_players')
-      .select('seat_index')
+      .update({ nickname, is_ready: true, is_connected: true })
       .eq('room_id', n.room_id)
+      .eq('user_id', userId)
+      .eq('is_ready', false)
+      .select('id')
 
-    const takenSeats = new Set((existingPlayers ?? []).map((p: any) => p.seat_index))
-    let emptySeat = -1
-    for (let i = 1; i < room.max_players; i++) {
-      if (!takenSeats.has(i)) { emptySeat = i; break }
+    if (!updated?.length) {
+      // Fallback: no pre-reserved row found (invitation was cancelled or schema mismatch)
+      // Find first available seat and insert directly
+      const { data: room } = await supabase
+        .from('game_rooms').select('max_players').eq('id', n.room_id).single()
+      if (!room) return
+
+      const { data: existing } = await supabase
+        .from('room_players').select('seat_index, user_id').eq('room_id', n.room_id)
+      const takenSeats = new Set((existing ?? []).map((p: any) => p.seat_index))
+      // Also check if user already has a row (accepted by other path)
+      if ((existing ?? []).some((p: any) => p.user_id === userId)) {
+        // Already in, just navigate
+        await supabase.from('game_invitations').update({ status: 'accepted' }).eq('id', n.invitation_id)
+        await supabase.from('friend_notifications').update({ is_read: true }).eq('id', n.id)
+        setOpen(false)
+        router.push(`/game/online/${n.room_id}`)
+        return
+      }
+
+      let emptySeat = -1
+      for (let i = 1; i < room.max_players; i++) {
+        if (!takenSeats.has(i)) { emptySeat = i; break }
+      }
+      if (emptySeat === -1) return
+
+      await supabase.from('room_players').insert({
+        room_id: n.room_id, user_id: userId, nickname,
+        seat_index: emptySeat, is_bot: false, is_ready: true, is_connected: true,
+      })
     }
-
-    if (emptySeat === -1) return // no empty seat
-
-    await supabase.from('room_players').insert({
-      room_id: n.room_id,
-      user_id: userId,
-      nickname,
-      seat_index: emptySeat,
-      is_bot: false,
-      is_ready: true,
-      is_connected: true,
-    })
 
     await supabase.from('game_invitations').update({ status: 'accepted' }).eq('id', n.invitation_id)
     await supabase.from('friend_notifications').update({ is_read: true }).eq('id', n.id)
