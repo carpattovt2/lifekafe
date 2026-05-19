@@ -279,60 +279,91 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
 
   // Re-fetch on lobby entry (catches anything missed before subscription starts)
   useEffect(() => {
-    if (roomId && step === 'lobby') rebuildSlots(roomId, settings.numPlayers)
+    if (roomId && step === 'lobby') {
+      console.log('[lobby:init] rebuildSlots for roomId:', roomId, 'numPlayers:', settings.numPlayers)
+      rebuildSlots(roomId, settings.numPlayers).then(() => {
+        console.log('[lobby:init] rebuildSlots done')
+      })
+    }
   }, [roomId, step])
 
-  // Lobby realtime subscription — handles each event type directly from payload
-  // (avoids stale-closure issues that come from capturing callbacks in .on())
+  // Lobby realtime subscription
   useEffect(() => {
-    if (!roomId || step !== 'lobby') return
+    console.log('[lobby:sub] effect ran — roomId:', roomId, 'step:', step)
+    if (!roomId || step !== 'lobby') {
+      console.log('[lobby:sub] skipping (no roomId or not lobby step)')
+      return
+    }
+
+    console.log('[lobby:sub] setting up channel for room:', roomId)
 
     const channel = supabase.channel(`lobby-${roomId}`)
-      // Friend inserts their own row when accepting invite
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
         (payload) => {
+          console.log('[lobby:INSERT] *** room_players INSERT received ***')
+          console.log('[lobby:INSERT] full payload:', JSON.stringify(payload, null, 2))
           const p = payload.new as any
-          console.log('[lobby] room_players INSERT', p)
-          setSlots(prev => prev.map(s =>
-            s.seatIndex === p.seat_index
-              ? { seatIndex: p.seat_index, status: p.is_bot ? 'bot' : 'accepted', nickname: p.nickname, userId: p.user_id }
-              : s
-          ))
+          console.log('[lobby:INSERT] new row → seat:', p.seat_index, 'is_ready:', p.is_ready, 'is_bot:', p.is_bot, 'nickname:', p.nickname)
+          setSlots(prev => {
+            console.log('[lobby:INSERT] slots BEFORE update:', JSON.stringify(prev))
+            const next = prev.map(s =>
+              s.seatIndex === p.seat_index
+                ? { seatIndex: p.seat_index, status: (p.is_bot ? 'bot' : 'accepted') as SlotStatus, nickname: p.nickname, userId: p.user_id }
+                : s
+            )
+            console.log('[lobby:INSERT] slots AFTER update:', JSON.stringify(next))
+            return next
+          })
         })
-      // Handles is_ready false→true (legacy pre-reserved rows) and bot inserts via upsert
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
         (payload) => {
+          console.log('[lobby:UPDATE] *** room_players UPDATE received ***')
+          console.log('[lobby:UPDATE] full payload:', JSON.stringify(payload, null, 2))
           const p = payload.new as any
-          console.log('[lobby] room_players UPDATE', p)
-          setSlots(prev => prev.map(s =>
-            s.seatIndex === p.seat_index
-              ? { seatIndex: p.seat_index, status: p.is_bot ? 'bot' : (p.is_ready ? 'accepted' : 'pending'), nickname: p.nickname, userId: p.user_id, invitationId: s.invitationId }
-              : s
-          ))
+          console.log('[lobby:UPDATE] updated row → seat:', p.seat_index, 'is_ready:', p.is_ready, 'is_bot:', p.is_bot, 'nickname:', p.nickname)
+          setSlots(prev => {
+            console.log('[lobby:UPDATE] slots BEFORE:', JSON.stringify(prev))
+            const next = prev.map(s =>
+              s.seatIndex === p.seat_index
+                ? { seatIndex: p.seat_index, status: (p.is_bot ? 'bot' : p.is_ready ? 'accepted' : 'pending') as SlotStatus, nickname: p.nickname, userId: p.user_id, invitationId: s.invitationId }
+                : s
+            )
+            console.log('[lobby:UPDATE] slots AFTER:', JSON.stringify(next))
+            return next
+          })
         })
-      // Slot removed by host — re-fetch to reconcile with pendingInvites
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
-        () => {
-          console.log('[lobby] room_players DELETE')
+        (payload) => {
+          console.log('[lobby:DELETE] room_players DELETE, payload:', JSON.stringify(payload, null, 2))
           rebuildSlots(roomId, settings.numPlayers)
         })
-      // pendingInvites updated in game_rooms.settings (invite sent or cancelled)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` },
         (payload) => {
           const pending: PendingInvite[] = payload.new?.settings?.pendingInvites ?? []
-          console.log('[lobby] game_rooms UPDATE, pendingInvites:', pending)
-          setSlots(prev => prev.map(s => {
-            if (s.status === 'accepted' || s.status === 'bot') return s
-            const inv = pending.find(pi => pi.seatIndex === s.seatIndex)
-            if (inv) return { seatIndex: s.seatIndex, status: 'pending', nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId }
-            return { seatIndex: s.seatIndex, status: 'empty' }
-          }))
+          console.log('[lobby:GR_UPDATE] game_rooms UPDATE received, pendingInvites:', JSON.stringify(pending))
+          setSlots(prev => {
+            console.log('[lobby:GR_UPDATE] slots BEFORE:', JSON.stringify(prev))
+            const next = prev.map(s => {
+              if (s.status === 'accepted' || s.status === 'bot') return s
+              const inv = pending.find(pi => pi.seatIndex === s.seatIndex)
+              if (inv) return { seatIndex: s.seatIndex, status: 'pending' as SlotStatus, nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId }
+              return { seatIndex: s.seatIndex, status: 'empty' as SlotStatus }
+            })
+            console.log('[lobby:GR_UPDATE] slots AFTER:', JSON.stringify(next))
+            return next
+          })
         })
-      .subscribe((status) => {
-        console.log('[lobby] channel status:', status)
+      .subscribe((status, err) => {
+        console.log('[lobby:sub] channel status changed:', status, err ?? '')
+        if (status === 'SUBSCRIBED') console.log('[lobby:sub] ✅ SUBSCRIBED — listening for changes on room:', roomId)
+        if (status === 'CHANNEL_ERROR') console.error('[lobby:sub] ❌ CHANNEL_ERROR — realtime may not be enabled in Supabase dashboard')
+        if (status === 'TIMED_OUT') console.warn('[lobby:sub] ⚠️ TIMED_OUT — check Supabase Realtime settings')
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      console.log('[lobby:sub] cleaning up channel for room:', roomId)
+      supabase.removeChannel(channel)
+    }
   }, [roomId, step])
 
   async function startGame() {
