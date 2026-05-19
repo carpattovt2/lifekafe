@@ -104,6 +104,17 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
   async function createLobby() {
     if (!userId || !myNickname) return
     setCreatingRoom(true)
+
+    // Clean up any stale waiting rooms from this host's previous sessions
+    const { data: staleRooms } = await supabase
+      .from('game_rooms').select('id').eq('host_id', userId).eq('status', 'waiting')
+    if (staleRooms?.length) {
+      for (const r of staleRooms) {
+        await supabase.from('room_players').delete().eq('room_id', r.id)
+        await supabase.from('game_rooms').delete().eq('id', r.id)
+      }
+    }
+
     const code = generateCode()
     const { data: room } = await supabase.from('game_rooms').insert({
       code,
@@ -245,40 +256,84 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     setSlots(prev => prev.map(s => s.seatIndex === seatIndex ? { seatIndex, status: 'empty' } : s))
   }
 
-  // Rebuild slots from DB — merges confirmed room_players with pending invites in game_rooms.settings
-  const rebuildSlots = useCallback(async () => {
-    if (!roomId) return
+  // Full re-fetch: merges room_players (accepted/bot) with game_rooms.settings.pendingInvites
+  async function rebuildSlots(rid: string, numPlayers: number) {
     const [{ data: players }, { data: roomRow }] = await Promise.all([
-      supabase.from('room_players').select('*').eq('room_id', roomId).order('seat_index'),
-      supabase.from('game_rooms').select('settings').eq('id', roomId).single(),
+      supabase.from('room_players').select('*').eq('room_id', rid).order('seat_index'),
+      supabase.from('game_rooms').select('settings').eq('id', rid).single(),
     ])
-    const pendingInvites: PendingInvite[] = roomRow?.settings?.pendingInvites ?? []
+    const pending: PendingInvite[] = roomRow?.settings?.pendingInvites ?? []
     const newSlots: SlotInfo[] = []
-    for (let i = 0; i < settings.numPlayers; i++) {
+    for (let i = 0; i < numPlayers; i++) {
       const p = (players ?? []).find((p: any) => p.seat_index === i)
       if (p) {
         newSlots.push({ seatIndex: i, status: p.is_bot ? 'bot' : 'accepted', nickname: p.nickname, userId: p.user_id })
       } else {
-        const inv = pendingInvites.find(pi => pi.seatIndex === i)
-        if (inv) {
-          newSlots.push({ seatIndex: i, status: 'pending', nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId })
-        } else {
-          newSlots.push({ seatIndex: i, status: 'empty' })
-        }
+        const inv = pending.find(pi => pi.seatIndex === i)
+        if (inv) newSlots.push({ seatIndex: i, status: 'pending', nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId })
+        else newSlots.push({ seatIndex: i, status: 'empty' })
       }
     }
     setSlots(newSlots)
-  }, [roomId, settings.numPlayers])
+  }
 
-  // Subscribe to room_players AND game_rooms changes to keep lobby in sync
+  // Re-fetch on lobby entry (catches anything missed before subscription starts)
+  useEffect(() => {
+    if (roomId && step === 'lobby') rebuildSlots(roomId, settings.numPlayers)
+  }, [roomId, step])
+
+  // Lobby realtime subscription — handles each event type directly from payload
+  // (avoids stale-closure issues that come from capturing callbacks in .on())
   useEffect(() => {
     if (!roomId || step !== 'lobby') return
+
     const channel = supabase.channel(`lobby-${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` }, rebuildSlots)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` }, rebuildSlots)
-      .subscribe()
+      // Friend inserts their own row when accepting invite
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          const p = payload.new as any
+          console.log('[lobby] room_players INSERT', p)
+          setSlots(prev => prev.map(s =>
+            s.seatIndex === p.seat_index
+              ? { seatIndex: p.seat_index, status: p.is_bot ? 'bot' : 'accepted', nickname: p.nickname, userId: p.user_id }
+              : s
+          ))
+        })
+      // Handles is_ready false→true (legacy pre-reserved rows) and bot inserts via upsert
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          const p = payload.new as any
+          console.log('[lobby] room_players UPDATE', p)
+          setSlots(prev => prev.map(s =>
+            s.seatIndex === p.seat_index
+              ? { seatIndex: p.seat_index, status: p.is_bot ? 'bot' : (p.is_ready ? 'accepted' : 'pending'), nickname: p.nickname, userId: p.user_id, invitationId: s.invitationId }
+              : s
+          ))
+        })
+      // Slot removed by host — re-fetch to reconcile with pendingInvites
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
+        () => {
+          console.log('[lobby] room_players DELETE')
+          rebuildSlots(roomId, settings.numPlayers)
+        })
+      // pendingInvites updated in game_rooms.settings (invite sent or cancelled)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` },
+        (payload) => {
+          const pending: PendingInvite[] = payload.new?.settings?.pendingInvites ?? []
+          console.log('[lobby] game_rooms UPDATE, pendingInvites:', pending)
+          setSlots(prev => prev.map(s => {
+            if (s.status === 'accepted' || s.status === 'bot') return s
+            const inv = pending.find(pi => pi.seatIndex === s.seatIndex)
+            if (inv) return { seatIndex: s.seatIndex, status: 'pending', nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId }
+            return { seatIndex: s.seatIndex, status: 'empty' }
+          }))
+        })
+      .subscribe((status) => {
+        console.log('[lobby] channel status:', status)
+      })
+
     return () => { supabase.removeChannel(channel) }
-  }, [roomId, step, rebuildSlots])
+  }, [roomId, step])
 
   async function startGame() {
     if (!roomId || !userId) return
@@ -347,7 +402,10 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     router.push(`/game/online/${roomId}`)
   }
 
-  const allSlotsFilled = slots.length === settings.numPlayers && slots.every(s => s.status === 'accepted' || s.status === 'bot')
+  // All slots must be confirmed (accepted by a human or filled by bot) — pending/empty blocks start
+  const allSlotsFilled = slots.length === settings.numPlayers
+    && slots.every(s => s.status === 'accepted' || s.status === 'bot')
+    && slots.filter(s => s.status === 'accepted').length >= 1  // at least host is always accepted
 
   const inputStyle: React.CSSProperties = {
     background: 'var(--bg)',
