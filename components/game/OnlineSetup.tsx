@@ -20,6 +20,13 @@ interface SlotInfo {
   invitationId?: string
 }
 
+interface PendingInvite {
+  seatIndex: number
+  userId: string
+  nickname: string
+  invitationId: string
+}
+
 interface Settings {
   numPlayers: number
   cardBack: CardBack
@@ -150,38 +157,42 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
 
   async function inviteFriend(seatIndex: number, friend: FriendProfile) {
     if (!userId || !roomId) return
-
-    // Guard: don't double-invite someone already in a slot
     if (slots.some(s => s.userId === friend.user_id)) return
 
-    // Pre-reserve the seat in room_players so the host's lobby reflects it immediately
-    const { error: rpErr } = await supabase.from('room_players').insert({
-      room_id: roomId,
-      user_id: friend.user_id,
-      nickname: friend.nickname || friend.email || '?',
-      seat_index: seatIndex,
-      is_bot: false,
-      is_ready: false,
-      is_connected: false,
+    // Create game invitation (sender_id = auth.uid(), so RLS allows this)
+    const { data: inv, error: invErr } = await supabase
+      .from('game_invitations')
+      .insert({ room_id: roomId, sender_id: userId, receiver_id: friend.user_id, status: 'pending' })
+      .select('id').single()
+    if (invErr || !inv) {
+      console.error('[inviteFriend] game_invitations insert failed:', invErr)
+      return
+    }
+
+    // Send notification to friend
+    const { error: notifErr } = await supabase.from('friend_notifications').insert({
+      user_id: friend.user_id, from_user_id: userId, type: 'game_invite',
     })
-    if (rpErr) return // seat already taken or other DB error
+    if (notifErr) console.warn('[inviteFriend] friend_notifications insert failed:', notifErr)
 
-    const { data: inv } = await supabase.from('game_invitations').insert({
-      room_id: roomId,
-      sender_id: userId,
-      receiver_id: friend.user_id,
-      status: 'pending',
-    }).select('id').single()
+    // Store the seat reservation in game_rooms.settings.pendingInvites
+    // (host owns the room row → RLS allows this UPDATE; avoids inserting into room_players
+    //  with a foreign user_id which the host's RLS can't do)
+    const { data: roomRow } = await supabase
+      .from('game_rooms').select('settings').eq('id', roomId).single()
+    const existing: PendingInvite[] = roomRow?.settings?.pendingInvites ?? []
+    const newPending: PendingInvite[] = [
+      ...existing.filter(p => p.seatIndex !== seatIndex),
+      { seatIndex, userId: friend.user_id, nickname: friend.nickname || friend.email || '?', invitationId: inv.id },
+    ]
+    const { error: settingsErr } = await supabase.from('game_rooms')
+      .update({ settings: { ...(roomRow?.settings ?? {}), pendingInvites: newPending } })
+      .eq('id', roomId)
+    if (settingsErr) console.error('[inviteFriend] game_rooms settings update failed:', settingsErr)
 
-    await supabase.from('friend_notifications').insert({
-      user_id: friend.user_id,
-      from_user_id: userId,
-      type: 'game_invite',
-    })
-
-    // Local state is also updated instantly (subscription will confirm)
+    // Immediate local update (subscription will re-confirm)
     setSlots(prev => prev.map(s => s.seatIndex === seatIndex
-      ? { seatIndex, status: 'pending', nickname: friend.nickname || friend.email || '?', userId: friend.user_id, invitationId: inv?.id }
+      ? { seatIndex, status: 'pending', nickname: friend.nickname || friend.email || '?', userId: friend.user_id, invitationId: inv.id }
       : s
     ))
     setShowFriendPicker(null)
@@ -209,52 +220,65 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     if (!roomId) return
     const slot = slots.find(s => s.seatIndex === seatIndex)
     if (!slot) return
+
+    // Remove from room_players (handles bots and accepted human players)
     await supabase.from('room_players').delete().eq('room_id', roomId).eq('seat_index', seatIndex)
-    // Decline the pending invitation — prefer invitationId, fall back to receiver lookup
+
+    // Decline any pending invitation
     if (slot.invitationId) {
       await supabase.from('game_invitations').update({ status: 'declined' }).eq('id', slot.invitationId)
     } else if (slot.userId) {
       await supabase.from('game_invitations')
         .update({ status: 'declined' })
-        .eq('room_id', roomId)
-        .eq('receiver_id', slot.userId)
-        .eq('status', 'pending')
+        .eq('room_id', roomId).eq('receiver_id', slot.userId).eq('status', 'pending')
     }
+
+    // Remove from game_rooms.settings.pendingInvites
+    const { data: roomRow } = await supabase.from('game_rooms').select('settings').eq('id', roomId).single()
+    if (roomRow?.settings) {
+      const pending: PendingInvite[] = roomRow.settings.pendingInvites ?? []
+      await supabase.from('game_rooms')
+        .update({ settings: { ...roomRow.settings, pendingInvites: pending.filter(p => p.seatIndex !== seatIndex) } })
+        .eq('id', roomId)
+    }
+
     setSlots(prev => prev.map(s => s.seatIndex === seatIndex ? { seatIndex, status: 'empty' } : s))
   }
 
-  // Poll for accepted invitations
+  // Rebuild slots from DB — merges confirmed room_players with pending invites in game_rooms.settings
+  const rebuildSlots = useCallback(async () => {
+    if (!roomId) return
+    const [{ data: players }, { data: roomRow }] = await Promise.all([
+      supabase.from('room_players').select('*').eq('room_id', roomId).order('seat_index'),
+      supabase.from('game_rooms').select('settings').eq('id', roomId).single(),
+    ])
+    const pendingInvites: PendingInvite[] = roomRow?.settings?.pendingInvites ?? []
+    const newSlots: SlotInfo[] = []
+    for (let i = 0; i < settings.numPlayers; i++) {
+      const p = (players ?? []).find((p: any) => p.seat_index === i)
+      if (p) {
+        newSlots.push({ seatIndex: i, status: p.is_bot ? 'bot' : 'accepted', nickname: p.nickname, userId: p.user_id })
+      } else {
+        const inv = pendingInvites.find(pi => pi.seatIndex === i)
+        if (inv) {
+          newSlots.push({ seatIndex: i, status: 'pending', nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId })
+        } else {
+          newSlots.push({ seatIndex: i, status: 'empty' })
+        }
+      }
+    }
+    setSlots(newSlots)
+  }, [roomId, settings.numPlayers])
+
+  // Subscribe to room_players AND game_rooms changes to keep lobby in sync
   useEffect(() => {
     if (!roomId || step !== 'lobby') return
     const channel = supabase.channel(`lobby-${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
-        async () => {
-          const { data } = await supabase.from('room_players').select('*').eq('room_id', roomId).order('seat_index')
-          if (!data) return
-          // is_ready=false means invited but not yet accepted; is_ready=true means joined
-          const newSlots: SlotInfo[] = data.map(p => ({
-            seatIndex: p.seat_index,
-            status: p.is_bot ? 'bot' : (p.is_ready ? 'accepted' : 'pending'),
-            nickname: p.nickname,
-            userId: p.user_id,
-          }))
-          // Fill remaining empty seats
-          const filled = new Set(newSlots.map(s => s.seatIndex))
-          for (let i = 0; i < settings.numPlayers; i++) {
-            if (!filled.has(i)) newSlots.push({ seatIndex: i, status: 'empty' })
-          }
-          // Only preserve invitationId from previous local state (not the status — DB is the source of truth)
-          setSlots(prev => {
-            return newSlots.sort((a, b) => a.seatIndex - b.seatIndex).map(ns => {
-              const old = prev.find(s => s.seatIndex === ns.seatIndex)
-              return { ...ns, invitationId: old?.invitationId }
-            })
-          })
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` }, rebuildSlots)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` }, rebuildSlots)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [roomId, step, settings.numPlayers])
+  }, [roomId, step, rebuildSlots])
 
   async function startGame() {
     if (!roomId || !userId) return

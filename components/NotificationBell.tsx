@@ -150,53 +150,49 @@ export default function NotificationBell() {
   async function handleAcceptGameInvite(n: Notif) {
     if (!userId || !n.room_id || !n.invitation_id) return
 
-    // Get user's actual nickname
     const { data: profile } = await supabase
-      .from('game_profiles')
-      .select('nickname')
-      .eq('user_id', userId)
-      .single()
+      .from('game_profiles').select('nickname').eq('user_id', userId).single()
     const nickname = profile?.nickname || 'Player'
 
-    // Update the pre-reserved room_players row (host pre-inserted it when sending invite)
-    const { data: updated } = await supabase
-      .from('room_players')
-      .update({ nickname, is_ready: true, is_connected: true })
-      .eq('room_id', n.room_id)
-      .eq('user_id', userId)
-      .eq('is_ready', false)
-      .select('id')
+    // Read room to find reserved seat from settings.pendingInvites and check for existing row
+    const { data: room } = await supabase
+      .from('game_rooms').select('max_players, settings').eq('id', n.room_id).single()
+    if (!room) return
 
-    if (!updated?.length) {
-      // Fallback: no pre-reserved row found (invitation was cancelled or schema mismatch)
-      // Find first available seat and insert directly
-      const { data: room } = await supabase
-        .from('game_rooms').select('max_players').eq('id', n.room_id).single()
-      if (!room) return
+    const pendingInvites: any[] = room.settings?.pendingInvites ?? []
+    const myInvite = pendingInvites.find((p: any) => p.userId === userId)
 
-      const { data: existing } = await supabase
-        .from('room_players').select('seat_index, user_id').eq('room_id', n.room_id)
-      const takenSeats = new Set((existing ?? []).map((p: any) => p.seat_index))
-      // Also check if user already has a row (accepted by other path)
-      if ((existing ?? []).some((p: any) => p.user_id === userId)) {
-        // Already in, just navigate
-        await supabase.from('game_invitations').update({ status: 'accepted' }).eq('id', n.invitation_id)
-        await supabase.from('friend_notifications').update({ is_read: true }).eq('id', n.id)
-        setOpen(false)
-        router.push(`/game/online/${n.room_id}`)
-        return
+    // Check if already in room_players
+    const { data: existingRow } = await supabase
+      .from('room_players').select('id').eq('room_id', n.room_id).eq('user_id', userId).maybeSingle()
+
+    if (!existingRow) {
+      // Determine the seat: use the host-reserved seat if available, else first empty
+      let seatIndex = myInvite?.seatIndex ?? -1
+      if (seatIndex === -1) {
+        const { data: taken } = await supabase
+          .from('room_players').select('seat_index').eq('room_id', n.room_id)
+        const takenSet = new Set((taken ?? []).map((p: any) => p.seat_index))
+        for (let i = 1; i < room.max_players; i++) {
+          if (!takenSet.has(i)) { seatIndex = i; break }
+        }
       }
+      if (seatIndex === -1) return
 
-      let emptySeat = -1
-      for (let i = 1; i < room.max_players; i++) {
-        if (!takenSeats.has(i)) { emptySeat = i; break }
-      }
-      if (emptySeat === -1) return
-
-      await supabase.from('room_players').insert({
+      // User inserts their own row — auth.uid() = user_id, so RLS allows this
+      const { error: insertErr } = await supabase.from('room_players').insert({
         room_id: n.room_id, user_id: userId, nickname,
-        seat_index: emptySeat, is_bot: false, is_ready: true, is_connected: true,
+        seat_index: seatIndex, is_bot: false, is_ready: true, is_connected: true,
       })
+      if (insertErr) console.error('[acceptGameInvite] room_players insert failed:', insertErr)
+    }
+
+    // Clear this user's pending invite from game_rooms.settings
+    if (myInvite && room.settings) {
+      const newPending = pendingInvites.filter((p: any) => p.userId !== userId)
+      await supabase.from('game_rooms')
+        .update({ settings: { ...room.settings, pendingInvites: newPending } })
+        .eq('id', n.room_id)
     }
 
     await supabase.from('game_invitations').update({ status: 'accepted' }).eq('id', n.invitation_id)
