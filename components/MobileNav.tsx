@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/LanguageContext'
 import type { Lang } from '@/lib/i18n'
+import NotificationBell from '@/components/NotificationBell'
 
 export default function MobileNav({ email }: { email: string }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -60,25 +61,28 @@ export default function MobileNav({ email }: { email: string }) {
           }}>
             lifekafe
           </div>
-          <button
-            onClick={close}
-            aria-label="Close menu"
-            style={{
-              background: 'none',
-              border: '2px solid var(--border)',
-              color: 'var(--muted)',
-              fontSize: '18px',
-              width: 36,
-              height: 36,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            ✕
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <NotificationBell />
+            <button
+              onClick={close}
+              aria-label="Close menu"
+              style={{
+                background: 'none',
+                border: '2px solid var(--border)',
+                color: 'var(--muted)',
+                fontSize: '18px',
+                width: 36,
+                height: 36,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Nav links */}

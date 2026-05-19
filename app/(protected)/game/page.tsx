@@ -1,5 +1,5 @@
-import JokerGame from '@/components/game/JokerGame'
+import GameMenu from '@/components/game/GameMenu'
 
 export default function GamePage() {
-  return <JokerGame />
+  return <GameMenu />
 }

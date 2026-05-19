@@ -628,7 +628,7 @@ function RoundEndOverlay({state,tg,youLabel,playerColor,onNextRound,onEndGame}:{
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function JokerGame(){
+export default function JokerGame({ onBack }: { onBack?: () => void }){
   const[state,dispatch]=useReducer(reducer,undefined,makeSetup)
   const{t}=useLanguage();const tg=t.game
 
@@ -821,7 +821,8 @@ export default function JokerGame(){
     const backNames:Record<CardBack,string>={night:tg.backNight,elegant:tg.backElegant,dragon:tg.backDragon,runes:tg.backRunes,poker:tg.backPoker,sea:tg.backSea,vip:tg.backVip,vegas:tg.backVegas}
     return(
       <div style={{maxWidth:580,margin:'0 auto',padding:'32px 16px',textAlign:'center'}}>
-        <h1 style={{fontFamily:"'Press Start 2P',monospace",fontSize:16,color:'var(--c-journal)',marginBottom:24}}>{tg.title}</h1>
+        {onBack&&<button onClick={onBack} className="pixel-btn" style={{marginBottom:16,fontSize:9,padding:'7px 12px',float:'left'}}>{t.friends.back}</button>}
+        <h1 style={{fontFamily:"'Press Start 2P',monospace",fontSize:16,color:'var(--c-journal)',marginBottom:24,clear:'both'}}>{tg.title}</h1>
         <div className="pixel-card card-journal" style={{padding:24,marginBottom:12}}>
           <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--muted)',marginBottom:16}}>{tg.choosePlayers}</div>
           <div style={{display:'flex',gap:10,justifyContent:'center',marginBottom:24}}>

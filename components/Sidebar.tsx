@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/LanguageContext'
+import NotificationBell from '@/components/NotificationBell'
 export default function Sidebar({ email }: { email: string }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -36,17 +37,22 @@ export default function Sidebar({ email }: { email: string }) {
     }}>
       {/* Logo */}
       <div style={{ padding: '20px 16px 16px', borderBottom: '2px solid var(--border)' }}>
-        <div style={{
-          fontFamily: "'Press Start 2P', monospace",
-          fontSize: '13px',
-          color: 'var(--c-dash)',
-          textShadow: '0 0 12px rgba(34,211,238,0.4)',
-          letterSpacing: '1px',
-        }}>
-          lifekafe
-        </div>
-        <div style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '4px' }}>
-          <span className="blink" style={{ color: 'var(--green)' }}>●</span> {t.common.online}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{
+              fontFamily: "'Press Start 2P', monospace",
+              fontSize: '13px',
+              color: 'var(--c-dash)',
+              textShadow: '0 0 12px rgba(34,211,238,0.4)',
+              letterSpacing: '1px',
+            }}>
+              lifekafe
+            </div>
+            <div style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '4px' }}>
+              <span className="blink" style={{ color: 'var(--green)' }}>●</span> {t.common.online}
+            </div>
+          </div>
+          <NotificationBell />
         </div>
       </div>
 
