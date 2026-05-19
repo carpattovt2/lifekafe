@@ -298,44 +298,49 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     console.log('[lobby:sub] setting up channel for room:', roomId)
 
     const channel = supabase.channel(`lobby-${roomId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
+      // Single '*' handler catches INSERT, UPDATE and DELETE — some Supabase versions
+      // don't fire separate INSERT/UPDATE listeners reliably, so '*' is the safe choice.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
         (payload) => {
-          console.log('[lobby:INSERT] *** room_players INSERT received ***')
-          console.log('[lobby:INSERT] full payload:', JSON.stringify(payload, null, 2))
+          const eventType = payload.eventType  // 'INSERT' | 'UPDATE' | 'DELETE'
+          console.log(`[lobby:${eventType}] *** room_players ${eventType} received ***`)
+          console.log(`[lobby:${eventType}] full payload:`, JSON.stringify(payload, null, 2))
+
+          if (eventType === 'DELETE') {
+            console.log('[lobby:DELETE] re-fetching slots after delete')
+            rebuildSlots(roomId, settings.numPlayers)
+            return
+          }
+
+          // INSERT or UPDATE — payload.new has the current row
           const p = payload.new as any
-          console.log('[lobby:INSERT] new row → seat:', p.seat_index, 'is_ready:', p.is_ready, 'is_bot:', p.is_bot, 'nickname:', p.nickname)
+          if (!p || p.seat_index == null) {
+            console.warn(`[lobby:${eventType}] payload.new missing or no seat_index, falling back to rebuildSlots`)
+            rebuildSlots(roomId, settings.numPlayers)
+            return
+          }
+
+          const newStatus: SlotStatus = p.is_bot ? 'bot' : (p.is_ready ? 'accepted' : 'pending')
+          console.log(`[lobby:${eventType}] seat ${p.seat_index} → status: ${newStatus}, nickname: ${p.nickname}, is_ready: ${p.is_ready}`)
+
           setSlots(prev => {
-            console.log('[lobby:INSERT] slots BEFORE update:', JSON.stringify(prev))
-            const next = prev.map(s =>
-              s.seatIndex === p.seat_index
-                ? { seatIndex: p.seat_index, status: (p.is_bot ? 'bot' : 'accepted') as SlotStatus, nickname: p.nickname, userId: p.user_id }
-                : s
-            )
-            console.log('[lobby:INSERT] slots AFTER update:', JSON.stringify(next))
+            console.log(`[lobby:${eventType}] slots BEFORE:`, JSON.stringify(prev))
+            const seatExists = prev.some(s => s.seatIndex === p.seat_index)
+            let next: SlotInfo[]
+            if (seatExists) {
+              next = prev.map(s =>
+                s.seatIndex === p.seat_index
+                  ? { seatIndex: p.seat_index, status: newStatus, nickname: p.nickname, userId: p.user_id, invitationId: s.invitationId }
+                  : s
+              )
+            } else {
+              // Seat not yet in local state — add it (shouldn't normally happen)
+              console.warn(`[lobby:${eventType}] seat ${p.seat_index} not in local slots, appending`)
+              next = [...prev, { seatIndex: p.seat_index, status: newStatus, nickname: p.nickname, userId: p.user_id }]
+            }
+            console.log(`[lobby:${eventType}] slots AFTER:`, JSON.stringify(next))
             return next
           })
-        })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          console.log('[lobby:UPDATE] *** room_players UPDATE received ***')
-          console.log('[lobby:UPDATE] full payload:', JSON.stringify(payload, null, 2))
-          const p = payload.new as any
-          console.log('[lobby:UPDATE] updated row → seat:', p.seat_index, 'is_ready:', p.is_ready, 'is_bot:', p.is_bot, 'nickname:', p.nickname)
-          setSlots(prev => {
-            console.log('[lobby:UPDATE] slots BEFORE:', JSON.stringify(prev))
-            const next = prev.map(s =>
-              s.seatIndex === p.seat_index
-                ? { seatIndex: p.seat_index, status: (p.is_bot ? 'bot' : p.is_ready ? 'accepted' : 'pending') as SlotStatus, nickname: p.nickname, userId: p.user_id, invitationId: s.invitationId }
-                : s
-            )
-            console.log('[lobby:UPDATE] slots AFTER:', JSON.stringify(next))
-            return next
-          })
-        })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          console.log('[lobby:DELETE] room_players DELETE, payload:', JSON.stringify(payload, null, 2))
-          rebuildSlots(roomId, settings.numPlayers)
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` },
         (payload) => {
