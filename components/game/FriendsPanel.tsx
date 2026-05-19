@@ -270,9 +270,27 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
         </button>
       )}
 
-      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 14, color: 'var(--c-journal)', marginBottom: 24, textAlign: 'center' }}>
+      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 14, color: 'var(--c-journal)', marginBottom: 16, textAlign: 'center' }}>
         👥 {tf.title}
       </h1>
+
+      {/* ── No-nickname banner (1b) ──────────────────────────────────────────── */}
+      {myProfile !== null && !myProfile?.nickname && (
+        <div style={{
+          background: 'linear-gradient(135deg, #dc2626, #b45309)',
+          border: '2px solid #ef4444',
+          padding: '12px 16px',
+          marginBottom: 14,
+          fontFamily: "'Press Start 2P', monospace",
+          fontSize: 9,
+          color: '#fff',
+          letterSpacing: '0.04em',
+          lineHeight: 1.6,
+          boxShadow: '0 0 16px rgba(239,68,68,0.4)',
+        }}>
+          {tf.noNicknameBanner}
+        </div>
+      )}
 
       {/* ── My Nickname ─────────────────────────────────────────────────────── */}
       <div className="pixel-card" style={{ padding: 16, marginBottom: 14 }}>
@@ -348,10 +366,17 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
           </div>
         )}
         {searchResultProfile && ['found','friends','pending-sent','pending-received'].includes(searchStatus) && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid var(--border)', paddingTop: 10, flexWrap: 'wrap' }}>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            {/* 1a: orange warning if no nickname */}
+            {!searchResultProfile.nickname && (
+              <div style={{ fontFamily: "'VT323', monospace", fontSize: 17, color: 'var(--orange)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                ⚠ {tf.noNicknameWarning}
+              </div>
+            )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: 'var(--text)' }}>
-                {searchResultProfile.nickname || '—'}
+                {searchResultProfile.nickname || <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>—</span>}
               </div>
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>{searchResultProfile.email}</div>
             </div>
@@ -374,6 +399,7 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
             {searchStatus === 'pending-received' && (
               <span style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--c-dash)' }}>⏳ {tf.requestSent}</span>
             )}
+          </div>
           </div>
         )}
       </div>
