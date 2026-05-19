@@ -148,6 +148,8 @@ export default function OnlineRoomPage({ params }: { params: { roomId: string } 
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>([])
   const [gameState, setGameState] = useState<OnlineGameState | null>(null)
   const [loading, setLoading] = useState(true)
+  const [initError, setInitError] = useState<string | null>(null)
+  const [roomStatus, setRoomStatus] = useState<string>('waiting')
   const [msg, setMsg] = useState('')
 
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([])
@@ -163,33 +165,67 @@ export default function OnlineRoomPage({ params }: { params: { roomId: string } 
   // Init
   useEffect(() => {
     async function init() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/game'); return }
-      setUserId(user.id)
-      const { data: room } = await supabase.from('game_rooms').select('*').eq('id', params.roomId).single()
-      if (!room) { router.push('/game'); return }
-      setIsHost(room.host_id === user.id)
-      if (room.game_state) setGameState(room.game_state as OnlineGameState)
-      const { data: players } = await supabase.from('room_players').select('*').eq('room_id', params.roomId).order('seat_index')
-      if (players) {
-        setRoomPlayers(players as RoomPlayer[])
-        const mine = players.find((p: any) => p.user_id === user.id)
-        if (mine) setMySeatIndex(mine.seat_index)
+      try {
+        const { data: { user }, error: authErr } = await supabase.auth.getUser()
+        if (authErr || !user) { router.push('/game'); return }
+        setUserId(user.id)
+
+        const { data: room, error: roomErr } = await supabase
+          .from('game_rooms').select('*').eq('id', params.roomId).single()
+        if (roomErr || !room) {
+          setInitError(`Room not found (${roomErr?.message ?? 'unknown'})`)
+          setLoading(false); return
+        }
+
+        setIsHost(room.host_id === user.id)
+        setRoomStatus(room.status ?? 'waiting')
+        if (room.game_state) setGameState(room.game_state as OnlineGameState)
+
+        const { data: players, error: playersErr } = await supabase
+          .from('room_players').select('*').eq('room_id', params.roomId).order('seat_index')
+        if (!playersErr && players) {
+          setRoomPlayers(players as RoomPlayer[])
+          const mine = players.find((p: any) => p.user_id === user.id)
+          if (mine) setMySeatIndex(mine.seat_index)
+        }
+      } catch (e: any) {
+        setInitError(e?.message ?? 'Init failed')
       }
       setLoading(false)
     }
     init()
   }, [params.roomId])
 
+  // Poll for game_state when it's null (race-condition after host starts game, or friend accepted before game started)
+  useEffect(() => {
+    if (loading || gameState) return
+    const interval = setInterval(async () => {
+      const { data: room } = await supabase
+        .from('game_rooms').select('game_state,status').eq('id', params.roomId).single()
+      if (room?.game_state) {
+        setGameState(room.game_state as OnlineGameState)
+        clearInterval(interval)
+      }
+      if (room?.status) setRoomStatus(room.status)
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [loading, gameState, params.roomId])
+
   // Realtime
   useEffect(() => {
     const ch = supabase.channel(`ogame-${params.roomId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${params.roomId}` },
         (p) => {
+          if (p.new?.status) setRoomStatus(p.new.status)
           if (p.new?.game_state) {
             setGameState(p.new.game_state as OnlineGameState)
             setSelectedCardIds([]); setStagedMelds([]); setMsg('')
           }
+        })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${params.roomId}` },
+        async () => {
+          const { data } = await supabase.from('room_players').select('*').eq('room_id', params.roomId).order('seat_index')
+          if (data) setRoomPlayers(data as RoomPlayer[])
         })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -449,9 +485,46 @@ export default function OnlineRoomPage({ params }: { params: { roomId: string } 
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (loading || !gameState) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: 'var(--muted)' }}>
-      {to.connecting}...
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
+      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: 'var(--muted)' }}>{to.connecting}...</div>
+    </div>
+  )
+
+  if (initError) return (
+    <div style={{ maxWidth: 480, margin: '40px auto', padding: '0 16px', textAlign: 'center' }}>
+      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: '#ef4444', marginBottom: 16 }}>Connection error</div>
+      <div style={{ fontFamily: "'VT323',monospace", fontSize: 18, color: 'var(--muted)', marginBottom: 20 }}>{initError}</div>
+      <button className="pixel-btn" onClick={() => router.push('/game')} style={{ fontSize: 9, padding: '10px 14px' }}>← Back</button>
+    </div>
+  )
+
+  if (!gameState) return (
+    <div style={{ maxWidth: 480, margin: '40px auto', padding: '0 16px', textAlign: 'center' }}>
+      <h1 style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: 'var(--c-journal)', marginBottom: 20 }}>🌐 {to.lobbyTitle ?? 'Lobby'}</h1>
+
+      {/* Players already in room */}
+      {roomPlayers.length > 0 && (
+        <div className="pixel-card" style={{ padding: 14, marginBottom: 16, textAlign: 'left' }}>
+          <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: 'var(--muted)', marginBottom: 10 }}>{to.players}</div>
+          {roomPlayers.map(p => (
+            <div key={p.seat_index} style={{ fontFamily: "'VT323',monospace", fontSize: 20, color: 'var(--text)', padding: '4px 0', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: 'var(--muted)', fontSize: 14 }}>{p.seat_index + 1}.</span>
+              {p.is_bot ? '🤖 ' : ''}{p.nickname}
+              {p.seat_index === 0 && <span style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: '#22d3ee', border: '1px solid #22d3ee', padding: '2px 4px' }}>{to.host}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontFamily: "'VT323',monospace", fontSize: 20, color: 'var(--muted)', marginBottom: 20 }}>
+        {to.waitingForHost}
+      </div>
+      <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: 'var(--muted)', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', animation: 'pulse 1.5s infinite' }} />
+        {to.connecting}
+      </div>
+      <button className="pixel-btn" onClick={() => router.push('/game')} style={{ fontSize: 9, padding: '10px 14px' }}>← Back</button>
     </div>
   )
 
