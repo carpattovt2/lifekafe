@@ -13,6 +13,7 @@ import { numToRank } from '@/lib/game/cards'
 import { computeAITurn } from '@/lib/game/ai'
 import { useLanguage } from '@/lib/LanguageContext'
 import { createClient } from '@/lib/supabase/client'
+import { renderCardBack } from './CardBack'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const AI_COLORS = ['#ef4444', '#3b82f6', '#f97316', '#a855f7']
@@ -431,20 +432,6 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToa
 }
 
 // ── Card back renderer ────────────────────────────────────────────────────────
-function renderCardBack(back: CardBack) {
-  const styles: Record<CardBack, React.CSSProperties> = {
-    night:   { background: '#0a0a2e', backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(255,215,0,0.22) 1.5px, transparent 1.5px), radial-gradient(circle at 70% 20%, rgba(255,215,0,0.18) 1px, transparent 1px), radial-gradient(circle at 50% 70%, rgba(255,215,0,0.2) 2px, transparent 2px), radial-gradient(circle at 85% 80%, rgba(255,215,0,0.15) 1px, transparent 1px)', backgroundSize: '40px 40px, 30px 30px, 50px 50px, 35px 35px' },
-    elegant: { background: '#0d0d0d', backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(180,0,0,0.35) 10px, rgba(180,0,0,0.35) 11px), repeating-linear-gradient(-45deg, transparent, transparent 10px, rgba(180,0,0,0.35) 10px, rgba(180,0,0,0.35) 11px)' },
-    dragon:  { background: '#0d2b1a', backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,215,0,0.18) 0, rgba(255,215,0,0.18) 1px, transparent 1px, transparent 14px), repeating-linear-gradient(90deg, rgba(255,215,0,0.18) 0, rgba(255,215,0,0.18) 1px, transparent 1px, transparent 14px)' },
-    runes:   { background: '#1a0a2e', backgroundImage: 'repeating-linear-gradient(60deg, rgba(192,192,192,0.12) 0, rgba(192,192,192,0.12) 1px, transparent 1px, transparent 12px), repeating-linear-gradient(-60deg, rgba(192,192,192,0.12) 0, rgba(192,192,192,0.12) 1px, transparent 1px, transparent 12px), repeating-linear-gradient(0deg, rgba(192,192,192,0.08) 0, rgba(192,192,192,0.08) 1px, transparent 1px, transparent 12px)' },
-    poker:   { background: '#6b0000', backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.45) 0, rgba(0,0,0,0.45) 2px, transparent 2px, transparent 14px), repeating-linear-gradient(-45deg, rgba(0,0,0,0.45) 0, rgba(0,0,0,0.45) 2px, transparent 2px, transparent 14px)' },
-    sea:     { background: 'linear-gradient(180deg, #0a1a3e 0%, #0e2a55 100%)', backgroundImage: 'repeating-linear-gradient(170deg, rgba(100,200,255,0.12) 0, rgba(100,200,255,0.12) 2px, transparent 2px, transparent 20px)' },
-    vip:     { background: '#050505', backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,180,80,0.1) 0, rgba(0,180,80,0.1) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(-45deg, rgba(0,180,80,0.1) 0, rgba(0,180,80,0.1) 2px, transparent 2px, transparent 10px)', boxShadow: 'inset 0 0 8px rgba(0,180,80,0.2)' },
-    vegas:   { background: '#3d2a00', backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(0,0,0,0.7) 20%, transparent 21%), radial-gradient(circle at 0% 50%, rgba(0,0,0,0.5) 20%, transparent 21%)', backgroundSize: '20px 20px, 20px 20px', backgroundPosition: '0 0, 10px 10px' },
-  }
-  return <div style={{ width: '100%', height: '100%', borderRadius: 3, ...styles[back] }} />
-}
-
 // ── CardView ──────────────────────────────────────────────────────────────────
 function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick, small=false, glow=false, lifted=false, animClass='', cardBack='night' as CardBack, highlight=null as 'green'|'yellow'|null, tableCard=false, extraStyle={} as React.CSSProperties, onPointerDown, onPointerUp, onPointerMove }: {
   card:Card; faceDown?:boolean; selected?:boolean; dimmed?:boolean; onClick?:()=>void
@@ -740,6 +727,10 @@ export default function JokerGame({
 
   const{play,unlockAudio}=useGameSounds(soundEnabled)
 
+  // ── Turn timer (online human turns only) ─────────────────────────
+  const[timeLeft,setTimeLeft]=useState<number|null>(null)
+  const autoPlayPendingRef=useRef(false)
+
   // ── Toast helper ──────────────────────────────────────────────────
   function addToast(text:string){
     const id=++toastIdRef.current
@@ -794,14 +785,26 @@ export default function JokerGame({
       if(room.updated_at===lastUpdatedAt)return
       lastUpdatedAt=room.updated_at
       // Derive seat index from seatUserIds embedded in game_state
+      let myIdx=mySeatRef.current
       if(userIdLocal){
         const gs=room.game_state as any
         if(gs.seatUserIds){
           const idx=(gs.seatUserIds as (string|null)[]).findIndex(id=>id===userIdLocal)
-          if(idx>=0) setMySeatIndex(idx)
+          if(idx>=0){setMySeatIndex(idx);myIdx=idx}
         }
       }
-      baseDispatch({type:'SYNC_STATE',state:room.game_state as GameState})
+      // Preserve local hand order: if incoming hand has same cards (just different order), keep local order
+      const incomingState=room.game_state as GameState
+      const localHand=stateRef.current.players[myIdx]?.hand
+      if(localHand&&incomingState.players[myIdx]){
+        const localIds=new Set(localHand.map(c=>c.id))
+        const incomingIds=new Set(incomingState.players[myIdx].hand.map(c=>c.id))
+        const sameCards=localIds.size===incomingIds.size&&[...localIds].every(id=>incomingIds.has(id))
+        if(sameCards){
+          incomingState.players=incomingState.players.map((p,i)=>i===myIdx?{...p,hand:localHand}:p)
+        }
+      }
+      baseDispatch({type:'SYNC_STATE',state:incomingState})
     },2000)
     return()=>{cancelled=true;clearInterval(interval)}
   },[isOnline,roomId])
@@ -813,10 +816,18 @@ export default function JokerGame({
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'game_rooms',filter:`id=eq.${roomId}`},
         (payload)=>{
           if(!payload.new?.game_state)return
-          // Don't overwrite state during our own turn
           const phase=stateRef.current.phase
           if(phase!=='setup'&&stateRef.current.currentPlayerIndex===mySeatRef.current)return
-          baseDispatch({type:'SYNC_STATE',state:payload.new.game_state as GameState})
+          const incoming=payload.new.game_state as GameState
+          const myIdx=mySeatRef.current
+          const localHand=stateRef.current.players[myIdx]?.hand
+          if(localHand&&incoming.players[myIdx]){
+            const lIds=new Set(localHand.map(c=>c.id))
+            const iIds=new Set(incoming.players[myIdx].hand.map(c=>c.id))
+            if(lIds.size===iIds.size&&[...lIds].every(id=>iIds.has(id)))
+              incoming.players=incoming.players.map((p,i)=>i===myIdx?{...p,hand:localHand}:p)
+          }
+          baseDispatch({type:'SYNC_STATE',state:incoming})
         })
       .subscribe()
     return()=>{supabase.removeChannel(ch)}
@@ -838,9 +849,53 @@ export default function JokerGame({
         }).eq('user_id',userId)})
   },[state.phase,isOnline,userId])
 
-  // ── Animation triggers ────────────────────────────────────────────
-  // Deck bounce + reshuffle detection
+  // ── Turn timer — online human vs human only ───────────────────────
   useEffect(()=>{
+    const activePhases:string[]=['player-draw','player-action']
+    if(!isOnline||!isMyTurn||!activePhases.includes(state.phase)){setTimeLeft(null);return}
+    const limit=circles<2?120:30
+    setTimeLeft(limit)
+    const tick=setInterval(()=>{
+      setTimeLeft(prev=>{
+        if(prev===null||prev<=1){
+          clearInterval(tick)
+          return 0
+        }
+        return prev-1
+      })
+    },1000)
+    return()=>clearInterval(tick)
+  },[state.currentPlayerIndex,state.phase,state.roundNumber,isMyTurn,isOnline])
+
+  // Execute auto-play when timer hits 0
+  useEffect(()=>{
+    if(timeLeft!==0||!isMyTurn||!isOnline)return
+    if(state.phase==='player-draw'){
+      autoPlayPendingRef.current=true
+      dispatch({type:'DRAW_DECK'})
+    } else if(state.phase==='player-action'){
+      const hand=state.players[mySeatRef.current]?.hand??[]
+      const card=[...hand].filter(c=>!c.isJoker).sort((a,b)=>handCardValue(a)-handCardValue(b))[0]??hand[0]
+      if(card) dispatch({type:'DISCARD',cardId:card.id})
+    }
+  },[timeLeft])
+
+  // Auto-discard after auto-draw
+  useEffect(()=>{
+    if(!autoPlayPendingRef.current||state.phase!=='player-action'||!isMyTurn)return
+    autoPlayPendingRef.current=false
+    const hand=state.players[mySeatRef.current]?.hand??[]
+    const card=[...hand].filter(c=>!c.isJoker).sort((a,b)=>handCardValue(a)-handCardValue(b))[0]??hand[0]
+    if(card) dispatch({type:'DISCARD',cardId:card.id})
+  },[state.phase,isMyTurn])
+
+  // ── Animation triggers ────────────────────────────────────────────
+  // Deck bounce — only on own draw; reshuffle shows for everyone
+  useEffect(()=>{
+    const myDraw=!isOnline||state.currentPlayerIndex===mySeatRef.current
+    if(prevDeckLen.current>state.deck.length&&myDraw){
+      setDeckBounce(true); setTimeout(()=>setDeckBounce(false),300)
+    }
     if(prevDeckLen.current===0&&state.deck.length>5){
       setDeckReshuffle(true); setTimeout(()=>setDeckReshuffle(false),600)
       addToast('🔀 Reshuffle...')
@@ -1260,16 +1315,34 @@ export default function JokerGame({
       </div>
 
       {/* ZONE 3: Player hand — cards stagger-animate in on new round */}
-      <div className={`hand-zone ${isMyTurn?'player-turn-bar':''} game-safe-bottom`} style={{padding:'12px 16px 130px',borderTop:`3px solid ${isMyTurn?'#00ff88':'transparent'}`}}>
-        <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:isMyTurn?'#00ff88':'rgba(255,255,255,0.35)',marginBottom:8}}>{tg.handZone}</div>
+      <div className={`hand-zone ${isMyTurn?'player-turn-bar':''} game-safe-bottom`} style={{padding:'12px 16px 130px',borderTop:`3px solid ${isMyTurn?'#00ff88':'transparent'}`,position:'relative'}}>
+        {/* Turn timer progress line */}
+        {isOnline&&isMyTurn&&timeLeft!==null&&timeLeft>0&&(()=>{
+          const limit=circles<2?120:30
+          const pct=(timeLeft/limit)*100
+          const urgent=timeLeft<=10
+          return(
+            <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:'rgba(255,255,255,0.08)',borderRadius:'0 0 2px 2px'}}>
+              <div style={{height:'100%',width:`${pct}%`,borderRadius:'0 2px 2px 0',background:urgent?'var(--red)':'var(--green)',transition:'width 1s linear, background 0.3s'}}/>
+            </div>
+          )
+        })()}
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          <div style={{fontFamily:"'Inter',sans-serif",fontSize:11,fontWeight:500,color:isMyTurn?'#00ff88':'rgba(255,255,255,0.35)'}}>{tg.handZone}</div>
+          {isOnline&&isMyTurn&&timeLeft!==null&&(
+            <span style={{fontSize:12,fontWeight:700,color:timeLeft<=10?'var(--red)':'rgba(255,255,255,0.6)',marginLeft:'auto',letterSpacing:'-0.02em',fontVariantNumeric:'tabular-nums'}}>
+              {timeLeft}s
+            </span>
+          )}
+        </div>
 
         {human&&(
           <>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
-              <span style={{fontSize:18,color:'var(--c-weight)'}}>{human.hand.length} cards · {human.hasMelded?tg.melded:tg.needPts}</span>
-              {state.drawnFromDiscardCardId&&<span style={{color:'var(--yellow)',fontSize:18}}>⚠ use drawn card!</span>}
-              {state.selectedCardIds.length>0&&<span style={{color:'var(--yellow)',fontSize:18}}>{state.selectedCardIds.length} selected</span>}
-              <button onClick={handleSort} className="pixel-btn pixel-btn-secondary" style={{fontSize:9,padding:'5px 10px',marginLeft:'auto'}}>{tg.sortLabel}: {sortMode==='none'?tg.sortNone:sortMode==='suit'?tg.sortSuit:tg.sortRank}</button>
+              <span style={{fontSize:13,color:'var(--c-weight)',fontWeight:500}}>{human.hand.length} cards · {human.hasMelded?tg.melded:tg.needPts}</span>
+              {state.drawnFromDiscardCardId&&<span style={{color:'var(--yellow)',fontSize:13,fontWeight:500}}>⚠ use drawn card!</span>}
+              {state.selectedCardIds.length>0&&<span style={{color:'var(--yellow)',fontSize:13}}>{state.selectedCardIds.length} selected</span>}
+              <button onClick={handleSort} className="pixel-btn pixel-btn-secondary" style={{fontSize:12,padding:'5px 10px',marginLeft:'auto'}}>{tg.sortLabel}: {sortMode==='none'?tg.sortNone:sortMode==='suit'?tg.sortSuit:tg.sortRank}</button>
             </div>
             {/* Pass dealAnimating so DraggableHand can stagger card appearances */}
             <DraggableHand hand={human.hand} selectedIds={state.selectedCardIds} stagedIds={Array.from(stagedIds)} drawnCardId={drawnCardId} cardBack={cardBack} highlights={highlights} dealAnimating={dealAnimating}

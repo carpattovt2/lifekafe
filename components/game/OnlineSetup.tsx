@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/LanguageContext'
 import { createDeck, shuffle, dealToPlayers } from '@/lib/game/cards'
 import type { Card, CardBack, Suit, GameState } from '@/lib/game/types'
+import { renderCardBack } from './CardBack'
 
 type SetupStep = 'nickname' | 'settings' | 'lobby'
 type AnimSpeed = 'fast' | 'normal' | 'slow'
@@ -451,7 +452,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
             <div key={key} onClick={() => setSettings(s => ({...s, cardBack: key}))}
               style={{ cursor: 'pointer', border: `3px solid ${settings.cardBack === key ? 'var(--c-dash)' : 'var(--border)'}`, borderRadius: 6, padding: 4, width: 56, boxShadow: settings.cardBack === key ? '0 0 10px rgba(34,211,238,0.5)' : undefined }}>
               <div style={{ width: 48, height: 68, borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ width: '100%', height: '100%', borderRadius: 3, background: 'var(--bg3)' }} />
+                {renderCardBack(key)}
               </div>
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: settings.cardBack === key ? 'var(--c-dash)' : 'var(--muted)', textAlign: 'center', marginTop: 2 }}>{key}</div>
             </div>
@@ -509,43 +510,43 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
       <div className="pixel-card" style={{ padding: 16, marginBottom: 14 }}>
         <div style={sectionLabel}>{to.players}</div>
         {slots.sort((a,b) => a.seatIndex - b.seatIndex).map(slot => (
-          <div key={slot.seatIndex} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', background: 'var(--bg3)', border: '2px solid var(--border)', borderRadius: 2, flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: 'var(--muted)', minWidth: 20 }}>
+          <div key={slot.seatIndex} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', minWidth: 18 }}>
               {slot.seatIndex + 1}
             </div>
 
             {slot.status === 'accepted' && slot.seatIndex === 0 && (
               <>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--text)', flex: 1 }}>{slot.nickname}</span>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 7, color: '#22d3ee', border: '1px solid #22d3ee', padding: '3px 6px' }}>{to.host}</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', flex: 1 }}>{slot.nickname}</span>
+                <span style={{ fontSize: 11, color: 'var(--c-dash)', background: 'color-mix(in srgb, var(--c-dash) 12%, transparent)', padding: '3px 8px', borderRadius: 20 }}>{to.host}</span>
               </>
             )}
             {slot.status === 'accepted' && slot.seatIndex > 0 && (
               <>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--green)', flex: 1 }}>✓ {slot.nickname}</span>
-                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>{to.remove}</button>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--green)', flex: 1 }}>✓ {slot.nickname}</span>
+                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 12 }}>{to.remove}</button>
               </>
             )}
             {slot.status === 'bot' && (
               <>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--accent)', flex: 1 }}>🤖 {slot.nickname}</span>
-                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>{to.remove}</button>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--accent)', flex: 1 }}>🤖 {slot.nickname}</span>
+                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 12 }}>{to.remove}</button>
               </>
             )}
             {slot.status === 'pending' && (
               <>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--yellow)', flex: 1 }}>⏳ {slot.nickname}</span>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, color: 'var(--muted)' }}>{to.pending}</span>
-                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>{to.remove}</button>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--yellow)', flex: 1 }}>⏳ {slot.nickname}</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{to.pending}</span>
+                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 12 }}>{to.remove}</button>
               </>
             )}
             {slot.status === 'empty' && (
               <>
-                <span style={{ flex: 1, color: 'var(--muted)', fontFamily: "'Inter', sans-serif", fontSize: 18 }}>— {to.inviteFriend} / {to.addBot}</span>
-                <button className="pixel-btn" onClick={() => { loadFriends(); setShowFriendPicker(slot.seatIndex) }} style={{ fontSize: 8, padding: '5px 8px', whiteSpace: 'nowrap' }}>
+                <span style={{ flex: 1, color: 'var(--muted)', fontSize: 13 }}>{to.inviteFriend} / {to.addBot}</span>
+                <button className="pixel-btn" onClick={() => { loadFriends(); setShowFriendPicker(slot.seatIndex) }} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                   👥 {to.inviteFriend}
                 </button>
-                <button className="pixel-btn" onClick={() => addBot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>
+                <button className="pixel-btn" onClick={() => addBot(slot.seatIndex)} style={{ fontSize: 12 }}>
                   🤖 {to.addBot}
                 </button>
               </>
