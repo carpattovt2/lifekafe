@@ -67,7 +67,7 @@ export default function WeatherWidget() {
             <span style={{ fontSize: '40px', lineHeight: 1 }}>{iconForCode(weather.weathercode)}</span>
             <div>
               <div style={{
-                fontFamily: "'Press Start 2P', monospace",
+                fontFamily: "'Inter', sans-serif",
                 fontSize: '22px',
                 color: 'var(--text)',
                 marginBottom: '4px',

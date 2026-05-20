@@ -259,7 +259,7 @@ export default function NotificationBell() {
             color: '#fff',
             borderRadius: 8,
             fontSize: 9,
-            fontFamily: "'Press Start 2P', monospace",
+            fontFamily: "'Inter', sans-serif",
             minWidth: 18,
             height: 18,
             display: 'flex',
@@ -286,12 +286,12 @@ export default function NotificationBell() {
           zIndex: 1000,
           padding: 14,
         }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: 'var(--muted)', marginBottom: 12, letterSpacing: '0.06em' }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 8, color: 'var(--muted)', marginBottom: 12, letterSpacing: '0.06em' }}>
             {tf.notifTitle}
           </div>
 
           {notifs.length === 0 ? (
-            <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: 'var(--muted)', textAlign: 'center', padding: '10px 0' }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--muted)', textAlign: 'center', padding: '10px 0' }}>
               {tf.noNotifs}
             </div>
           ) : (
@@ -300,14 +300,14 @@ export default function NotificationBell() {
                 {n.type === 'game_invite' ? (
                   <>
                     <div style={{
-                      fontFamily: "'VT323', monospace", fontSize: 18, color: 'var(--text)', marginBottom: 8, lineHeight: 1.3,
+                      fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--text)', marginBottom: 8, lineHeight: 1.3,
                       background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)', padding: '6px 8px',
                     }}>
                       🎮 <span style={{ color: 'var(--c-dash)' }}>{displayFrom(n)}</span>{' '}
                       {to.gameInvite}
                     </div>
                     {isExpired(n) ? (
-                      <div style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: 'var(--muted)' }}>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, color: 'var(--muted)' }}>
                         ⏱ {to.inviteExpired}
                       </div>
                     ) : (
@@ -323,7 +323,7 @@ export default function NotificationBell() {
                   </>
                 ) : (
                   <>
-                    <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: 'var(--text)', marginBottom: 8, lineHeight: 1.3 }}>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--text)', marginBottom: 8, lineHeight: 1.3 }}>
                       <span style={{ color: 'var(--c-dash)' }}>{displayFrom(n)}</span>{' '}
                       {tf.friendRequest}
                     </div>

@@ -48,7 +48,7 @@ export default function DashboardContent({ latestWeight, weightDiff, events, tod
         <div className="widget-label" style={{ color: 'var(--c-weight)' }}>{t.dashboard.weightTitle}</div>
         {latestWeight ? (
           <>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '22px', color: 'var(--text)', marginBottom: '6px' }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '22px', color: 'var(--text)', marginBottom: '6px' }}>
               {Number(latestWeight.weight_kg).toFixed(1)}
               <span style={{ fontSize: '11px', color: 'var(--muted)', marginLeft: '6px' }}>{t.dashboard.kgUnit}</span>
             </div>

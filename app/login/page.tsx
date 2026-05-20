@@ -75,7 +75,7 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center mb-10">
           <h1 style={{
-            fontFamily: "'Press Start 2P', monospace",
+            fontFamily: "'Inter', sans-serif",
             fontSize: '22px',
             color: 'var(--c-dash)',
             textShadow: '0 0 20px rgba(34,211,238,0.5)',
@@ -84,10 +84,10 @@ export default function LoginPage() {
           }}>
             lifekafe
           </h1>
-          <p style={{ color: 'var(--muted)', fontSize: '16px', fontFamily: "'VT323', monospace" }}>
+          <p style={{ color: 'var(--muted)', fontSize: '16px', fontFamily: "'Inter', sans-serif" }}>
             &gt; PERSONAL LIFE OS — v1.0
           </p>
-          <div style={{ color: 'var(--accent)', fontSize: '12px', fontFamily: "'VT323', monospace", marginTop: '4px' }}>
+          <div style={{ color: 'var(--accent)', fontSize: '12px', fontFamily: "'Inter', sans-serif", marginTop: '4px' }}>
             <span className="blink">█</span> AWAITING AUTHENTICATION
           </div>
         </div>
@@ -101,7 +101,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => switchMode(m)}
                 style={{
-                  fontFamily: "'Press Start 2P', monospace",
+                  fontFamily: "'Inter', sans-serif",
                   fontSize: '9px',
                   padding: '8px 14px',
                   background: 'none',
@@ -123,7 +123,7 @@ export default function LoginPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'center' }}>
               <div style={{ fontSize: '32px' }}>✉</div>
               <div style={{
-                fontFamily: "'Press Start 2P', monospace",
+                fontFamily: "'Inter', sans-serif",
                 fontSize: '9px',
                 color: 'var(--c-weight)',
                 lineHeight: 2,
@@ -209,7 +209,7 @@ function ErrorBox({ msg }: { msg: string }) {
       background: 'rgba(248,113,113,0.1)',
       border: '2px solid var(--red)',
       padding: '10px 12px',
-      fontFamily: "'VT323', monospace",
+      fontFamily: "'Inter', sans-serif",
       fontSize: '16px',
       color: 'var(--red)',
       lineHeight: 1.5,

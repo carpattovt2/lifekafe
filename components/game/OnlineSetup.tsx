@@ -385,14 +385,14 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     border: '2px solid var(--border)',
     color: 'var(--text)',
     padding: '10px 14px',
-    fontFamily: "'VT323', monospace",
+    fontFamily: "'Inter', sans-serif",
     fontSize: 22,
     outline: 'none',
     width: '100%',
   }
 
   const sectionLabel: React.CSSProperties = {
-    fontFamily: "'Press Start 2P', monospace",
+    fontFamily: "'Inter', sans-serif",
     fontSize: 9,
     color: 'var(--muted)',
     marginBottom: 12,
@@ -402,7 +402,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
   if (step === 'nickname') return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '40px 16px' }}>
       <button onClick={onBack} className="pixel-btn" style={{ marginBottom: 20, fontSize: 9 }}>{t.friends.back}</button>
-      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 13, color: 'var(--c-dash)', marginBottom: 8, textAlign: 'center' }}>
+      <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--c-dash)', marginBottom: 8, textAlign: 'center' }}>
         🌐 {to.title}
       </h1>
       <div className="pixel-card" style={{ padding: 20, marginTop: 24 }}>
@@ -430,7 +430,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
   if (step === 'settings') return (
     <div style={{ maxWidth: 540, margin: '0 auto', padding: '32px 16px' }}>
       <button onClick={onBack} className="pixel-btn" style={{ marginBottom: 20, fontSize: 9 }}>{t.friends.back}</button>
-      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 13, color: 'var(--c-dash)', marginBottom: 24, textAlign: 'center' }}>
+      <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--c-dash)', marginBottom: 24, textAlign: 'center' }}>
         🌐 {to.title}
       </h1>
       <div className="pixel-card" style={{ padding: 20, marginBottom: 14 }}>
@@ -453,7 +453,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
               <div style={{ width: 48, height: 68, borderRadius: 4, overflow: 'hidden' }}>
                 <div style={{ width: '100%', height: '100%', borderRadius: 3, background: 'var(--bg3)' }} />
               </div>
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 12, color: settings.cardBack === key ? 'var(--c-dash)' : 'var(--muted)', textAlign: 'center', marginTop: 2 }}>{key}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: settings.cardBack === key ? 'var(--c-dash)' : 'var(--muted)', textAlign: 'center', marginTop: 2 }}>{key}</div>
             </div>
           ))}
         </div>
@@ -499,10 +499,10 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
   return (
     <div style={{ maxWidth: 540, margin: '0 auto', padding: '32px 16px' }}>
       <button onClick={onBack} className="pixel-btn" style={{ marginBottom: 20, fontSize: 9 }}>{t.friends.back}</button>
-      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 13, color: 'var(--c-dash)', marginBottom: 8, textAlign: 'center' }}>
+      <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--c-dash)', marginBottom: 8, textAlign: 'center' }}>
         🌐 {to.lobbyTitle}
       </h1>
-      <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: 'var(--muted)', textAlign: 'center', marginBottom: 20 }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--muted)', textAlign: 'center', marginBottom: 20 }}>
         {to.roomCode}: <span style={{ color: 'var(--c-dash)', letterSpacing: 3 }}>{roomCode}</span>
       </div>
 
@@ -510,38 +510,38 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
         <div style={sectionLabel}>{to.players}</div>
         {slots.sort((a,b) => a.seatIndex - b.seatIndex).map(slot => (
           <div key={slot.seatIndex} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', background: 'var(--bg3)', border: '2px solid var(--border)', borderRadius: 2, flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: "'VT323', monospace", fontSize: 12, color: 'var(--muted)', minWidth: 20 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: 'var(--muted)', minWidth: 20 }}>
               {slot.seatIndex + 1}
             </div>
 
             {slot.status === 'accepted' && slot.seatIndex === 0 && (
               <>
-                <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'var(--text)', flex: 1 }}>{slot.nickname}</span>
-                <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#22d3ee', border: '1px solid #22d3ee', padding: '3px 6px' }}>{to.host}</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--text)', flex: 1 }}>{slot.nickname}</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 7, color: '#22d3ee', border: '1px solid #22d3ee', padding: '3px 6px' }}>{to.host}</span>
               </>
             )}
             {slot.status === 'accepted' && slot.seatIndex > 0 && (
               <>
-                <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'var(--green)', flex: 1 }}>✓ {slot.nickname}</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--green)', flex: 1 }}>✓ {slot.nickname}</span>
                 <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>{to.remove}</button>
               </>
             )}
             {slot.status === 'bot' && (
               <>
-                <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'var(--accent)', flex: 1 }}>🤖 {slot.nickname}</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--accent)', flex: 1 }}>🤖 {slot.nickname}</span>
                 <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>{to.remove}</button>
               </>
             )}
             {slot.status === 'pending' && (
               <>
-                <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'var(--yellow)', flex: 1 }}>⏳ {slot.nickname}</span>
-                <span style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: 'var(--muted)' }}>{to.pending}</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--yellow)', flex: 1 }}>⏳ {slot.nickname}</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, color: 'var(--muted)' }}>{to.pending}</span>
                 <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 8, padding: '5px 8px' }}>{to.remove}</button>
               </>
             )}
             {slot.status === 'empty' && (
               <>
-                <span style={{ flex: 1, color: 'var(--muted)', fontFamily: "'VT323', monospace", fontSize: 18 }}>— {to.inviteFriend} / {to.addBot}</span>
+                <span style={{ flex: 1, color: 'var(--muted)', fontFamily: "'Inter', sans-serif", fontSize: 18 }}>— {to.inviteFriend} / {to.addBot}</span>
                 <button className="pixel-btn" onClick={() => { loadFriends(); setShowFriendPicker(slot.seatIndex) }} style={{ fontSize: 8, padding: '5px 8px', whiteSpace: 'nowrap' }}>
                   👥 {to.inviteFriend}
                 </button>
@@ -555,7 +555,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
       </div>
 
       {!allSlotsFilled && (
-        <div style={{ fontFamily: "'VT323', monospace", fontSize: 17, color: 'var(--muted)', textAlign: 'center', marginBottom: 10 }}>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 17, color: 'var(--muted)', textAlign: 'center', marginBottom: 10 }}>
           {to.allSlotsNeeded}
         </div>
       )}
@@ -573,20 +573,20 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
       {showFriendPicker !== null && (
         <div className="modal-overlay" onClick={() => setShowFriendPicker(null)}>
           <div className="pixel-card" style={{ padding: 20, minWidth: 280, maxWidth: 380 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 9, color: 'var(--muted)', marginBottom: 14 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, color: 'var(--muted)', marginBottom: 14 }}>
               👥 {to.inviteFriend}
             </div>
             {loadingFriends ? (
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: 'var(--muted)', textAlign: 'center' }}>...</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--muted)', textAlign: 'center' }}>...</div>
             ) : friends.length === 0 ? (
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: 'var(--muted)', textAlign: 'center' }}>{to.noFriends}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--muted)', textAlign: 'center' }}>{to.noFriends}</div>
             ) : (
               friends
                 .filter(f => !slots.some(s => s.userId === f.user_id))
                 .map(f => (
                   <div key={f.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border)' }}>
                     <div>
-                      <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'var(--text)' }}>{f.nickname || f.email}</div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, color: 'var(--text)' }}>{f.nickname || f.email}</div>
                       {f.nickname && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{f.email}</div>}
                     </div>
                     <button className="pixel-btn pixel-btn-success" onClick={() => inviteFriend(showFriendPicker!, f)} style={{ fontSize: 8, padding: '6px 10px', whiteSpace: 'nowrap' }}>

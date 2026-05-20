@@ -93,7 +93,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
     <>
       {/* Page title */}
       <h1 style={{
-        fontFamily: "'Press Start 2P', monospace",
+        fontFamily: "'Inter', sans-serif",
         fontSize: '12px',
         color: 'var(--c-weight)',
         marginBottom: '24px',
@@ -125,7 +125,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
               <div style={{ display: 'flex', flexShrink: 0 }}>
                 {(['kg', 'lbs'] as const).map(u => (
                   <button key={u} type="button" onClick={() => { setUnit(u); setWeight('') }} style={{
-                    fontFamily: "'Press Start 2P', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: '9px',
                     padding: '0 10px',
                     border: '2px solid var(--border)',
@@ -140,7 +140,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
               </div>
             </div>
             {lbsPreview && (
-              <div style={{ marginTop: '5px', fontSize: '15px', color: 'var(--c-weight)', fontFamily: "'VT323', monospace" }}>
+              <div style={{ marginTop: '5px', fontSize: '15px', color: 'var(--c-weight)', fontFamily: "'Inter', sans-serif" }}>
                 ≈ {lbsPreview}
               </div>
             )}
@@ -159,12 +159,12 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid stroke="#2d3555" strokeDasharray="4 4" />
-              <XAxis dataKey="date" tick={{ fill: '#6b7280', fontFamily: "'VT323', monospace", fontSize: 14 }}
+              <XAxis dataKey="date" tick={{ fill: '#6b7280', fontFamily: "'Inter', sans-serif", fontSize: 14 }}
                 axisLine={{ stroke: '#2d3555' }} tickLine={false} interval="preserveStartEnd" />
-              <YAxis domain={[yMin, yMax]} tick={{ fill: '#6b7280', fontFamily: "'VT323', monospace", fontSize: 14 }}
+              <YAxis domain={[yMin, yMax]} tick={{ fill: '#6b7280', fontFamily: "'Inter', sans-serif", fontSize: 14 }}
                 axisLine={{ stroke: '#2d3555' }} tickLine={false} width={36} />
               <Tooltip
-                contentStyle={{ background: '#1a1f2e', border: '2px solid #4ade80', borderRadius: 0, fontFamily: "'VT323', monospace", fontSize: 16, color: '#e2e8f0' }}
+                contentStyle={{ background: '#1a1f2e', border: '2px solid #4ade80', borderRadius: 0, fontFamily: "'Inter', sans-serif", fontSize: 16, color: '#e2e8f0' }}
                 cursor={{ stroke: '#4ade80', strokeWidth: 1 }}
                 formatter={(v) => [`${v} kg`, t.weight.weightLabel]}
               />
@@ -182,7 +182,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', borderBottom: '2px solid var(--border)', minWidth: '480px' }}>
           {[t.weight.colDate, t.weight.colWeight, t.weight.colChange, ''].map((h, i) => (
             <div key={i} style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: 'var(--muted)',
+              fontFamily: "'Inter', sans-serif", fontSize: '8px', color: 'var(--muted)',
               padding: '12px 16px', borderRight: i < 3 ? '1px solid var(--border)' : 'none',
               background: 'var(--bg3)',
             }}>{h}</div>
@@ -217,7 +217,7 @@ export default function WeightClient({ initialEntries, userId }: { initialEntrie
                     value={editWeight} onChange={e => setEditWeight(e.target.value)}
                     autoFocus style={{ fontSize: '18px', padding: '4px 8px' }} />
                 ) : (
-                  <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '13px', color: 'var(--c-weight)' }}>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: '13px', color: 'var(--c-weight)' }}>
                     {Number(entry.weight_kg).toFixed(1)}
                   </span>
                 )}

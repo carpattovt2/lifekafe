@@ -1,19 +1,11 @@
 import type { Metadata, Viewport } from "next"
-import { Press_Start_2P, VT323 } from "next/font/google"
+import { Inter } from "next/font/google"
 import "./globals.css"
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister"
 
-const pressStart = Press_Start_2P({
-  weight: "400",
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-pixel",
-  display: "swap",
-})
-
-const vt323 = VT323({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-vt323",
+  variable: "--font-inter",
   display: "swap",
 })
 
@@ -36,7 +28,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: "#1a3d3a",
+  themeColor: "#faf8f5",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -44,7 +36,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${pressStart.variable} ${vt323.variable}`}>
+    <html lang="en" className={inter.variable}>
+      {/* Apply saved theme before first paint to avoid flash */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            var t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+          } catch(e) {}
+        `}} />
+      </head>
       <body>
         <ServiceWorkerRegister />
         {children}

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/LanguageContext'
+import ThemeToggle from './ThemeToggle'
 import type { Lang } from '@/lib/i18n'
 
 export default function MobileNav({ email }: { email: string }) {
@@ -33,30 +34,27 @@ export default function MobileNav({ email }: { email: string }) {
 
   return (
     <>
-      {/* Hamburger button — CSS hides it on desktop */}
       <button className="hamburger-btn" onClick={() => setIsOpen(true)} aria-label="Open menu">
         ☰
       </button>
 
-      {/* Dark overlay */}
       {isOpen && <div className="mobile-overlay" onClick={close} />}
 
-      {/* Slide-in menu — always in DOM so CSS transition works */}
       <div className={`mobile-menu${isOpen ? ' open' : ''}`} role="dialog" aria-modal="true">
 
-        {/* Header row */}
+        {/* Header */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '18px 16px 14px',
-          borderBottom: '2px solid var(--border)',
+          borderBottom: '1px solid var(--border)',
         }}>
           <div style={{
-            fontFamily: "'Press Start 2P', monospace",
-            fontSize: '13px',
-            color: 'var(--c-dash)',
-            textShadow: '0 0 10px rgba(34,211,238,0.4)',
+            fontSize: '17px',
+            fontWeight: 700,
+            color: 'var(--text)',
+            letterSpacing: '-0.02em',
           }}>
             lifekafe
           </div>
@@ -65,11 +63,12 @@ export default function MobileNav({ email }: { email: string }) {
             aria-label="Close menu"
             style={{
               background: 'none',
-              border: '2px solid var(--border)',
+              border: '1px solid var(--border)',
+              borderRadius: '6px',
               color: 'var(--muted)',
-              fontSize: '18px',
-              width: 36,
-              height: 36,
+              fontSize: '16px',
+              width: 34,
+              height: 34,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -82,7 +81,7 @@ export default function MobileNav({ email }: { email: string }) {
         </div>
 
         {/* Nav links */}
-        <nav style={{ padding: '12px 8px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <nav style={{ padding: '10px 10px', flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {NAV.map(({ href, label, icon }) => (
             <Link
               key={href}
@@ -90,63 +89,71 @@ export default function MobileNav({ email }: { email: string }) {
               onClick={close}
               className={`nav-link ${pathname === href ? 'active' : ''}`}
             >
-              <span style={{ fontSize: '18px' }}>{icon}</span>
+              <span style={{ fontSize: '16px', flexShrink: 0 }}>{icon}</span>
               {label}
             </Link>
           ))}
         </nav>
 
-        {/* Language toggle */}
-        <div style={{ padding: '12px 16px', borderTop: '2px solid var(--border)' }}>
+        {/* Language + Theme */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
           <div style={{
-            fontFamily: "'Press Start 2P', monospace",
-            fontSize: '8px',
+            fontSize: '11px',
+            fontWeight: 600,
             color: 'var(--muted)',
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
             marginBottom: '8px',
-            letterSpacing: '0.1em',
           }}>
-            LANGUAGE
+            Language & Theme
           </div>
-          <div style={{ display: 'flex' }}>
-            {(['en', 'ua'] as Lang[]).map((l, i) => (
-              <button
-                key={l}
-                onClick={() => setLang(l)}
-                style={{
-                  flex: 1,
-                  fontFamily: "'Press Start 2P', monospace",
-                  fontSize: '10px',
-                  padding: '9px 0',
-                  border: '2px solid',
-                  borderColor: lang === l ? 'var(--c-dash)' : 'var(--border)',
-                  borderLeft: i > 0 ? 'none' : undefined,
-                  background: lang === l ? 'rgba(34,211,238,0.15)' : 'var(--bg3)',
-                  color: lang === l ? 'var(--c-dash)' : 'var(--muted)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {l.toUpperCase()}
-              </button>
-            ))}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{
+              display: 'flex',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              flex: 1,
+            }}>
+              {(['en', 'ua'] as Lang[]).map((l, i) => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  style={{
+                    flex: 1,
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    padding: '8px 0',
+                    border: 'none',
+                    borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
+                    background: lang === l ? 'var(--accent)' : 'transparent',
+                    color: lang === l ? '#fff' : 'var(--muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <ThemeToggle />
           </div>
         </div>
 
         {/* User + logout */}
-        <div style={{ padding: '12px 16px', borderTop: '2px solid var(--border)' }}>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
           <div style={{
-            fontSize: '15px',
+            fontSize: '12px',
             color: 'var(--muted)',
             marginBottom: '10px',
             wordBreak: 'break-all',
-            fontFamily: "'VT323', monospace",
           }}>
             {email}
           </div>
           <button
             onClick={logout}
             className="pixel-btn pixel-btn-danger"
-            style={{ width: '100%', justifyContent: 'center', fontSize: '10px' }}
+            style={{ width: '100%', justifyContent: 'center' }}
           >
             {t.nav.logout}
           </button>

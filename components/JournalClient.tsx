@@ -95,7 +95,7 @@ export default function JournalClient({
     <>
       {/* Page title */}
       <h1 style={{
-        fontFamily: "'Press Start 2P', monospace",
+        fontFamily: "'Inter', sans-serif",
         fontSize: '12px',
         color: 'var(--c-journal)',
         marginBottom: '24px',
@@ -118,7 +118,7 @@ export default function JournalClient({
               background: 'var(--bg)',
               border: '2px solid var(--border)',
               color: 'var(--muted)',
-              fontFamily: "'VT323', monospace",
+              fontFamily: "'Inter', sans-serif",
               fontSize: '16px',
               padding: '4px 8px',
               outline: 'none',
@@ -161,7 +161,7 @@ export default function JournalClient({
             </button>
             {saved && (
               <span style={{
-                fontFamily: "'Press Start 2P', monospace",
+                fontFamily: "'Inter', sans-serif",
                 fontSize: '9px',
                 color: 'var(--green)',
               }}>
@@ -178,7 +178,7 @@ export default function JournalClient({
       {/* History */}
       <div className="pixel-card card-journal" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{
-          fontFamily: "'Press Start 2P', monospace",
+          fontFamily: "'Inter', sans-serif",
           fontSize: '8px',
           color: 'var(--muted)',
           padding: '12px 16px',
@@ -216,7 +216,7 @@ export default function JournalClient({
               >
                 <div style={{ minWidth: 120 }}>
                   <div style={{
-                    fontFamily: "'Press Start 2P', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: '8px',
                     color: isSelected ? 'var(--c-journal)' : 'var(--muted)',
                   }}>
@@ -257,7 +257,7 @@ function JournalField({
   return (
     <div>
       <label style={{
-        fontFamily: "'Press Start 2P', monospace",
+        fontFamily: "'Inter', sans-serif",
         fontSize: '8px',
         color: accentColor,
         display: 'block',

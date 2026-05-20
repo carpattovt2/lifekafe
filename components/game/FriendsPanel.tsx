@@ -248,14 +248,14 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
     border: '2px solid var(--border)',
     color: 'var(--text)',
     padding: '8px 12px',
-    fontFamily: "'VT323', monospace",
+    fontFamily: "'Inter', sans-serif",
     fontSize: 20,
     outline: 'none',
     minWidth: 0,
   }
 
   const sectionLabel: React.CSSProperties = {
-    fontFamily: "'Press Start 2P', monospace",
+    fontFamily: "'Inter', sans-serif",
     fontSize: 9,
     color: 'var(--muted)',
     marginBottom: 12,
@@ -270,7 +270,7 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
         </button>
       )}
 
-      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 14, color: 'var(--c-journal)', marginBottom: 16, textAlign: 'center' }}>
+      <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: 'var(--c-journal)', marginBottom: 16, textAlign: 'center' }}>
         👥 {tf.title}
       </h1>
 
@@ -281,7 +281,7 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
           border: '2px solid #ef4444',
           padding: '12px 16px',
           marginBottom: 14,
-          fontFamily: "'Press Start 2P', monospace",
+          fontFamily: "'Inter', sans-serif",
           fontSize: 9,
           color: '#fff',
           letterSpacing: '0.04em',
@@ -297,7 +297,7 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
         <div style={sectionLabel}>{tf.myNickname}</div>
         {!editingNickname && myProfile?.nickname ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: 'var(--text)', flex: 1 }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 24, color: 'var(--text)', flex: 1 }}>
               {myProfile.nickname}
             </span>
             <button className="pixel-btn" onClick={() => setEditingNickname(true)} style={{ fontSize: 9, padding: '7px 12px' }}>
@@ -356,12 +356,12 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
         </div>
 
         {searchStatus === 'not-found' && (
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--red)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 19, color: 'var(--red)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
             ✗ {tf.notFound}
           </div>
         )}
         {searchStatus === 'self' && (
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 19, color: 'var(--muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
             {tf.thatsYou}
           </div>
         )}
@@ -369,13 +369,13 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
             {/* 1a: orange warning if no nickname */}
             {!searchResultProfile.nickname && (
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 17, color: 'var(--orange)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 17, color: 'var(--orange)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                 ⚠ {tf.noNicknameWarning}
               </div>
             )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: 'var(--text)' }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 22, color: 'var(--text)' }}>
                 {searchResultProfile.nickname || <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>—</span>}
               </div>
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>{searchResultProfile.email}</div>
@@ -391,13 +391,13 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
               </button>
             )}
             {searchStatus === 'friends' && (
-              <span style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--green)' }}>✓ {tf.alreadyFriends}</span>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 19, color: 'var(--green)' }}>✓ {tf.alreadyFriends}</span>
             )}
             {searchStatus === 'pending-sent' && (
-              <span style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--muted)' }}>⏳ {tf.requestSent}</span>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 19, color: 'var(--muted)' }}>⏳ {tf.requestSent}</span>
             )}
             {searchStatus === 'pending-received' && (
-              <span style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--c-dash)' }}>⏳ {tf.requestSent}</span>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 19, color: 'var(--c-dash)' }}>⏳ {tf.requestSent}</span>
             )}
           </div>
           </div>
@@ -409,14 +409,14 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
         <div className="pixel-card card-dash" style={{ padding: 16, marginBottom: 14 }}>
           <div style={{ ...sectionLabel, color: 'var(--c-dash)', display: 'flex', alignItems: 'center', gap: 8 }}>
             {tf.pendingTitle}
-            <span style={{ background: 'var(--c-dash)', color: '#000', fontSize: 9, padding: '2px 7px', fontFamily: "'Press Start 2P', monospace" }}>
+            <span style={{ background: 'var(--c-dash)', color: '#000', fontSize: 9, padding: '2px 7px', fontFamily: "'Inter', sans-serif" }}>
               {pendingRequests.length}
             </span>
           </div>
           {pendingRequests.map(({ friendship_id, profile }) => (
             <div key={friendship_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 21, color: 'var(--text)' }}>{displayName(profile)}</div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 21, color: 'var(--text)' }}>{displayName(profile)}</div>
                 <div style={{ fontSize: 13, color: 'var(--muted)' }}>{profile.email}</div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -436,14 +436,14 @@ export default function FriendsPanel({ onBack }: { onBack?: () => void }) {
       <div className="pixel-card" style={{ padding: 16 }}>
         <div style={sectionLabel}>{tf.friendsTitle}</div>
         {friends.length === 0 ? (
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 19, color: 'var(--muted)', textAlign: 'center', padding: '20px 0' }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 19, color: 'var(--muted)', textAlign: 'center', padding: '20px 0' }}>
             {tf.noFriends}
           </div>
         ) : (
           friends.map(({ friendship_id, profile }) => (
             <div key={friendship_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 21, color: 'var(--text)' }}>{displayName(profile)}</div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 21, color: 'var(--text)' }}>{displayName(profile)}</div>
                 <div style={{ fontSize: 13, color: 'var(--muted)' }}>{profile.email}</div>
               </div>
               {confirmRemoveId === friendship_id ? (

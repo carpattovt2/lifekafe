@@ -482,16 +482,16 @@ function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick,
         card.jokerNum === 2 ? (
           /* ── Joker 2: gold card, black star, black bold text ── */
           <div style={{width:'100%',height:'100%',borderRadius:3,background:'linear-gradient(145deg,#f5c800,#ffd700,#e8b800)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'2px solid #a07800',position:'relative'}}>
-            <div style={{position:'absolute',top:2,left:3,fontFamily:"'Press Start 2P',monospace",fontSize:small?4:6,color:'#1a1a1a',fontWeight:900}}>J2</div>
+            <div style={{position:'absolute',top:2,left:3,fontFamily:"'Inter',sans-serif",fontSize:small?4:6,color:'#1a1a1a',fontWeight:900}}>J2</div>
             <div style={{fontSize:small?22:34,lineHeight:1,color:'#1a1a1a'}}>★</div>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:small?5:7,color:'#1a1a1a',marginTop:2,letterSpacing:1,fontWeight:900}}>JOKER</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:small?5:7,color:'#1a1a1a',marginTop:2,letterSpacing:1,fontWeight:900}}>JOKER</div>
           </div>
         ) : (
           /* ── Joker 1: white card, gold star, rainbow-gradient "JOKER" ── */
           <div style={{width:'100%',height:'100%',borderRadius:3,background:'#fffff5',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'2px solid #ffd700',position:'relative',boxShadow:'inset 0 0 8px rgba(255,215,0,0.25)'}}>
-            <div style={{position:'absolute',top:2,left:3,fontFamily:"'Press Start 2P',monospace",fontSize:small?4:6,color:'#aaa',fontWeight:700}}>J1</div>
+            <div style={{position:'absolute',top:2,left:3,fontFamily:"'Inter',sans-serif",fontSize:small?4:6,color:'#aaa',fontWeight:700}}>J1</div>
             <div style={{fontSize:small?22:34,lineHeight:1,color:'#ffd700',textShadow:'0 0 8px rgba(255,215,0,0.9), 0 0 3px #ff8800'}}>★</div>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:small?5:7,marginTop:2,letterSpacing:1,fontWeight:700,background:'linear-gradient(90deg,#e63946,#f97316,#fbbf24,#22c55e,#3b82f6,#8b5cf6)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>JOKER</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:small?5:7,marginTop:2,letterSpacing:1,fontWeight:700,background:'linear-gradient(90deg,#e63946,#f97316,#fbbf24,#22c55e,#3b82f6,#8b5cf6)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>JOKER</div>
           </div>
         )
       ) : (
@@ -572,7 +572,7 @@ function MeldView({meld,playerNames,onAdd,onSteal,burning,cardBack,addLabel='+AD
   const color=meld.ownerIndex===0?'var(--c-weight)':AI_COLORS[meld.ownerIndex-1]||'var(--c-dash)'
   return(
     <div style={{background:'rgba(0,0,0,0.35)',border:`2px solid ${burning?'#fb923c':color}`,boxShadow:burning?'0 0 14px rgba(251,146,60,0.7)':undefined,padding:'6px 8px',borderRadius:3,display:'inline-flex',flexDirection:'column',gap:4,flexShrink:0}}>
-      <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:7,color:burning?'var(--c-journal)':color,whiteSpace:'nowrap'}}>{burning?'🔥 ':''}{playerNames[meld.ownerIndex]??`P${meld.ownerIndex}`} · {meld.type.toUpperCase()} · {meldValue(meld.cards)} pts</div>
+      <div style={{fontFamily:"'Inter',sans-serif",fontSize:7,color:burning?'var(--c-journal)':color,whiteSpace:'nowrap'}}>{burning?'🔥 ':''}{playerNames[meld.ownerIndex]??`P${meld.ownerIndex}`} · {meld.type.toUpperCase()} · {meldValue(meld.cards)} pts</div>
       <div style={{display:'flex',gap:3}}>
         {meld.cards.map(c=><CardView key={c.id} card={c} small cardBack={cardBack} glow={burning&&c.isJoker}/>)}
       </div>
@@ -592,7 +592,7 @@ function CompactScore({players,roundScores,youLabel,scoreLabel}:{players:Player[
   const totals=players.map((_,pi)=>roundScores.reduce((s,r)=>s+(r[pi]??0),0))
   const playerColor=(p:Player,i:number)=>p.isHuman?'var(--c-weight)':AI_COLORS[i-1]||'var(--c-dash)'
   if(!expanded)return(
-    <div onClick={()=>setExpanded(true)} style={{cursor:'pointer',fontSize:18,fontFamily:"'VT323',monospace",display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+    <div onClick={()=>setExpanded(true)} style={{cursor:'pointer',fontSize:18,fontFamily:"'Inter',sans-serif",display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
       {players.map((p,i)=>(
         <span key={i} style={{color:playerColor(p,i)}}>
           {p.isHuman?youLabel:p.name}: <b style={{fontSize:20}}>{totals[i]}</b>
@@ -603,9 +603,9 @@ function CompactScore({players,roundScores,youLabel,scoreLabel}:{players:Player[
   )
   return(
     <div onClick={()=>setExpanded(false)} style={{cursor:'pointer'}}>
-      <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'var(--muted)',marginBottom:4}}>{scoreLabel} ▲</div>
-      <div style={{display:'grid',gridTemplateColumns:`auto repeat(7,1fr) auto`,gap:2,minWidth:280,fontFamily:"'VT323',monospace"}}>
-        {['','R1','R2','R3','R4','R5','R6','R7','Σ'].map((h,i)=>(<div key={i} style={{fontFamily:"'Press Start 2P',monospace",fontSize:6,color:'var(--muted)',textAlign:'center',padding:'1px 2px'}}>{h}</div>))}
+      <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:'var(--muted)',marginBottom:4}}>{scoreLabel} ▲</div>
+      <div style={{display:'grid',gridTemplateColumns:`auto repeat(7,1fr) auto`,gap:2,minWidth:280,fontFamily:"'Inter',sans-serif"}}>
+        {['','R1','R2','R3','R4','R5','R6','R7','Σ'].map((h,i)=>(<div key={i} style={{fontFamily:"'Inter',sans-serif",fontSize:6,color:'var(--muted)',textAlign:'center',padding:'1px 2px'}}>{h}</div>))}
         {players.map((p,pi)=>([p.isHuman?youLabel.toUpperCase():p.name,...roundScores.map(r=>r[pi]??''),totals[pi]].map((v,i)=>(<div key={i} style={{textAlign:'center',padding:'1px 3px',color:i===0?playerColor(p,pi):'var(--text)',fontSize:16}}>{v}</div>))))}
       </div>
     </div>
@@ -619,12 +619,12 @@ function RoundEndOverlay({state,tg,youLabel,playerColor,onNextRound,onEndGame,ho
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:200,display:'flex',alignItems:'flex-end',backdropFilter:'blur(4px)'}}>
       <div className="round-end-panel" style={{width:'100%',background:'linear-gradient(180deg,#0d2e1a 0%,#163d24 100%)',borderTop:'3px solid var(--c-weight)',padding:'20px 16px',maxHeight:'85vh',overflowY:'auto'}}>
-        <h2 style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--c-weight)',marginBottom:16,textAlign:'center'}}>{tg.roundDone} {state.roundNumber} — COMPLETE</h2>
+        <h2 style={{fontFamily:"'Inter',sans-serif",fontSize:11,color:'var(--c-weight)',marginBottom:16,textAlign:'center'}}>{tg.roundDone} {state.roundNumber} — COMPLETE</h2>
         <div style={{display:'grid',gridTemplateColumns:`repeat(${state.players.length},1fr)`,gap:10,marginBottom:18}}>
           {state.players.map((p,i)=>(
             <div key={i} style={{background:'rgba(0,0,0,0.35)',border:`1px solid ${playerColor(p,i)}`,padding:10,borderRadius:4,textAlign:'center'}}>
-              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:playerColor(p,i),marginBottom:6}}>{p.isHuman?youLabel:p.name}</div>
-              <div style={{fontSize:28,fontFamily:"'Press Start 2P',monospace",color:(last[i]??0)<=0?'var(--green)':'var(--red)'}}>{(last[i]??0)>0?'+':''}{last[i]??0}</div>
+              <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:playerColor(p,i),marginBottom:6}}>{p.isHuman?youLabel:p.name}</div>
+              <div style={{fontSize:28,fontFamily:"'Inter',sans-serif",color:(last[i]??0)<=0?'var(--green)':'var(--red)'}}>{(last[i]??0)>0?'+':''}{last[i]??0}</div>
               <div style={{fontSize:16,color:'var(--muted)',marginTop:4}}>{tg.running} {totals[i]}</div>
               {p.hand.length>0&&(
                 <div style={{display:'flex',flexWrap:'wrap',gap:2,justifyContent:'center',marginTop:6}}>
@@ -637,7 +637,7 @@ function RoundEndOverlay({state,tg,youLabel,playerColor,onNextRound,onEndGame,ho
         </div>
         <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap'}}>
           {hostOnly
-            ? <div style={{fontFamily:"'VT323',monospace",fontSize:20,color:'var(--muted)',textAlign:'center'}}>{tg.aiTurnBanner === 'AI TURN' ? 'Waiting for host...' : 'Чекаємо господаря...'}</div>
+            ? <div style={{fontFamily:"'Inter',sans-serif",fontSize:20,color:'var(--muted)',textAlign:'center'}}>{tg.aiTurnBanner === 'AI TURN' ? 'Waiting for host...' : 'Чекаємо господаря...'}</div>
             : (<>
                 {state.roundNumber<7&&<button className="pixel-btn pixel-btn-success" onClick={onNextRound} style={{fontSize:11,padding:'12px 24px'}}>{tg.nextRound} ({state.roundNumber+1}/7) ►</button>}
                 <button className="pixel-btn pixel-btn-danger" onClick={onEndGame} style={{fontSize:9}}>{tg.endGame}{state.roundNumber<7?' (+25)':''}</button>
@@ -979,7 +979,7 @@ export default function JokerGame({
   // ── Setup screen — shown only in solo mode ────────────────────────────────
   if(state.phase==='setup'&&isOnline){
     return(
-      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--muted)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',fontFamily:"'Inter',sans-serif",fontSize:11,color:'var(--muted)'}}>
         {t.online.connecting}...
       </div>
     )
@@ -989,9 +989,9 @@ export default function JokerGame({
     return(
       <div style={{maxWidth:580,margin:'0 auto',padding:'32px 16px',textAlign:'center'}}>
         {onBack&&<button onClick={onBack} className="pixel-btn" style={{marginBottom:16,fontSize:9,padding:'7px 12px',float:'left'}}>{t.friends.back}</button>}
-        <h1 style={{fontFamily:"'Press Start 2P',monospace",fontSize:16,color:'var(--c-journal)',marginBottom:24,clear:'both'}}>{tg.title}</h1>
+        <h1 style={{fontFamily:"'Inter',sans-serif",fontSize:16,color:'var(--c-journal)',marginBottom:24,clear:'both'}}>{tg.title}</h1>
         <div className="pixel-card card-journal" style={{padding:24,marginBottom:12}}>
-          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--muted)',marginBottom:16}}>{tg.choosePlayers}</div>
+          <div style={{fontFamily:"'Inter',sans-serif",fontSize:11,color:'var(--muted)',marginBottom:16}}>{tg.choosePlayers}</div>
           <div style={{display:'flex',gap:10,justifyContent:'center',marginBottom:24}}>
             {[2,3,4,5].map(n=>(
               <button key={n} className="pixel-btn" onClick={()=>setSetupNumPlayers(n)}
@@ -1000,17 +1000,17 @@ export default function JokerGame({
               </button>
             ))}
           </div>
-          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color:'var(--muted)',marginBottom:12}}>{tg.cardBackLabel}</div>
+          <div style={{fontFamily:"'Inter',sans-serif",fontSize:9,color:'var(--muted)',marginBottom:12}}>{tg.cardBackLabel}</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:10,justifyContent:'center',marginBottom:16}}>
             {CARD_BACKS.map(key=>(
               <div key={key} onClick={()=>setCardBack(key)} style={{cursor:'pointer',border:`3px solid ${cardBack===key?'var(--c-dash)':'var(--border)'}`,borderRadius:6,padding:4,width:64,boxShadow:cardBack===key?'0 0 10px rgba(34,211,238,0.5)':undefined}}>
                 <div style={{width:56,height:78,borderRadius:4,overflow:'hidden',marginBottom:4}}>{renderCardBack(key)}</div>
-                <div style={{fontFamily:"'VT323',monospace",fontSize:14,color:cardBack===key?'var(--c-dash)':'var(--muted)',textAlign:'center'}}>{backNames[key]}</div>
+                <div style={{fontFamily:"'Inter',sans-serif",fontSize:14,color:cardBack===key?'var(--c-dash)':'var(--muted)',textAlign:'center'}}>{backNames[key]}</div>
               </div>
             ))}
           </div>
           {/* Animation speed */}
-          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color:'var(--muted)',marginBottom:8}}>{tg.animSpeedLabel}</div>
+          <div style={{fontFamily:"'Inter',sans-serif",fontSize:9,color:'var(--muted)',marginBottom:8}}>{tg.animSpeedLabel}</div>
           <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:20}}>
             {(['fast','normal','slow'] as const).map(s=>(
               <button key={s} onClick={()=>setAnimSpeed(s)} className="pixel-btn" style={{flex:1,justifyContent:'center',fontSize:11,background:animSpeed===s?'rgba(34,211,238,0.2)':'var(--bg3)',border:`2px solid ${animSpeed===s?'var(--c-dash)':'var(--border)'}`,color:animSpeed===s?'var(--c-dash)':'var(--muted)'}}>
@@ -1019,7 +1019,7 @@ export default function JokerGame({
             ))}
           </div>
           {/* Theme */}
-          <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color:'var(--muted)',marginBottom:8}}>{tg.themeLabel}</div>
+          <div style={{fontFamily:"'Inter',sans-serif",fontSize:9,color:'var(--muted)',marginBottom:8}}>{tg.themeLabel}</div>
           <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:20}}>
             {(['dark','pastel'] as const).map(th=>(
               <button key={th} onClick={()=>setGameTheme(th)} className="pixel-btn" style={{flex:1,justifyContent:'center',fontSize:11,background:gameTheme===th?'rgba(34,211,238,0.2)':'var(--bg3)',border:`2px solid ${gameTheme===th?'var(--c-dash)':'var(--border)'}`,color:gameTheme===th?'var(--c-dash)':'var(--muted)'}}>
@@ -1059,11 +1059,11 @@ export default function JokerGame({
         {/* Full-screen game-over overlay */}
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'20px 16px',overflowY:'auto',backdropFilter:'blur(6px)'}}>
           <div className="round-end-panel" style={{width:'100%',maxWidth:700,background:'linear-gradient(180deg,#0d1a10 0%,#142018 100%)',border:'3px solid #ffd700',padding:'28px 20px',borderRadius:4,boxShadow:'0 0 40px rgba(255,215,0,0.3)'}}>
-            <h1 style={{fontFamily:"'Press Start 2P',monospace",fontSize:14,color:'#ffd700',textAlign:'center',textShadow:'0 0 20px rgba(255,215,0,0.6)',marginBottom:8}}>
+            <h1 style={{fontFamily:"'Inter',sans-serif",fontSize:14,color:'#ffd700',textAlign:'center',textShadow:'0 0 20px rgba(255,215,0,0.6)',marginBottom:8}}>
               {tg.gameOver}
             </h1>
             <div style={{textAlign:'center',marginBottom:20}}>
-              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:12,color:iWon?'var(--c-weight)':'var(--red)',marginBottom:8,textShadow:`0 0 12px ${iWon?'rgba(74,222,128,0.6)':'rgba(239,68,68,0.6)'}`}}>
+              <div style={{fontFamily:"'Inter',sans-serif",fontSize:12,color:iWon?'var(--c-weight)':'var(--red)',marginBottom:8,textShadow:`0 0 12px ${iWon?'rgba(74,222,128,0.6)':'rgba(239,68,68,0.6)'}`}}>
                 {iWon?tg.youWin:`🏆 ${playerNames[winnerIdx]} ${tg.aiWins}`}
               </div>
               <div style={{fontSize:17,color:'var(--muted)'}}>{tg.lowestWins}</div>
@@ -1071,10 +1071,10 @@ export default function JokerGame({
 
             {/* Full scores table */}
             <div style={{marginBottom:20,overflowX:'auto'}}>
-              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'var(--muted)',marginBottom:8}}>{tg.allRounds}</div>
-              <div style={{display:'grid',gridTemplateColumns:`auto repeat(${state.roundScores.length},1fr) auto`,gap:2,minWidth:320,fontFamily:"'VT323',monospace",fontSize:18}}>
+              <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:'var(--muted)',marginBottom:8}}>{tg.allRounds}</div>
+              <div style={{display:'grid',gridTemplateColumns:`auto repeat(${state.roundScores.length},1fr) auto`,gap:2,minWidth:320,fontFamily:"'Inter',sans-serif",fontSize:18}}>
                 {['', ...state.roundScores.map((_,i)=>`R${i+1}`), 'Σ'].map((h,i)=>(
-                  <div key={i} style={{fontFamily:"'Press Start 2P',monospace",fontSize:7,color:'var(--muted)',textAlign:'center',padding:'3px 4px'}}>{h}</div>
+                  <div key={i} style={{fontFamily:"'Inter',sans-serif",fontSize:7,color:'var(--muted)',textAlign:'center',padding:'3px 4px'}}>{h}</div>
                 ))}
                 {state.players.map((p,pi)=>{
                   const pColor=pi===winnerIdx?'#ffd700':playerColor(p,pi)
@@ -1109,7 +1109,7 @@ export default function JokerGame({
         {toasts.map(t=>(
           <div key={t.id} style={{
             background:'rgba(10,20,18,0.92)',color:'#e8f5f0',
-            fontFamily:"'VT323',monospace",fontSize:18,
+            fontFamily:"'Inter',sans-serif",fontSize:18,
             padding:'8px 18px',borderRadius:4,border:'1px solid rgba(255,255,255,0.18)',
             backdropFilter:'blur(8px)',whiteSpace:'nowrap',textAlign:'center',
             animation:t.exiting?'toastOut 0.28s ease forwards':'toastIn 0.25s ease forwards',
@@ -1123,7 +1123,7 @@ export default function JokerGame({
           position:'fixed',top:90,left:'50%',zIndex:350,pointerEvents:'none',
           background:`${turnBanner.color}28`,border:`2px solid ${turnBanner.color}`,
           padding:'10px 28px',borderRadius:4,
-          fontFamily:"'Press Start 2P',monospace",fontSize:11,color:turnBanner.color,letterSpacing:1,
+          fontFamily:"'Inter',sans-serif",fontSize:11,color:turnBanner.color,letterSpacing:1,
           animation:turnBanner.exiting?'bannerSlideUp 0.32s ease forwards':'bannerSlideDown 0.3s ease forwards',
         }}>
           {turnBanner.text}
@@ -1133,10 +1133,10 @@ export default function JokerGame({
       {/* Header */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 16px',background:'rgba(0,0,0,0.4)',flexWrap:'wrap',gap:6}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--c-journal)'}}>{tg.title}</span>
+          <span style={{fontFamily:"'Inter',sans-serif",fontSize:11,color:'var(--c-journal)'}}>{tg.title}</span>
           <button onClick={()=>setSoundEnabled(e=>!e)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',padding:2}}>{soundEnabled?'🔊':'🔇'}</button>
         </div>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:14,color:'var(--muted)',letterSpacing:0.3}}>
+        <div style={{fontFamily:"'Inter',sans-serif",fontSize:14,color:'var(--muted)',letterSpacing:0.3}}>
           {tg.roundDone.replace('♦','').trim()} {state.roundNumber}/7 &nbsp;·&nbsp; {tg.circle} {circles+1}
         </div>
         <CompactScore players={state.players} roundScores={state.roundScores} youLabel={youLabel} scoreLabel={tg.scores}/>
@@ -1159,7 +1159,7 @@ export default function JokerGame({
             const isCurrent=state.currentPlayerIndex===pi
             return(
               <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,background:isCurrent?`${color}22`:'rgba(0,0,0,0.3)',border:`2px solid ${isCurrent?color:'rgba(255,255,255,0.08)'}`,padding:'5px 10px',borderRadius:4,transition:'all 0.3s'}}>
-                <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color}}>{playerNames[pi]}</span>
+                <span style={{fontFamily:"'Inter',sans-serif",fontSize:9,color}}>{playerNames[pi]}</span>
                 {/* Mini card backs — show up to 3 then count */}
                 <div style={{display:'flex',gap:2,alignItems:'center'}}>
                   {Array.from({length:Math.min(3,p.hand.length)}).map((_,j)=>(
@@ -1184,7 +1184,7 @@ export default function JokerGame({
         <div style={{display:'flex',gap:18,alignItems:'flex-start',justifyContent:'center',marginBottom:12,flexWrap:'wrap'}}>
           {/* Deck — bounce on draw, flicker on reshuffle */}
           <div style={{textAlign:'center'}}>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:6}}>{tg.deck} ({state.deck.length})</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:6}}>{tg.deck} ({state.deck.length})</div>
             {state.deck.length>0
               ?<div className={deckBounce?'deck-bounce':deckReshuffle?'deck-reshuffle':''}>
                  <CardView card={state.deck[0]} faceDown cardBack={cardBack} tableCard onClick={inDraw?()=>dispatch({type:'DRAW_DECK'}):undefined}/>
@@ -1193,7 +1193,7 @@ export default function JokerGame({
           </div>
           {/* Discard — flash orange when card lands */}
           <div style={{textAlign:'center'}}>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:6}}>{tg.discardPile}</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:6}}>{tg.discardPile}</div>
             <div className={discardFlash?'discard-flash':''}>
               {topDiscard
                 ?<CardView card={topDiscard} tableCard onClick={inDraw?()=>dispatch({type:'DRAW_DISCARD'}):undefined}/>
@@ -1202,7 +1202,7 @@ export default function JokerGame({
           </div>
           {/* Trump — gold pulse */}
           <div style={{textAlign:'center'}}>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'#ffd700',marginBottom:6}}>{tg.trump} {state.trumpSuit?suitSymbol(state.trumpSuit):''}</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:'#ffd700',marginBottom:6}}>{tg.trump} {state.trumpSuit?suitSymbol(state.trumpSuit):''}</div>
             {state.trumpCard?(
               <div>
                 <div className={trumpFlash?'trump-pulse':''} style={{boxShadow:'0 0 14px #ffd700, 0 6px 18px rgba(0,0,0,0.55)',display:'inline-block',borderRadius:4,opacity:human?.hasMelded?0.4:1,filter:human?.hasMelded?'grayscale(0.5)':undefined}}>
@@ -1212,7 +1212,7 @@ export default function JokerGame({
                   <button className="pixel-btn pixel-btn-warning" onClick={()=>{setTrumpFlash(true);setTimeout(()=>setTrumpFlash(false),600);dispatch({type:'TAKE_TRUMP'})}} style={{fontSize:8,padding:'4px 6px',marginTop:6,width:'100%'}}>{tg.takeTrump}</button>
                 )}
                 {human?.hasMelded&&(
-                  <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:6,color:'rgba(255,215,0,0.45)',marginTop:4,textAlign:'center'}}>NOT AVAILABLE</div>
+                  <div style={{fontFamily:"'Inter',sans-serif",fontSize:6,color:'rgba(255,215,0,0.45)',marginTop:4,textAlign:'center'}}>NOT AVAILABLE</div>
                 )}
               </div>
             ):<div style={{width:62,height:88,border:'2px dashed rgba(255,215,0,0.3)',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,215,0,0.4)',fontSize:18}}>—</div>}
@@ -1220,7 +1220,7 @@ export default function JokerGame({
           {/* Staged */}
           {state.stagedMelds.length>0&&(
             <div style={{flex:1,minWidth:120}}>
-              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'var(--yellow)',marginBottom:4}}>{tg.staged} ({totalMeldValue(state.stagedMelds)} pts)</div>
+              <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:'var(--yellow)',marginBottom:4}}>{tg.staged} ({totalMeldValue(state.stagedMelds)} pts)</div>
               {state.stagedMelds.map((m,i)=>(
                 <div key={i} style={{display:'flex',gap:3,marginBottom:4,flexWrap:'wrap'}}>
                   {m.map(c=><CardView key={c.id} card={c} small cardBack={cardBack}/>)}
@@ -1234,7 +1234,7 @@ export default function JokerGame({
         {/* Melds — scale-in for new, flash-blue for add-to-set */}
         {state.melds.length>0&&(
           <div>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:'rgba(255,255,255,0.35)',marginBottom:6}}>{tg.tableZone} ({state.melds.length})</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:'rgba(255,255,255,0.35)',marginBottom:6}}>{tg.tableZone} ({state.melds.length})</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:8,maxHeight:240,overflowY:'auto',paddingBottom:4}}>
               {state.melds.map(meld=>(
                 <div key={meld.id} className={newMeldIds.has(meld.id)?'meld-appear':flashMeldId===meld.id?'set-flash-blue':''}>
@@ -1251,7 +1251,7 @@ export default function JokerGame({
 
       {/* ZONE 3: Player hand — cards stagger-animate in on new round */}
       <div className={`hand-zone ${isMyTurn?'player-turn-bar':''} game-safe-bottom`} style={{padding:'12px 16px 130px',borderTop:`3px solid ${isMyTurn?'#00ff88':'transparent'}`}}>
-        <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:8,color:isMyTurn?'#00ff88':'rgba(255,255,255,0.35)',marginBottom:8}}>{tg.handZone}</div>
+        <div style={{fontFamily:"'Inter',sans-serif",fontSize:8,color:isMyTurn?'#00ff88':'rgba(255,255,255,0.35)',marginBottom:8}}>{tg.handZone}</div>
 
         {human&&(
           <>
@@ -1349,7 +1349,7 @@ export default function JokerGame({
       {jokerPosReq&&(
         <div className="modal-overlay" onClick={()=>{setJokerPosReq(null);setPendingStageMeld(null)}}>
           <div className="pixel-card card-planner" style={{width:'100%',maxWidth:420,padding:24}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,color:'var(--c-planner)',marginBottom:14}}>{tg.jokerPosTitle}</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontSize:10,color:'var(--c-planner)',marginBottom:14}}>{tg.jokerPosTitle}</div>
             <div style={{fontSize:17,color:'var(--muted)',marginBottom:16}}>{tg.jokerPosHint}</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center'}}>
               {jokerPosReq.options.map(opt=>(

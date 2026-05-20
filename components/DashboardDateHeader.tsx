@@ -20,7 +20,7 @@ export default function DashboardDateHeader() {
   return (
     <div style={{ marginBottom: '28px' }}>
       <h1 style={{
-        fontFamily: "'Press Start 2P', monospace",
+        fontFamily: "'Inter', sans-serif",
         fontSize: '12px',
         color: 'var(--c-dash)',
         marginBottom: '6px',

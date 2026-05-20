@@ -186,7 +186,7 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
                 padding: '8px', minHeight: 120,
               }}>
                 <div style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: '8px',
+                  fontFamily: "'Inter', sans-serif", fontSize: '8px',
                   color: isToday ? 'var(--c-planner)' : 'var(--muted)', marginBottom: '6px',
                 }}>
                   {DAYS_SHORT[i]}<br />{day.getDate()}
@@ -222,7 +222,7 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '2px' }}>
               {DAYS_SHORT.map(d => (
                 <div key={d} style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: 'var(--muted)',
+                  fontFamily: "'Inter', sans-serif", fontSize: '7px', color: 'var(--muted)',
                   padding: '6px', textAlign: 'center', background: 'var(--bg3)',
                 }}>{d}</div>
               ))}
@@ -243,7 +243,7 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
                     padding: '6px', minHeight: 80,
                   }}>
                     <div style={{
-                      fontFamily: "'Press Start 2P', monospace", fontSize: '8px',
+                      fontFamily: "'Inter', sans-serif", fontSize: '8px',
                       color: isToday ? 'var(--c-planner)' : 'var(--muted)', marginBottom: '4px',
                     }}>{day}</div>
                     {dayEvs.slice(0, 3).map(ev => <EventPill key={ev.id} ev={ev} onClick={openEvent} />)}
@@ -264,7 +264,7 @@ export default function PlannerClient({ initialEvents, userId }: { initialEvents
     <>
       {/* Page title */}
       <h1 style={{
-        fontFamily: "'Press Start 2P', monospace", fontSize: '12px',
+        fontFamily: "'Inter', sans-serif", fontSize: '12px',
         color: 'var(--c-planner)', marginBottom: '24px',
         textShadow: '0 0 12px rgba(192,132,252,0.35)',
       }}>
@@ -353,7 +353,7 @@ function NavBar({ label, onPrev, onNext, onToday, prevLabel, nextLabel, todayLab
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
       <button className="pixel-btn pixel-btn-secondary" style={{ fontSize: '9px', padding: '6px 10px' }} onClick={onPrev}>{prevLabel}</button>
-      <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '10px', color: 'var(--text)', flex: 1, textAlign: 'center' }}>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: '10px', color: 'var(--text)', flex: 1, textAlign: 'center' }}>
         {label}
       </span>
       <button className="pixel-btn pixel-btn-secondary" style={{ fontSize: '9px', padding: '6px 10px' }} onClick={onNext}>{nextLabel}</button>
@@ -368,7 +368,7 @@ function EventPill({ ev, onClick }: { ev: CalEvent; onClick: (ev: CalEvent) => v
       background: CATEGORY_COLORS[ev.category] ?? '#888', color: '#fff',
       fontSize: '12px', padding: '3px 5px', marginBottom: '3px', cursor: 'pointer',
       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      fontFamily: "'VT323', monospace", transition: 'filter 0.1s',
+      fontFamily: "'Inter', sans-serif", transition: 'filter 0.1s',
     }}
     onMouseEnter={e => (e.currentTarget.style.filter='brightness(1.2)')}
     onMouseLeave={e => (e.currentTarget.style.filter='brightness(1)')}>
@@ -389,7 +389,7 @@ function EventChip({ ev, catLabel, onClick }: { ev: CalEvent; catLabel: string; 
       <div style={{ width: 10, height: 10, background: CATEGORY_COLORS[ev.category] ?? '#888', flexShrink: 0 }} />
       <div style={{ flex: 1, fontSize: '18px' }}>{ev.title}</div>
       {ev.start_time && <div style={{ fontSize: '15px', color: 'var(--muted)' }}>{ev.start_time.slice(0,5)}</div>}
-      <div style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: "'Press Start 2P', monospace" }}>{catLabel}</div>
+      <div style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: "'Inter', sans-serif" }}>{catLabel}</div>
     </div>
   )
 }
@@ -397,7 +397,7 @@ function EventChip({ ev, catLabel, onClick }: { ev: CalEvent; catLabel: string; 
 function ModalHeader({ title, color, onClose }: { title: string; color: string; onClose: () => void }) {
   return (
     <div style={{
-      fontFamily: "'Press Start 2P', monospace", fontSize: '10px', color,
+      fontFamily: "'Inter', sans-serif", fontSize: '10px', color,
       marginBottom: '20px', paddingBottom: '12px', borderBottom: '2px solid var(--border)',
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     }}>
@@ -431,7 +431,7 @@ function EventDetail({ ev, catLabel, confirmDelete, onEdit, onRequestDelete, onC
       </div>
       {confirmDelete ? (
         <div style={{ background: 'rgba(248,113,113,0.1)', border: '2px solid var(--red)', padding: '14px', marginBottom: '14px' }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '9px', color: 'var(--red)', marginBottom: '12px' }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '9px', color: 'var(--red)', marginBottom: '12px' }}>
             {t.confirmDelete}
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -454,7 +454,7 @@ function EventDetail({ ev, catLabel, confirmDelete, onEdit, onRequestDelete, onC
 function DetailRow({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-      <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '7px', color: 'var(--muted)', minWidth: 80, paddingTop: '3px' }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '7px', color: 'var(--muted)', minWidth: 80, paddingTop: '3px' }}>
         {label}
       </div>
       <div style={{ fontSize: '18px', color: color ?? 'var(--text)' }}>{value}</div>
@@ -494,7 +494,7 @@ function EventFormBody({ form, setField, onSubmit, saving, onCancel, submitLabel
         <input type="checkbox" id="allday_form" checked={form.is_all_day}
           onChange={e => setField('is_all_day', e.target.checked)}
           style={{ width: 18, height: 18, accentColor: 'var(--accent)', cursor: 'pointer' }} />
-        <label htmlFor="allday_form" style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '8px', color: 'var(--muted)', cursor: 'pointer' }}>
+        <label htmlFor="allday_form" style={{ fontFamily: "'Inter', sans-serif", fontSize: '8px', color: 'var(--muted)', cursor: 'pointer' }}>
           {t.allDay}
         </label>
       </div>

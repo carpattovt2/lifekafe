@@ -71,7 +71,7 @@ export default function QuoteWidget() {
             "{quote.content}"
           </div>
           <div style={{
-            fontFamily: "'Press Start 2P', monospace",
+            fontFamily: "'Inter', sans-serif",
             fontSize: '8px',
             color: 'var(--c-dash)',
             wordBreak: 'break-word',

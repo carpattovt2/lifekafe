@@ -48,7 +48,7 @@ export default function GameMenu() {
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '40px 16px', textAlign: 'center' }}>
-      <h1 style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 15, color: 'var(--c-journal)', marginBottom: 32 }}>
+      <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, color: 'var(--c-journal)', marginBottom: 32 }}>
         {tg.title}
       </h1>
 
