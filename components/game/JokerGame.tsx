@@ -763,26 +763,29 @@ export default function JokerGame({
       if(mine) setMySeatIndex(mine.seat_index)
     }
     init()
-    // Polling fallback for the full game — Realtime alone is unreliable.
-    // Tracks updated_at so we only dispatch when the host actually changed state.
+    // Polling fallback — Realtime alone is unreliable.
+    // Only syncs during opponent's turn so we never overwrite our own in-progress moves.
+    // Derives mySeatIndex from seatUserIds in the game state (more reliable than room_players).
     let lastUpdatedAt: string|null=null
     const interval=setInterval(async()=>{
       const phase=stateRef.current.phase
       if(phase==='game-end'||cancelled)return
+      // Skip sync when it's our own turn — we are the source of truth
+      const isOurTurn=phase!=='setup'&&stateRef.current.currentPlayerIndex===mySeatRef.current
+      if(isOurTurn)return
       const{data:room}=await supabase.from('game_rooms').select('game_state,updated_at').eq('id',roomId!).single()
       if(!room?.game_state||cancelled)return
       if(room.updated_at===lastUpdatedAt)return
       lastUpdatedAt=room.updated_at
-      baseDispatch({type:'SYNC_STATE',state:room.game_state as GameState})
-      if(userIdLocal&&phase==='setup'){
-        // On first load also sync room_players so seat index is correct
-        const{data:players}=await supabase.from('room_players').select('*').eq('room_id',roomId!).order('seat_index')
-        if(players&&!cancelled){
-          setRoomPlayers(players as RoomPlayerRow[])
-          const mine=players.find((p:any)=>p.user_id===userIdLocal)
-          if(mine) setMySeatIndex(mine.seat_index)
+      // Derive seat index from seatUserIds embedded in game_state
+      if(userIdLocal){
+        const gs=room.game_state as any
+        if(gs.seatUserIds){
+          const idx=(gs.seatUserIds as (string|null)[]).findIndex(id=>id===userIdLocal)
+          if(idx>=0) setMySeatIndex(idx)
         }
       }
+      baseDispatch({type:'SYNC_STATE',state:room.game_state as GameState})
     },2000)
     return()=>{cancelled=true;clearInterval(interval)}
   },[isOnline,roomId])
@@ -793,7 +796,11 @@ export default function JokerGame({
     const ch=supabase.channel(`jg-online-${roomId}`)
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'game_rooms',filter:`id=eq.${roomId}`},
         (payload)=>{
-          if(payload.new?.game_state) baseDispatch({type:'SYNC_STATE',state:payload.new.game_state as GameState})
+          if(!payload.new?.game_state)return
+          // Don't overwrite state during our own turn
+          const phase=stateRef.current.phase
+          if(phase!=='setup'&&stateRef.current.currentPlayerIndex===mySeatRef.current)return
+          baseDispatch({type:'SYNC_STATE',state:payload.new.game_state as GameState})
         })
       .subscribe()
     return()=>{supabase.removeChannel(ch)}
