@@ -277,98 +277,35 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     setSlots(newSlots)
   }
 
-  // Re-fetch on lobby entry (catches anything missed before subscription starts)
+  // Polling fallback — runs every 3s while in lobby, guaranteed to see DB state even
+  // if Supabase Realtime drops events (known issue with cross-user INSERT filtering).
   useEffect(() => {
-    if (roomId && step === 'lobby') {
-      console.log('[lobby:init] rebuildSlots for roomId:', roomId, 'numPlayers:', settings.numPlayers)
-      rebuildSlots(roomId, settings.numPlayers).then(() => {
-        console.log('[lobby:init] rebuildSlots done')
-      })
-    }
+    if (!roomId || step !== 'lobby') return
+    // Immediate fetch on lobby entry
+    rebuildSlots(roomId, settings.numPlayers)
+    const interval = setInterval(() => rebuildSlots(roomId, settings.numPlayers), 3000)
+    return () => clearInterval(interval)
   }, [roomId, step])
 
-  // Lobby realtime subscription
+  // Realtime subscription — primary path (instant update when it works)
   useEffect(() => {
-    console.log('[lobby:sub] effect ran — roomId:', roomId, 'step:', step)
-    if (!roomId || step !== 'lobby') {
-      console.log('[lobby:sub] skipping (no roomId or not lobby step)')
-      return
-    }
-
-    console.log('[lobby:sub] setting up channel for room:', roomId)
+    if (!roomId || step !== 'lobby') return
 
     const channel = supabase.channel(`lobby-${roomId}`)
-      // Single '*' handler catches INSERT, UPDATE and DELETE — some Supabase versions
-      // don't fire separate INSERT/UPDATE listeners reliably, so '*' is the safe choice.
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` },
         (payload) => {
-          const eventType = payload.eventType  // 'INSERT' | 'UPDATE' | 'DELETE'
-          console.log(`[lobby:${eventType}] *** room_players ${eventType} received ***`)
-          console.log(`[lobby:${eventType}] full payload:`, JSON.stringify(payload, null, 2))
-
-          if (eventType === 'DELETE') {
-            console.log('[lobby:DELETE] re-fetching slots after delete')
-            rebuildSlots(roomId, settings.numPlayers)
-            return
-          }
-
-          // INSERT or UPDATE — payload.new has the current row
-          const p = payload.new as any
-          if (!p || p.seat_index == null) {
-            console.warn(`[lobby:${eventType}] payload.new missing or no seat_index, falling back to rebuildSlots`)
-            rebuildSlots(roomId, settings.numPlayers)
-            return
-          }
-
-          const newStatus: SlotStatus = p.is_bot ? 'bot' : (p.is_ready ? 'accepted' : 'pending')
-          console.log(`[lobby:${eventType}] seat ${p.seat_index} → status: ${newStatus}, nickname: ${p.nickname}, is_ready: ${p.is_ready}`)
-
-          setSlots(prev => {
-            console.log(`[lobby:${eventType}] slots BEFORE:`, JSON.stringify(prev))
-            const seatExists = prev.some(s => s.seatIndex === p.seat_index)
-            let next: SlotInfo[]
-            if (seatExists) {
-              next = prev.map(s =>
-                s.seatIndex === p.seat_index
-                  ? { seatIndex: p.seat_index, status: newStatus, nickname: p.nickname, userId: p.user_id, invitationId: s.invitationId }
-                  : s
-              )
-            } else {
-              // Seat not yet in local state — add it (shouldn't normally happen)
-              console.warn(`[lobby:${eventType}] seat ${p.seat_index} not in local slots, appending`)
-              next = [...prev, { seatIndex: p.seat_index, status: newStatus, nickname: p.nickname, userId: p.user_id }]
-            }
-            console.log(`[lobby:${eventType}] slots AFTER:`, JSON.stringify(next))
-            return next
-          })
+          const eventType = payload.eventType
+          console.log(`[lobby:rt] room_players ${eventType}`, payload.new ?? payload.old)
+          // Trigger a fresh fetch so realtime and polling always converge to the same state
+          rebuildSlots(roomId, settings.numPlayers)
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` },
-        (payload) => {
-          const pending: PendingInvite[] = payload.new?.settings?.pendingInvites ?? []
-          console.log('[lobby:GR_UPDATE] game_rooms UPDATE received, pendingInvites:', JSON.stringify(pending))
-          setSlots(prev => {
-            console.log('[lobby:GR_UPDATE] slots BEFORE:', JSON.stringify(prev))
-            const next = prev.map(s => {
-              if (s.status === 'accepted' || s.status === 'bot') return s
-              const inv = pending.find(pi => pi.seatIndex === s.seatIndex)
-              if (inv) return { seatIndex: s.seatIndex, status: 'pending' as SlotStatus, nickname: inv.nickname, userId: inv.userId, invitationId: inv.invitationId }
-              return { seatIndex: s.seatIndex, status: 'empty' as SlotStatus }
-            })
-            console.log('[lobby:GR_UPDATE] slots AFTER:', JSON.stringify(next))
-            return next
-          })
-        })
-      .subscribe((status, err) => {
-        console.log('[lobby:sub] channel status changed:', status, err ?? '')
-        if (status === 'SUBSCRIBED') console.log('[lobby:sub] ✅ SUBSCRIBED — listening for changes on room:', roomId)
-        if (status === 'CHANNEL_ERROR') console.error('[lobby:sub] ❌ CHANNEL_ERROR — realtime may not be enabled in Supabase dashboard')
-        if (status === 'TIMED_OUT') console.warn('[lobby:sub] ⚠️ TIMED_OUT — check Supabase Realtime settings')
+        () => rebuildSlots(roomId, settings.numPlayers))
+      .subscribe((status) => {
+        console.log('[lobby:rt] channel', status)
       })
 
-    return () => {
-      console.log('[lobby:sub] cleaning up channel for room:', roomId)
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [roomId, step])
 
   async function startGame() {
