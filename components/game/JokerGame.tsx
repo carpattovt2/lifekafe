@@ -1,6 +1,7 @@
 'use client'
 
 import { useReducer, useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import type { Card, CardBack, GameState, Meld, Player, Phase, Suit } from '@/lib/game/types'
 import { createDeck, shuffle, dealToPlayers, handCardValue, suitSymbol, isRed, RANK_NUM } from '@/lib/game/cards'
 import {
@@ -11,6 +12,7 @@ import {
 import { numToRank } from '@/lib/game/cards'
 import { computeAITurn } from '@/lib/game/ai'
 import { useLanguage } from '@/lib/LanguageContext'
+import { createClient } from '@/lib/supabase/client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const AI_COLORS = ['#ef4444', '#3b82f6', '#f97316', '#a855f7']
@@ -162,8 +164,10 @@ type Action =
   |{type:'BURN_MELD'}|{type:'REPLACE_BURNING_JOKER'}|{type:'RETURN_TO_DISCARD'}
   |{type:'DISCARD';cardId:string}|{type:'AI_TURN_DONE';next:Partial<GameState>}
   |{type:'NEXT_ROUND'}|{type:'END_GAME_EARLY'}
+  |{type:'SYNC_STATE';state:GameState}
 
 function reducer(state: GameState, action: Action): GameState {
+  if(action.type==='SYNC_STATE') return action.state
   const cp=state.currentPlayerIndex,cur=state.players[cp]
   switch(action.type){
     case 'START_GAME':{const players=createPlayers(action.numPlayers); return dealRound({...makeSetup(),numPlayers:action.numPlayers,players,dealerIndex:Math.floor(Math.random()*action.numPlayers)})}
@@ -596,7 +600,7 @@ function CompactScore({players,roundScores,youLabel,scoreLabel}:{players:Player[
 }
 
 // ── Round end overlay ─────────────────────────────────────────────────────────
-function RoundEndOverlay({state,tg,youLabel,playerColor,onNextRound,onEndGame}:{state:GameState;tg:any;youLabel:string;playerColor:(p:Player,i:number)=>string;onNextRound:()=>void;onEndGame:()=>void}){
+function RoundEndOverlay({state,tg,youLabel,playerColor,onNextRound,onEndGame,hostOnly=false}:{state:GameState;tg:any;youLabel:string;playerColor:(p:Player,i:number)=>string;onNextRound:()=>void;onEndGame:()=>void;hostOnly?:boolean}){
   const last=state.roundScores[state.roundScores.length-1]??[]
   const totals=state.players.map((_,pi)=>state.roundScores.reduce((s,r)=>s+(r[pi]??0),0))
   return(
@@ -619,17 +623,64 @@ function RoundEndOverlay({state,tg,youLabel,playerColor,onNextRound,onEndGame}:{
           ))}
         </div>
         <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap'}}>
-          {state.roundNumber<7&&<button className="pixel-btn pixel-btn-success" onClick={onNextRound} style={{fontSize:11,padding:'12px 24px'}}>{tg.nextRound} ({state.roundNumber+1}/7) ►</button>}
-          <button className="pixel-btn pixel-btn-danger" onClick={onEndGame} style={{fontSize:9}}>{tg.endGame}{state.roundNumber<7?' (+25)':''}</button>
+          {hostOnly
+            ? <div style={{fontFamily:"'VT323',monospace",fontSize:20,color:'var(--muted)',textAlign:'center'}}>{tg.aiTurnBanner === 'AI TURN' ? 'Waiting for host...' : 'Чекаємо господаря...'}</div>
+            : (<>
+                {state.roundNumber<7&&<button className="pixel-btn pixel-btn-success" onClick={onNextRound} style={{fontSize:11,padding:'12px 24px'}}>{tg.nextRound} ({state.roundNumber+1}/7) ►</button>}
+                <button className="pixel-btn pixel-btn-danger" onClick={onEndGame} style={{fontSize:9}}>{tg.endGame}{state.roundNumber<7?' (+25)':''}</button>
+              </>)
+          }
         </div>
       </div>
     </div>
   )
 }
 
+// ── Online player record type ─────────────────────────────────────────────────
+type RoomPlayerRow = { seat_index: number; user_id: string | null; nickname: string; is_bot: boolean }
+
 // ── Main component ────────────────────────────────────────────────────────────
-export default function JokerGame({ onBack }: { onBack?: () => void }){
-  const[state,dispatch]=useReducer(reducer,undefined,makeSetup)
+export default function JokerGame({
+  onBack,
+  mode = 'solo',
+  roomId,
+}: {
+  onBack?: () => void
+  mode?: 'solo' | 'online'
+  roomId?: string
+}){
+  const router = useRouter()
+  const isOnline = mode === 'online'
+  const supabase = useMemo(() => createClient(), [])
+
+  const[state,baseDispatch]=useReducer(reducer,undefined,makeSetup)
+
+  // ── Online state ─────────────────────────────────────────────────────────
+  const [userId, setUserId] = useState<string|null>(null)
+  const [mySeatIndex, setMySeatIndex] = useState(0)
+  const [isHost, setIsHost] = useState(false)
+  const [roomPlayers, setRoomPlayers] = useState<RoomPlayerRow[]>([])
+
+  // Refs so dispatch wrapper always has current values without capturing stale closures
+  const stateRef = useRef(state)
+  stateRef.current = state
+  const mySeatRef = useRef(0)
+  mySeatRef.current = mySeatIndex
+
+  // ── Dispatch wrapper — local actions save to Supabase in online mode ──────
+  function dispatch(action: Action) {
+    baseDispatch(action)
+    if (!isOnline || !roomId || action.type === 'SYNC_STATE') return
+    // Compute next state synchronously to save it (pure function, cheap)
+    const nextState = reducer(stateRef.current, action)
+    supabase.from('game_rooms').update({
+      game_state: nextState,
+      status: nextState.phase === 'game-end' ? 'finished' : 'in_progress',
+      updated_at: new Date().toISOString(),
+    }).eq('id', roomId).then(({ error }) => {
+      if (error) console.error('[JokerGame/online] save failed:', error.message)
+    })
+  }
   const{t}=useLanguage();const tg=t.game
 
   type AnimSpeed = 'fast'|'normal'|'slow'
@@ -685,9 +736,61 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
   // ── AI turn — pass tg + addToast ─────────────────────────────────
   useEffect(()=>{
     if(state.phase!=='ai-turn')return
+    // In online mode only the host runs bot turns to avoid duplicate saves
+    if(isOnline && !isHost)return
     const timer=setTimeout(()=>runAITurn(state,dispatch,tg,addToast),1200)
     return()=>clearTimeout(timer)
-  },[state.phase,state.currentPlayerIndex,state.roundNumber])
+  },[state.phase,state.currentPlayerIndex,state.roundNumber,isOnline,isHost])
+
+  // ── Online: init — load game_state and seat assignment ───────────────
+  useEffect(()=>{
+    if(!isOnline||!roomId)return
+    let cancelled=false
+    async function init(){
+      const{data:{user}}=await supabase.auth.getUser()
+      if(!user||cancelled)return
+      setUserId(user.id)
+      const{data:room}=await supabase.from('game_rooms').select('*').eq('id',roomId!).single()
+      if(!room||cancelled)return
+      setIsHost(room.host_id===user.id)
+      if(room.game_state) baseDispatch({type:'SYNC_STATE',state:room.game_state as GameState})
+      const{data:players}=await supabase.from('room_players').select('*').eq('room_id',roomId!).order('seat_index')
+      if(!players||cancelled)return
+      setRoomPlayers(players as RoomPlayerRow[])
+      const mine=players.find((p:any)=>p.user_id===user.id)
+      if(mine) setMySeatIndex(mine.seat_index)
+    }
+    init()
+    return()=>{cancelled=true}
+  },[isOnline,roomId])
+
+  // ── Online: Realtime — sync game_state from other players' actions ────
+  useEffect(()=>{
+    if(!isOnline||!roomId)return
+    const ch=supabase.channel(`jg-online-${roomId}`)
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'game_rooms',filter:`id=eq.${roomId}`},
+        (payload)=>{
+          if(payload.new?.game_state) baseDispatch({type:'SYNC_STATE',state:payload.new.game_state as GameState})
+        })
+      .subscribe()
+    return()=>{supabase.removeChannel(ch)}
+  },[isOnline,roomId])
+
+  // ── Online: stats — update game_profiles when game ends ──────────────
+  useEffect(()=>{
+    if(!isOnline||!userId||state.phase!=='game-end')return
+    const seat=mySeatRef.current
+    const totals=state.players.map((_,pi)=>state.roundScores.reduce((s,r)=>s+(r[pi]??0),0))
+    const won=totals[seat]===Math.min(...totals)
+    const rwon=state.roundScores.filter(r=>r[seat]===Math.min(...r)).length
+    supabase.from('game_profiles').select('games_played,games_won,rounds_won').eq('user_id',userId).single()
+      .then(({data})=>{if(!data)return
+        supabase.from('game_profiles').update({
+          games_played:(data.games_played||0)+1,
+          games_won:(data.games_won||0)+(won?1:0),
+          rounds_won:(data.rounds_won||0)+rwon,
+        }).eq('user_id',userId)})
+  },[state.phase,isOnline,userId])
 
   // ── Animation triggers ────────────────────────────────────────────
   // Deck bounce + reshuffle detection
@@ -743,8 +846,11 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
     prevPlayer.current=state.currentPlayerIndex
     const cur=state.players[state.currentPlayerIndex]
     const isHuman=cur?.isHuman
-    const text=isHuman?(state.phase==='player-draw'?tg.yourTurnDraw:tg.yourTurnAction):`${tg.aiTurnBanner} — ${cur?.name}`
-    const color=isHuman?'#00ff88':AI_COLORS[state.currentPlayerIndex-1]||'#ff4444'
+    const isMyIdx=state.currentPlayerIndex===mySeatIndex
+    const text=isOnline
+      ? (isMyIdx?(state.phase==='player-draw'?tg.yourTurnDraw:tg.yourTurnAction):`${playerNames[state.currentPlayerIndex]} — ${tg.aiTurnMsg}`)
+      : (isHuman?(state.phase==='player-draw'?tg.yourTurnDraw:tg.yourTurnAction):`${tg.aiTurnBanner} — ${cur?.name}`)
+    const color=isOnline?isMyIdx?'#00ff88':'#22d3ee':isHuman?'#00ff88':AI_COLORS[state.currentPlayerIndex-1]||'#ff4444'
     setTurnBanner({text,color,exiting:false})
     const t1=setTimeout(()=>setTurnBanner(b=>b?{...b,exiting:true}:null),1100)
     const t2=setTimeout(()=>setTurnBanner(null),1450)
@@ -780,12 +886,19 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
     if(state.phase==='game-end')play('gameWin')
   },[state.phase])
 
-  const human=state.players[0],topDiscard=state.discardPile[state.discardPile.length-1]
+  // In online mode the "human" at the bottom is whichever seat the current user is in
+  const human=state.players[isOnline?mySeatIndex:0]
+  const topDiscard=state.discardPile[state.discardPile.length-1]
   const stagedIds=new Set(state.stagedMelds.flat().map(c=>c.id))
-  const playerNames=state.players.map(p=>p.isHuman?'You':p.name)
   const youLabel=t.nav.dashboard==='Дашборд'?'Ти':'You'
+  // In online mode player names come from room_players (nicknames); falls back to game_state names
+  const playerNames=state.players.map((p,i)=>{
+    if(isOnline){const rp=roomPlayers.find(r=>r.seat_index===i);if(rp)return i===mySeatIndex?youLabel:rp.nickname}
+    return p.isHuman?youLabel:p.name
+  })
   const inDraw=state.phase==='player-draw',inAction=state.phase==='player-action'
-  const isMyTurn=state.players[state.currentPlayerIndex]?.isHuman
+  // In online mode only the player whose seat matches currentPlayerIndex can act
+  const isMyTurn=isOnline?state.currentPlayerIndex===mySeatIndex:state.players[state.currentPlayerIndex]?.isHuman
   const circles=circlesCompleted(state.players)
   const playerColor=(p:Player,i:number)=>p.isHuman?'var(--c-weight)':AI_COLORS[i-1]||'var(--c-dash)'
 
@@ -816,7 +929,14 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
     }
   }
 
-  // ── Setup screen ────────────────────────────────────────────────────────
+  // ── Setup screen — shown only in solo mode ────────────────────────────────
+  if(state.phase==='setup'&&isOnline){
+    return(
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',fontFamily:"'Press Start 2P',monospace",fontSize:11,color:'var(--muted)'}}>
+        {t.online.connecting}...
+      </div>
+    )
+  }
   if(state.phase==='setup'){
     const backNames:Record<CardBack,string>={night:tg.backNight,elegant:tg.backElegant,dragon:tg.backDragon,runes:tg.backRunes,poker:tg.backPoker,sea:tg.backSea,vip:tg.backVip,vegas:tg.backVegas}
     return(
@@ -874,7 +994,11 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
   if(state.phase==='round-end')return(
     <>
       <div style={{opacity:0.25,pointerEvents:'none',height:200,background:'var(--bg)'}}/>
-      <RoundEndOverlay state={state} tg={tg} youLabel={youLabel} playerColor={playerColor} onNextRound={()=>dispatch({type:'NEXT_ROUND'})} onEndGame={()=>dispatch({type:'END_GAME_EARLY'})}/>
+      <RoundEndOverlay state={state} tg={tg} youLabel={youLabel} playerColor={playerColor}
+        onNextRound={isOnline&&!isHost?()=>{/* guest waits for host */}:()=>dispatch({type:'NEXT_ROUND'})}
+        onEndGame={isOnline&&!isHost?()=>{}:()=>dispatch({type:'END_GAME_EARLY'})}
+        hostOnly={isOnline&&!isHost}
+      />
     </>
   )
 
@@ -882,6 +1006,7 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
   if(state.phase==='game-end'){
     const totals=state.players.map((_,pi)=>state.roundScores.reduce((s,r)=>s+(r[pi]??0),0))
     const minScore=Math.min(...totals),winnerIdx=totals.indexOf(minScore),winner=state.players[winnerIdx]
+    const iWon=isOnline?winnerIdx===mySeatIndex:winner.isHuman
     return(
       <div className={`game-container anim-speed-${animSpeed} game-theme-${gameTheme}`}>
         {/* Full-screen game-over overlay */}
@@ -891,8 +1016,8 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
               {tg.gameOver}
             </h1>
             <div style={{textAlign:'center',marginBottom:20}}>
-              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:12,color:winner.isHuman?'var(--c-weight)':'var(--red)',marginBottom:8,textShadow:`0 0 12px ${winner.isHuman?'rgba(74,222,128,0.6)':'rgba(239,68,68,0.6)'}`}}>
-                {winner.isHuman?tg.youWin:`🏆 ${winner.name} ${tg.aiWins}`}
+              <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:12,color:iWon?'var(--c-weight)':'var(--red)',marginBottom:8,textShadow:`0 0 12px ${iWon?'rgba(74,222,128,0.6)':'rgba(239,68,68,0.6)'}`}}>
+                {iWon?tg.youWin:`🏆 ${playerNames[winnerIdx]} ${tg.aiWins}`}
               </div>
               <div style={{fontSize:17,color:'var(--muted)'}}>{tg.lowestWins}</div>
             </div>
@@ -914,9 +1039,10 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
             </div>
 
             <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
-              <button className="pixel-btn pixel-btn-primary" onClick={()=>dispatch({type:'INIT_ROUND'})} style={{fontSize:12,padding:'14px 28px'}}>
-                {tg.newGame}
-              </button>
+              {isOnline
+                ? <button className="pixel-btn pixel-btn-primary" onClick={()=>router.push('/game')} style={{fontSize:12,padding:'14px 28px'}}>{t.online.newGame}</button>
+                : <button className="pixel-btn pixel-btn-primary" onClick={()=>dispatch({type:'INIT_ROUND'})} style={{fontSize:12,padding:'14px 28px'}}>{tg.newGame}</button>
+              }
               <a href="/dashboard" className="pixel-btn pixel-btn-secondary" style={{fontSize:11,padding:'12px 20px',textDecoration:'none'}}>
                 {tg.exitGame}
               </a>
@@ -979,12 +1105,14 @@ export default function JokerGame({ onBack }: { onBack?: () => void }){
       {/* ZONE 1: AI Players */}
       <div className="ai-zone" style={{borderBottom:'1px solid rgba(255,255,255,0.06)',padding:'8px 16px'}}>
         <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
-          {state.players.slice(1).map((p,i)=>{
-            const color=AI_COLORS[i]||'#888'
-            const isCurrent=state.currentPlayerIndex===i+1
+          {state.players.map((p,pi)=>{
+            if(pi===(isOnline?mySeatIndex:0))return null
+            const aiColorIdx=isOnline?pi:pi-1
+            const color=isOnline&&p.isHuman?'#22d3ee':AI_COLORS[aiColorIdx]||'#888'
+            const isCurrent=state.currentPlayerIndex===pi
             return(
               <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,background:isCurrent?`${color}22`:'rgba(0,0,0,0.3)',border:`2px solid ${isCurrent?color:'rgba(255,255,255,0.08)'}`,padding:'5px 10px',borderRadius:4,transition:'all 0.3s'}}>
-                <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color}}>{p.name}</span>
+                <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:9,color}}>{playerNames[pi]}</span>
                 {/* Mini card backs — show up to 3 then count */}
                 <div style={{display:'flex',gap:2,alignItems:'center'}}>
                   {Array.from({length:Math.min(3,p.hand.length)}).map((_,j)=>(
