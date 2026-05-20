@@ -223,123 +223,213 @@ export default function NotificationBell() {
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
+      {/* Bell button */}
       <button
         ref={buttonRef}
         onClick={() => {
           if (!open && buttonRef.current) {
             const r = buttonRef.current.getBoundingClientRect()
-            setDropdownPos({ top: r.bottom + 6, left: r.left })
+            setDropdownPos({ top: r.bottom + 8, left: r.left })
           }
           setOpen(v => !v)
         }}
         title={tf.notifTitle}
         style={{
           position: 'relative',
-          background: 'none',
-          border: '2px solid var(--border)',
-          color: unread > 0 ? 'var(--c-dash)' : 'var(--muted)',
-          fontSize: 18,
-          width: 40,
-          height: 40,
+          background: open ? 'var(--bg3)' : 'var(--bg2)',
+          border: '1px solid var(--border)',
+          borderRadius: '8px',
+          color: unread > 0 ? 'var(--text)' : 'var(--muted)',
+          width: 36,
+          height: 36,
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          transition: 'color 0.15s, border-color 0.15s',
-          borderColor: unread > 0 ? 'var(--c-dash)' : undefined,
+          transition: 'background 0.15s, color 0.15s',
+          boxShadow: 'var(--shadow-sm)',
         }}
       >
-        🔔
+        {/* SVG bell icon */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+
+        {/* Unread badge — small dot with number */}
         {unread > 0 && (
           <span style={{
             position: 'absolute',
-            top: -6,
-            right: -6,
-            background: '#ef4444',
+            top: -4,
+            right: -4,
+            background: 'var(--red)',
             color: '#fff',
-            borderRadius: 8,
-            fontSize: 9,
-            fontFamily: "'Inter', sans-serif",
-            minWidth: 18,
-            height: 18,
+            borderRadius: '10px',
+            fontSize: '10px',
+            fontWeight: 600,
+            minWidth: 16,
+            height: 16,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '0 4px',
             lineHeight: 1,
-            boxShadow: '0 0 6px rgba(239,68,68,0.6)',
+            border: '2px solid var(--bg)',
           }}>
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
 
+      {/* Dropdown panel */}
       {open && (
         <div style={{
           position: 'fixed',
           top: dropdownPos.top,
           left: Math.min(dropdownPos.left, window.innerWidth - 320),
-          width: 300,
+          width: 320,
           background: 'var(--bg2)',
-          border: '2px solid var(--border)',
-          boxShadow: '4px 4px 0 rgba(0,0,0,0.5)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          boxShadow: 'var(--shadow-md)',
           zIndex: 1000,
-          padding: 14,
+          overflow: 'hidden',
         }}>
-          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 8, color: 'var(--muted)', marginBottom: 12, letterSpacing: '0.06em' }}>
-            {tf.notifTitle}
+          {/* Header */}
+          <div style={{
+            padding: '14px 16px 12px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
+              {tf.notifTitle}
+            </span>
+            {unread > 0 && (
+              <span style={{
+                fontSize: '11px',
+                color: 'var(--red)',
+                fontWeight: 600,
+                background: 'color-mix(in srgb, var(--red) 12%, transparent)',
+                padding: '2px 8px',
+                borderRadius: '20px',
+              }}>
+                {unread} new
+              </span>
+            )}
           </div>
 
-          {notifs.length === 0 ? (
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--muted)', textAlign: 'center', padding: '10px 0' }}>
-              {tf.noNotifs}
-            </div>
-          ) : (
-            notifs.map(n => (
-              <div key={n.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-                {n.type === 'game_invite' ? (
-                  <>
-                    <div style={{
-                      fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--text)', marginBottom: 8, lineHeight: 1.3,
-                      background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)', padding: '6px 8px',
-                    }}>
-                      🎮 <span style={{ color: 'var(--c-dash)' }}>{displayFrom(n)}</span>{' '}
-                      {to.gameInvite}
-                    </div>
-                    {isExpired(n) ? (
-                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, color: 'var(--muted)' }}>
-                        ⏱ {to.inviteExpired}
+          {/* Notifications list */}
+          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+            {notifs.length === 0 ? (
+              <div style={{
+                padding: '32px 16px',
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontSize: '13px',
+              }}>
+                {tf.noNotifs}
+              </div>
+            ) : (
+              notifs.map((n, idx) => (
+                <div key={n.id} style={{
+                  padding: '14px 16px',
+                  borderBottom: idx < notifs.length - 1 ? '1px solid var(--border)' : 'none',
+                  background: 'var(--bg2)',
+                }}>
+                  {n.type === 'game_invite' ? (
+                    <div>
+                      {/* Game invite item */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
+                        <div style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '8px',
+                          background: 'color-mix(in srgb, var(--c-dash) 15%, transparent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '16px',
+                          flexShrink: 0,
+                        }}>
+                          ♦
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>
+                            <span style={{ color: 'var(--accent)' }}>{displayFrom(n)}</span>
+                            {' '}{to.gameInvite}
+                          </div>
+                          {isExpired(n) && (
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
+                              {to.inviteExpired}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="pixel-btn pixel-btn-success" onClick={() => handleAcceptGameInvite(n)} style={{ fontSize: 8, padding: '6px 10px' }}>
+                      {!isExpired(n) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="pixel-btn pixel-btn-success"
+                            onClick={() => handleAcceptGameInvite(n)}
+                            style={{ flex: 1, justifyContent: 'center', fontSize: '12px', padding: '7px 12px' }}
+                          >
+                            {tf.accept}
+                          </button>
+                          <button
+                            className="pixel-btn pixel-btn-secondary"
+                            onClick={() => handleDeclineGameInvite(n)}
+                            style={{ flex: 1, justifyContent: 'center', fontSize: '12px', padding: '7px 12px' }}
+                          >
+                            {tf.decline}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Friend request item */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
+                        <div style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          background: 'color-mix(in srgb, var(--c-planner) 15%, transparent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '15px',
+                          flexShrink: 0,
+                        }}>
+                          👤
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>
+                          <span style={{ color: 'var(--accent)' }}>{displayFrom(n)}</span>
+                          {' '}{tf.friendRequest}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          className="pixel-btn pixel-btn-success"
+                          onClick={() => handleAcceptFriend(n)}
+                          style={{ flex: 1, justifyContent: 'center', fontSize: '12px', padding: '7px 12px' }}
+                        >
                           {tf.accept}
                         </button>
-                        <button className="pixel-btn pixel-btn-danger" onClick={() => handleDeclineGameInvite(n)} style={{ fontSize: 8, padding: '6px 10px' }}>
+                        <button
+                          className="pixel-btn pixel-btn-secondary"
+                          onClick={() => handleDeclineFriend(n)}
+                          style={{ flex: 1, justifyContent: 'center', fontSize: '12px', padding: '7px 12px' }}
+                        >
                           {tf.decline}
                         </button>
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--text)', marginBottom: 8, lineHeight: 1.3 }}>
-                      <span style={{ color: 'var(--c-dash)' }}>{displayFrom(n)}</span>{' '}
-                      {tf.friendRequest}
                     </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="pixel-btn pixel-btn-success" onClick={() => handleAcceptFriend(n)} style={{ fontSize: 8, padding: '6px 10px' }}>
-                        {tf.accept}
-                      </button>
-                      <button className="pixel-btn pixel-btn-danger" onClick={() => handleDeclineFriend(n)} style={{ fontSize: 8, padding: '6px 10px' }}>
-                        {tf.decline}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))
-          )}
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
