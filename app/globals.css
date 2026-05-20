@@ -458,11 +458,13 @@ h1, h2, h3, .pixel-font {
 /* ── Notification bell — single instance, positioned for desktop and mobile ── */
 .notif-bell-layout {
   position: fixed;
-  /* Desktop: sit in the top-right of the 220px sidebar logo section */
-  top: 20px;
-  left: 168px;
+  /* Desktop: right side, to the left of the language toggle (~100px wide at right:20px) */
+  top: 16px;
+  right: 132px;
+  left: auto;
   z-index: 200;
 }
+
 
 /* ── Responsive breakpoints ──────────────────────────────────────────────── */
 @media (max-width: 767px) {
@@ -485,6 +487,7 @@ h1, h2, h3, .pixel-font {
     left: auto;
     right: 72px; /* leave room for the hamburger on the left side of screen */
   }
+
 
   /* Reduce page padding on mobile */
   .page-content { padding: 70px 14px 20px !important; }

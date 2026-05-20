@@ -746,22 +746,49 @@ export default function JokerGame({
   useEffect(()=>{
     if(!isOnline||!roomId)return
     let cancelled=false
+    let userIdLocal: string|null=null
     async function init(){
       const{data:{user}}=await supabase.auth.getUser()
       if(!user||cancelled)return
+      userIdLocal=user.id
       setUserId(user.id)
-      const{data:room}=await supabase.from('game_rooms').select('*').eq('id',roomId!).single()
+      console.log('[JokerGame/init] user:', user.id, 'roomId:', roomId)
+      const{data:room,error:roomErr}=await supabase.from('game_rooms').select('*').eq('id',roomId!).single()
+      console.log('[JokerGame/init] room:', room?.id??'null', 'game_state:', room?.game_state?'SET':'null', 'err:', roomErr?.message??'none')
       if(!room||cancelled)return
       setIsHost(room.host_id===user.id)
       if(room.game_state) baseDispatch({type:'SYNC_STATE',state:room.game_state as GameState})
-      const{data:players}=await supabase.from('room_players').select('*').eq('room_id',roomId!).order('seat_index')
+      const{data:players,error:playersErr}=await supabase.from('room_players').select('*').eq('room_id',roomId!).order('seat_index')
+      console.log('[JokerGame/init] room_players:', players?.length??0, 'err:', playersErr?.message??'none')
       if(!players||cancelled)return
       setRoomPlayers(players as RoomPlayerRow[])
       const mine=players.find((p:any)=>p.user_id===user.id)
+      console.log('[JokerGame/init] my seat:', mine?.seat_index??'NOT FOUND', 'players:', players.map((p:any)=>p.user_id))
       if(mine) setMySeatIndex(mine.seat_index)
     }
     init()
-    return()=>{cancelled=true}
+    // Polling fallback: if game_state is not yet available (host hasn't started),
+    // keep polling until it appears — Realtime alone is unreliable.
+    const interval=setInterval(async()=>{
+      if(stateRef.current.phase!=='setup'){clearInterval(interval);return}
+      console.log('[JokerGame/poll] phase=setup, polling game_rooms for game_state...')
+      const{data:room,error:roomErr}=await supabase.from('game_rooms').select('game_state').eq('id',roomId!).single()
+      console.log('[JokerGame/poll] result:', room?.game_state?'game_state SET':'game_state NULL', roomErr?.message??'no error')
+      if(!room?.game_state||cancelled)return
+      console.log('[JokerGame/poll] dispatching SYNC_STATE, phase=', (room.game_state as any).phase)
+      baseDispatch({type:'SYNC_STATE',state:room.game_state as GameState})
+      // Also refresh room_players in case they changed
+      if(userIdLocal){
+        const{data:players}=await supabase.from('room_players').select('*').eq('room_id',roomId!).order('seat_index')
+        if(players&&!cancelled){
+          setRoomPlayers(players as RoomPlayerRow[])
+          const mine=players.find((p:any)=>p.user_id===userIdLocal)
+          console.log('[JokerGame/poll] my seat:', mine?.seat_index??'NOT FOUND')
+          if(mine) setMySeatIndex(mine.seat_index)
+        }
+      }
+    },2000)
+    return()=>{cancelled=true;clearInterval(interval)}
   },[isOnline,roomId])
 
   // ── Online: Realtime — sync game_state from other players' actions ────

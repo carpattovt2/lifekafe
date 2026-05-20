@@ -30,6 +30,8 @@ export default function NotificationBell() {
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [open, setOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
   const unread = notifs.filter(n => !n.is_read).length
 
@@ -212,17 +214,24 @@ export default function NotificationBell() {
 
   const displayFrom = (n: Notif) => n.from_nickname || n.from_email || '?'
 
-  // Check if game invite is expired (60 seconds)
+  // Check if game invite is expired (5 minutes)
   const isExpired = (n: Notif) => {
     if (n.type !== 'game_invite') return false
     const age = (Date.now() - new Date(n.created_at).getTime()) / 1000
-    return age > 60
+    return age > 300
   }
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
       <button
-        onClick={() => setOpen(v => !v)}
+        ref={buttonRef}
+        onClick={() => {
+          if (!open && buttonRef.current) {
+            const r = buttonRef.current.getBoundingClientRect()
+            setDropdownPos({ top: r.bottom + 6, left: r.left })
+          }
+          setOpen(v => !v)
+        }}
         title={tf.notifTitle}
         style={{
           position: 'relative',
@@ -267,15 +276,14 @@ export default function NotificationBell() {
 
       {open && (
         <div style={{
-          position: 'absolute',
-          top: 46,
-          right: 0,
-          minWidth: 300,
-          maxWidth: 360,
+          position: 'fixed',
+          top: dropdownPos.top,
+          left: Math.min(dropdownPos.left, window.innerWidth - 320),
+          width: 300,
           background: 'var(--bg2)',
           border: '2px solid var(--border)',
           boxShadow: '4px 4px 0 rgba(0,0,0,0.5)',
-          zIndex: 500,
+          zIndex: 1000,
           padding: 14,
         }}>
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: 'var(--muted)', marginBottom: 12, letterSpacing: '0.06em' }}>
