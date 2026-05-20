@@ -158,7 +158,7 @@ function advanceTurn(state: GameState): GameState {
 type Action =
   |{type:'START_GAME';numPlayers:number}|{type:'INIT_ROUND'}
   |{type:'DRAW_DECK'}|{type:'DRAW_DISCARD'}|{type:'TAKE_TRUMP'}|{type:'RETURN_TRUMP'}
-  |{type:'TOGGLE_CARD';cardId:string}|{type:'REORDER_HAND';fromIndex:number;toIndex:number}|{type:'REORDER_HAND_TO';hand:Card[]}
+  |{type:'TOGGLE_CARD';cardId:string}|{type:'REORDER_HAND';fromIndex:number;toIndex:number;playerIndex?:number}|{type:'REORDER_HAND_TO';hand:Card[];playerIndex?:number}
   |{type:'STAGE_MELD'}|{type:'CLEAR_STAGED'}|{type:'COMMIT_MELDS';jokerPositions?:Record<string,number>}
   |{type:'ADD_TO_MELD';meldId:string}|{type:'STEAL_JOKER';meldId:string}
   |{type:'BURN_MELD'}|{type:'REPLACE_BURNING_JOKER'}|{type:'RETURN_TO_DISCARD'}
@@ -199,8 +199,8 @@ function reducer(state: GameState, action: Action): GameState {
       const already=state.selectedCardIds.includes(action.cardId)
       return{...state,selectedCardIds:already?state.selectedCardIds.filter(id=>id!==action.cardId):[...state.selectedCardIds,action.cardId]}
     }
-    case 'REORDER_HAND':{const h=[...cur.hand];const card=h.splice(action.fromIndex,1)[0];h.splice(action.toIndex,0,card);return{...state,players:mutPlayer(state,cp,{hand:h})}}
-    case 'REORDER_HAND_TO': return{...state,players:mutPlayer(state,0,{hand:action.hand})}
+    case 'REORDER_HAND':{const pi=action.playerIndex??cp;const h=[...state.players[pi].hand];const card=h.splice(action.fromIndex,1)[0];h.splice(action.toIndex,0,card);return{...state,players:mutPlayer(state,pi,{hand:h})}}
+    case 'REORDER_HAND_TO':{const pi=action.playerIndex??cp;return{...state,players:mutPlayer(state,pi,{hand:action.hand})}}
     case 'STAGE_MELD':{
       if(circlesCompleted(state.players)<2) return{...state,message:`Cannot meld until circle 3.`}
       if(state.selectedCardIds.length<3) return{...state,message:'Select at least 3 cards.'}
@@ -212,9 +212,11 @@ function reducer(state: GameState, action: Action): GameState {
     case 'COMMIT_MELDS':{
       if(!state.stagedMelds.length) return{...state,message:'No staged melds.'}
       const total=totalMeldValue(state.stagedMelds)
-      if(!cur.hasMelded&&total<51) return{...state,message:`First meld needs 51+ pts. You have ${total}.`}
       const usedIds=new Set(state.stagedMelds.flat().map(c=>c.id))
-      // Apply joker positions passed from dialog (Fix 5)
+      const newHand=cur.hand.filter(c=>!usedIds.has(c.id))
+      // 51+ rule only applies when NOT going out completely in one turn
+      if(!cur.hasMelded&&total<51&&newHand.length>0) return{...state,message:`First meld needs 51+ pts. You have ${total}.`}
+      // Apply joker positions passed from dialog
       const jp=action.jokerPositions
       const newMelds=state.stagedMelds.map(cards=>{
         const type=meldType(cards)
@@ -231,18 +233,23 @@ function reducer(state: GameState, action: Action): GameState {
         }
         return makeMeld(cards,cp)
       })
-      const newHand=cur.hand.filter(c=>!usedIds.has(c.id))
       const allMelds=[...state.melds,...newMelds]
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
-      const allAtOnce = !cur.hasMelded  // true if this was player's FIRST meld this round
-      // Fix 2: track when first meld leaves exactly 1 card (discard will score as -10)
+      const allAtOnce = !cur.hasMelded
       const isFirstMeldOneLeft = !cur.hasMelded && newHand.length === 1
-      console.log(`[SCORING] COMMIT_MELDS cp=${cp} hasMelded=${cur.hasMelded} allAtOnce=${allAtOnce} newHandLen=${newHand.length} firstMeldOneLeft=${isFirstMeldOneLeft}`)
       const burning=newMelds.find(m=>isBurningGroup(m))
       if(burning){
         const hasJ=burning.cards.some(c=>c.isJoker)
-        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
-        return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:burning.id,burningHasJoker:hasJ,message:hasJ?'🔥 4-of-a-kind JOKER!':'🔥 4-of-a-kind! Burns on discard.'}
+        if(hasJ){
+          // Joker in group: player must decide to steal or burn
+          if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
+          return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:burning.id,burningHasJoker:true,message:'🔥 4-of-a-kind with JOKER! Steal or burn?'}
+        }
+        // No joker: auto-burn immediately
+        const burnedMelds=allMelds.filter(m=>m.id!==burning.id)
+        const newDiscard=burnIntoDiscard(state.discardPile,burning.cards)
+        if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,stagedMelds:[]},cp,allAtOnce,false)
+        return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,firstMeldSingleCardLeft:isFirstMeldOneLeft,message:'🔥 4-of-a-kind! Auto-burned.'}
       }
       if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],firstMeldSingleCardLeft:false},cp,allAtOnce,false)
       return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,firstMeldSingleCardLeft:isFirstMeldOneLeft,message:''}
@@ -259,13 +266,19 @@ function reducer(state: GameState, action: Action): GameState {
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
       // allAtOnce: true if this is the player's first card placement this round
       const addAllAtOnce=!cur.hasMelded
-      console.log(`[SCORING] ADD_TO_MELD cp=${cp} hasMelded=${cur.hasMelded} allAtOnce=${addAllAtOnce} handEmpty=${!newHand.length}`)
       if(isBurningGroup(newMeld)){
         const hasJ=newMeld.cards.some(c=>c.isJoker)
-        if(!newHand.length&&!hasJ) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
-        return{...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:newMeld.id,burningHasJoker:hasJ,message:'🔥 Burns on discard.'}
+        if(hasJ){
+          if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
+          return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:newMeld.id,burningHasJoker:true,message:'🔥 4-of-a-kind with JOKER! Steal or burn?'}
+        }
+        // No joker: auto-burn immediately
+        const burnedMelds=newMelds.filter(m=>m.id!==newMeld.id)
+        const newDiscard=burnIntoDiscard(state.discardPile,newMeld.cards)
+        if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,selectedCardIds:[]},cp,addAllAtOnce,false)
+        return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:'🔥 4-of-a-kind! Auto-burned.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
       return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
     }
     case 'STEAL_JOKER':{
@@ -668,9 +681,12 @@ export default function JokerGame({
   mySeatRef.current = mySeatIndex
 
   // ── Dispatch wrapper — local actions save to Supabase in online mode ──────
+  // Cosmetic/UI-only actions are not persisted — they only affect local display
+  const LOCAL_ONLY = new Set<Action['type']>(['TOGGLE_CARD','REORDER_HAND','REORDER_HAND_TO','STAGE_MELD','CLEAR_STAGED'])
   function dispatch(action: Action) {
     baseDispatch(action)
     if (!isOnline || !roomId || action.type === 'SYNC_STATE') return
+    if (LOCAL_ONLY.has(action.type)) return
     // Compute next state synchronously to save it (pure function, cheap)
     const nextState = reducer(stateRef.current, action)
     supabase.from('game_rooms').update({
@@ -944,18 +960,19 @@ export default function JokerGame({
   // Sort hand
   function handleSort(){
     const hand=human?.hand??[]
+    const playerIndex=mySeatRef.current
     if(sortMode==='none'){
       setOrigOrder(hand.map(c=>c.id));setSortMode('suit')
       const S:{[k:string]:number}={spades:0,hearts:1,diamonds:2,clubs:3,joker:9}
-      dispatch({type:'REORDER_HAND_TO',hand:[...hand].sort((a,b)=>(S[a.suit]??9)-(S[b.suit]??9))})
+      dispatch({type:'REORDER_HAND_TO',hand:[...hand].sort((a,b)=>(S[a.suit]??9)-(S[b.suit]??9)),playerIndex})
     }else if(sortMode==='suit'){
       setSortMode('rank')
-      dispatch({type:'REORDER_HAND_TO',hand:[...hand].sort((a,b)=>{if(a.isJoker)return 1;if(b.isJoker)return-1;return(RANK_NUM[a.rank]??0)-(RANK_NUM[b.rank]??0)})})
+      dispatch({type:'REORDER_HAND_TO',hand:[...hand].sort((a,b)=>{if(a.isJoker)return 1;if(b.isJoker)return-1;return(RANK_NUM[a.rank]??0)-(RANK_NUM[b.rank]??0)}),playerIndex})
     }else{
       setSortMode('none')
       const restored=origOrder.map(id=>hand.find(c=>c.id===id)).filter(Boolean) as Card[]
       const extra=hand.filter(c=>!origOrder.includes(c.id))
-      dispatch({type:'REORDER_HAND_TO',hand:[...restored,...extra]})
+      dispatch({type:'REORDER_HAND_TO',hand:[...restored,...extra],playerIndex})
     }
   }
 
@@ -1247,7 +1264,7 @@ export default function JokerGame({
             {/* Pass dealAnimating so DraggableHand can stagger card appearances */}
             <DraggableHand hand={human.hand} selectedIds={state.selectedCardIds} stagedIds={Array.from(stagedIds)} drawnCardId={drawnCardId} cardBack={cardBack} highlights={highlights} dealAnimating={dealAnimating}
               onToggle={id=>{if(inAction){play('select');dispatch({type:'TOGGLE_CARD',cardId:id})}}}
-              onReorder={(from,to)=>dispatch({type:'REORDER_HAND',fromIndex:from,toIndex:to})}
+              onReorder={(from,to)=>dispatch({type:'REORDER_HAND',fromIndex:from,toIndex:to,playerIndex:mySeatRef.current})}
             />
           </>
         )}
