@@ -1105,13 +1105,23 @@ export default function JokerGame({
     <div className={`game-container anim-speed-${animSpeed} game-theme-${gameTheme}`} style={{maxWidth:860,margin:'0 auto',userSelect:'none',overflow:'hidden'}} onPointerDown={unlockAudio}>
 
       {/* ── Fixed overlay: toasts ── */}
-      <div style={{position:'fixed',top:80,left:'50%',zIndex:400,display:'flex',flexDirection:'column',gap:6,alignItems:'center',pointerEvents:'none',minWidth:200,maxWidth:'82vw'}}>
+      <div style={{position:'fixed',top:80,left:'50%',zIndex:400,display:'flex',flexDirection:'column',gap:5,alignItems:'center',pointerEvents:'none',maxWidth:'80vw'}}>
         {toasts.map(t=>(
           <div key={t.id} style={{
-            background:'rgba(10,20,18,0.92)',color:'#e8f5f0',
-            fontFamily:"'Inter',sans-serif",fontSize:18,
-            padding:'8px 18px',borderRadius:4,border:'1px solid rgba(255,255,255,0.18)',
-            backdropFilter:'blur(8px)',whiteSpace:'nowrap',textAlign:'center',
+            background:'rgba(10,18,16,0.38)',
+            color:'rgba(255,255,255,0.92)',
+            fontFamily:"'Inter',sans-serif",
+            fontSize:13,
+            fontWeight:500,
+            padding:'6px 14px',
+            borderRadius:20,
+            border:'1px solid rgba(255,255,255,0.12)',
+            backdropFilter:'blur(20px)',
+            WebkitBackdropFilter:'blur(20px)',
+            whiteSpace:'nowrap',
+            textAlign:'center',
+            letterSpacing:'0.01em',
+            textShadow:'0 1px 3px rgba(0,0,0,0.4)',
             animation:t.exiting?'toastOut 0.28s ease forwards':'toastIn 0.25s ease forwards',
           }}>{t.text}</div>
         ))}
