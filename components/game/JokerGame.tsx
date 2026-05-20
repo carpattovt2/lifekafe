@@ -799,7 +799,7 @@ export default function JokerGame({
       if(localHand&&incomingState.players[myIdx]){
         const localIds=new Set(localHand.map(c=>c.id))
         const incomingIds=new Set(incomingState.players[myIdx].hand.map(c=>c.id))
-        const sameCards=localIds.size===incomingIds.size&&[...localIds].every(id=>incomingIds.has(id))
+        const sameCards=localIds.size===incomingIds.size&&Array.from(localIds).every(id=>incomingIds.has(id))
         if(sameCards){
           incomingState.players=incomingState.players.map((p,i)=>i===myIdx?{...p,hand:localHand}:p)
         }
@@ -824,7 +824,7 @@ export default function JokerGame({
           if(localHand&&incoming.players[myIdx]){
             const lIds=new Set(localHand.map(c=>c.id))
             const iIds=new Set(incoming.players[myIdx].hand.map(c=>c.id))
-            if(lIds.size===iIds.size&&[...lIds].every(id=>iIds.has(id)))
+            if(lIds.size===iIds.size&&Array.from(lIds).every(id=>iIds.has(id)))
               incoming.players=incoming.players.map((p,i)=>i===myIdx?{...p,hand:localHand}:p)
           }
           baseDispatch({type:'SYNC_STATE',state:incoming})
@@ -848,46 +848,6 @@ export default function JokerGame({
           rounds_won:(data.rounds_won||0)+rwon,
         }).eq('user_id',userId)})
   },[state.phase,isOnline,userId])
-
-  // ── Turn timer — online human vs human only ───────────────────────
-  useEffect(()=>{
-    const activePhases:string[]=['player-draw','player-action']
-    if(!isOnline||!isMyTurn||!activePhases.includes(state.phase)){setTimeLeft(null);return}
-    const limit=circles<2?120:30
-    setTimeLeft(limit)
-    const tick=setInterval(()=>{
-      setTimeLeft(prev=>{
-        if(prev===null||prev<=1){
-          clearInterval(tick)
-          return 0
-        }
-        return prev-1
-      })
-    },1000)
-    return()=>clearInterval(tick)
-  },[state.currentPlayerIndex,state.phase,state.roundNumber,isMyTurn,isOnline])
-
-  // Execute auto-play when timer hits 0
-  useEffect(()=>{
-    if(timeLeft!==0||!isMyTurn||!isOnline)return
-    if(state.phase==='player-draw'){
-      autoPlayPendingRef.current=true
-      dispatch({type:'DRAW_DECK'})
-    } else if(state.phase==='player-action'){
-      const hand=state.players[mySeatRef.current]?.hand??[]
-      const card=[...hand].filter(c=>!c.isJoker).sort((a,b)=>handCardValue(a)-handCardValue(b))[0]??hand[0]
-      if(card) dispatch({type:'DISCARD',cardId:card.id})
-    }
-  },[timeLeft])
-
-  // Auto-discard after auto-draw
-  useEffect(()=>{
-    if(!autoPlayPendingRef.current||state.phase!=='player-action'||!isMyTurn)return
-    autoPlayPendingRef.current=false
-    const hand=state.players[mySeatRef.current]?.hand??[]
-    const card=[...hand].filter(c=>!c.isJoker).sort((a,b)=>handCardValue(a)-handCardValue(b))[0]??hand[0]
-    if(card) dispatch({type:'DISCARD',cardId:card.id})
-  },[state.phase,isMyTurn])
 
   // ── Animation triggers ────────────────────────────────────────────
   // Deck bounce — only on own draw; reshuffle shows for everyone
@@ -1002,6 +962,44 @@ export default function JokerGame({
   const isMyTurn=isOnline?state.currentPlayerIndex===mySeatIndex:state.players[state.currentPlayerIndex]?.isHuman
   const circles=circlesCompleted(state.players)
   const playerColor=(p:Player,i:number)=>p.isHuman?'var(--c-weight)':AI_COLORS[i-1]||'var(--c-dash)'
+
+  // ── Turn timer — online human vs human only ───────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    const activePhases:string[]=['player-draw','player-action']
+    if(!isOnline||!isMyTurn||!activePhases.includes(state.phase)){setTimeLeft(null);return}
+    const limit=circles<2?120:30
+    setTimeLeft(limit)
+    const tick=setInterval(()=>{
+      setTimeLeft(prev=>{
+        if(prev===null||prev<=1){clearInterval(tick);return 0}
+        return prev-1
+      })
+    },1000)
+    return()=>clearInterval(tick)
+  },[state.currentPlayerIndex,state.phase,state.roundNumber,isMyTurn,isOnline])
+
+  useEffect(()=>{
+    if(timeLeft!==0||!isMyTurn||!isOnline)return
+    if(state.phase==='player-draw'){
+      autoPlayPendingRef.current=true
+      dispatch({type:'DRAW_DECK'})
+    } else if(state.phase==='player-action'){
+      const hand=state.players[mySeatRef.current]?.hand??[]
+      const card=[...hand].filter(c=>!c.isJoker).sort((a,b)=>handCardValue(a)-handCardValue(b))[0]??hand[0]
+      if(card) dispatch({type:'DISCARD',cardId:card.id})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[timeLeft])
+
+  useEffect(()=>{
+    if(!autoPlayPendingRef.current||state.phase!=='player-action'||!isMyTurn)return
+    autoPlayPendingRef.current=false
+    const hand=state.players[mySeatRef.current]?.hand??[]
+    const card=[...hand].filter(c=>!c.isJoker).sort((a,b)=>handCardValue(a)-handCardValue(b))[0]??hand[0]
+    if(card) dispatch({type:'DISCARD',cardId:card.id})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[state.phase,isMyTurn])
 
   // Card highlights
   const highlights=useMemo(()=>{
