@@ -496,67 +496,134 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
     </div>
   )
 
+  // ── Slot avatar colors ───────────────────────────────────────────────────────
+  const SLOT_COLORS = ['var(--c-dash)', 'var(--green)', 'var(--c-planner)', 'var(--yellow)', 'var(--orange)']
+
   // ── Step 2: Lobby ────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 540, margin: '0 auto', padding: '32px 16px' }}>
-      <button onClick={onBack} className="pixel-btn" style={{ marginBottom: 20, fontSize: 9 }}>{t.friends.back}</button>
-      <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--c-dash)', marginBottom: 8, textAlign: 'center' }}>
-        🌐 {to.lobbyTitle}
-      </h1>
-      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, color: 'var(--muted)', textAlign: 'center', marginBottom: 20 }}>
-        {to.roomCode}: <span style={{ color: 'var(--c-dash)', letterSpacing: 3 }}>{roomCode}</span>
+    <div style={{ maxWidth: 480, margin: '0 auto', padding: '24px 16px' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+        <button onClick={onBack} className="pixel-btn" style={{ fontSize: 12, padding: '7px 12px' }}>← {t.friends.back}</button>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>{to.lobbyTitle}</div>
+        </div>
       </div>
 
-      <div className="pixel-card" style={{ padding: 16, marginBottom: 14 }}>
-        <div style={sectionLabel}>{to.players}</div>
-        {slots.sort((a,b) => a.seatIndex - b.seatIndex).map(slot => (
-          <div key={slot.seatIndex} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', minWidth: 18 }}>
-              {slot.seatIndex + 1}
-            </div>
+      {/* Room code chip */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          background: 'var(--bg3)', border: '1px solid var(--border)',
+          borderRadius: 20, padding: '6px 16px',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{to.roomCode}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: 2 }}>{roomCode}</span>
+        </div>
+      </div>
 
-            {slot.status === 'accepted' && slot.seatIndex === 0 && (
-              <>
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', flex: 1 }}>{slot.nickname}</span>
-                <span style={{ fontSize: 11, color: 'var(--c-dash)', background: 'color-mix(in srgb, var(--c-dash) 12%, transparent)', padding: '3px 8px', borderRadius: 20 }}>{to.host}</span>
-              </>
-            )}
-            {slot.status === 'accepted' && slot.seatIndex > 0 && (
-              <>
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--green)', flex: 1 }}>✓ {slot.nickname}</span>
-                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 12 }}>{to.remove}</button>
-              </>
-            )}
-            {slot.status === 'bot' && (
-              <>
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--accent)', flex: 1 }}>🤖 {slot.nickname}</span>
-                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 12 }}>{to.remove}</button>
-              </>
-            )}
-            {slot.status === 'pending' && (
-              <>
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--yellow)', flex: 1 }}>⏳ {slot.nickname}</span>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{to.pending}</span>
-                <button className="pixel-btn pixel-btn-danger" onClick={() => removeSlot(slot.seatIndex)} style={{ fontSize: 12 }}>{to.remove}</button>
-              </>
-            )}
-            {slot.status === 'empty' && (
-              <>
-                <span style={{ flex: 1, color: 'var(--muted)', fontSize: 13 }}>{to.inviteFriend} / {to.addBot}</span>
-                <button className="pixel-btn" onClick={() => { loadFriends(); setShowFriendPicker(slot.seatIndex) }} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                  👥 {to.inviteFriend}
-                </button>
-                <button className="pixel-btn" onClick={() => addBot(slot.seatIndex)} style={{ fontSize: 12 }}>
-                  🤖 {to.addBot}
-                </button>
-              </>
-            )}
-          </div>
-        ))}
+      {/* Player slots */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {slots.sort((a,b) => a.seatIndex - b.seatIndex).map(slot => {
+          const color = SLOT_COLORS[slot.seatIndex] ?? 'var(--muted)'
+          const isFilled = slot.status === 'accepted' || slot.status === 'bot' || slot.status === 'pending'
+
+          return (
+            <div key={slot.seatIndex} style={{
+              background: 'var(--bg2)',
+              border: `1px solid ${isFilled ? 'color-mix(in srgb, '+color+' 30%, var(--border))' : 'var(--border)'}`,
+              borderRadius: 12,
+              padding: isFilled ? '12px 14px' : '10px 14px',
+              transition: 'border-color 0.2s',
+            }}>
+              {/* Filled: single row with avatar */}
+              {isFilled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {/* Avatar circle */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                    background: `color-mix(in srgb, ${color} 18%, transparent)`,
+                    border: `2px solid color-mix(in srgb, ${color} 50%, transparent)`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: slot.status === 'bot' ? 18 : 14, fontWeight: 700,
+                    color,
+                  }}>
+                    {slot.status === 'bot' ? '🤖' : slot.status === 'pending' ? '⏳' : (slot.nickname?.[0] ?? '?').toUpperCase()}
+                  </div>
+
+                  {/* Name + sub */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {slot.nickname}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                      {slot.status === 'accepted' && slot.seatIndex === 0 && to.host}
+                      {slot.status === 'accepted' && slot.seatIndex > 0 && '✓ Ready'}
+                      {slot.status === 'bot' && 'Bot'}
+                      {slot.status === 'pending' && to.pending}
+                    </div>
+                  </div>
+
+                  {/* Remove button (not for host) */}
+                  {slot.seatIndex > 0 && (
+                    <button
+                      onClick={() => removeSlot(slot.seatIndex)}
+                      title={to.remove}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--muted)', fontSize: 18, padding: '2px 4px',
+                        borderRadius: 6, lineHeight: 1, flexShrink: 0,
+                        transition: 'color 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.color = 'var(--red)')}
+                      onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Empty: slot number row + action buttons */}
+              {slot.status === 'empty' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                      background: 'var(--bg3)', border: '1.5px dashed var(--border)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 13, fontWeight: 600, color: 'var(--muted)',
+                    }}>
+                      {slot.seatIndex + 1}
+                    </div>
+                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>Вільне місце</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="pixel-btn"
+                      onClick={() => { loadFriends(); setShowFriendPicker(slot.seatIndex) }}
+                      style={{ flex: 1, justifyContent: 'center', fontSize: 13 }}
+                    >
+                      👥 {to.inviteFriend}
+                    </button>
+                    <button
+                      className="pixel-btn"
+                      onClick={() => addBot(slot.seatIndex)}
+                      style={{ flex: 1, justifyContent: 'center', fontSize: 13 }}
+                    >
+                      🤖 {to.addBot}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {!allSlotsFilled && (
-        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 17, color: 'var(--muted)', textAlign: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', marginBottom: 12 }}>
           {to.allSlotsNeeded}
         </div>
       )}
@@ -565,7 +632,7 @@ export default function OnlineSetup({ onBack }: { onBack: () => void }) {
         className="pixel-btn pixel-btn-success"
         onClick={startGame}
         disabled={!allSlotsFilled || startingGame}
-        style={{ width: '100%', justifyContent: 'center', fontSize: 13, padding: '18px 0', opacity: allSlotsFilled ? 1 : 0.4 }}
+        style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px 0', opacity: allSlotsFilled ? 1 : 0.45 }}
       >
         {startingGame ? '...' : to.startGame}
       </button>
