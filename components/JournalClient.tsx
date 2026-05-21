@@ -22,6 +22,12 @@ function firstNonEmpty(...fields: (string | null)[]): string {
   return ''
 }
 
+const FIELD_COLORS = {
+  gratitude: '#7aaa82',   // greenish
+  insight:   '#6a9ab8',   // bluish
+  stress:    '#c08080',   // reddish
+}
+
 export default function JournalClient({
   initialEntries,
   userId,
@@ -30,54 +36,46 @@ export default function JournalClient({
   userId: string
 }) {
   const { t, lang } = useLanguage()
+  const tj = t.journal
   const [entries, setEntries] = useState<JournalEntry[]>(initialEntries)
-  const [selectedDate, setSelectedDate] = useState(today())
   const [gratitude, setGratitude]       = useState('')
   const [insight, setInsight]           = useState('')
   const [stressAction, setStressAction] = useState('')
   const [saving, setSaving]             = useState(false)
   const [saved, setSaved]               = useState(false)
   const [error, setError]               = useState('')
+  const [modalEntry, setModalEntry]     = useState<JournalEntry | null>(null)
+  const [deleting, setDeleting]         = useState(false)
   const supabase = createClient()
 
-  // Load entry for the selected date
+  const todayStr = today()
+  const todayEntry = entries.find(e => e.date === todayStr)
+
+  // Load today's saved content into the form
   useEffect(() => {
-    const entry = entries.find(e => e.date === selectedDate)
-    setGratitude(entry?.gratitude ?? '')
-    setInsight(entry?.insight ?? '')
-    setStressAction(entry?.stress_action ?? '')
-    setSaved(false)
-    setError('')
-  }, [selectedDate, entries])
+    setGratitude(todayEntry?.gratitude ?? '')
+    setInsight(todayEntry?.insight ?? '')
+    setStressAction(todayEntry?.stress_action ?? '')
+  }, [todayEntry?.id])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
-    setError('')
-    setSaved(false)
+    setSaving(true); setError(''); setSaved(false)
 
     const { data, error: err } = await supabase
       .from('journal_entries')
       .upsert(
-        {
-          user_id:      userId,
-          date:         selectedDate,
-          gratitude:    gratitude || null,
-          insight:      insight || null,
-          stress_action: stressAction || null,
-        },
+        { user_id: userId, date: todayStr, gratitude: gratitude || null, insight: insight || null, stress_action: stressAction || null },
         { onConflict: 'user_id,date' }
       )
-      .select()
-      .single()
+      .select().single()
 
     if (err) {
       setError(err.message)
     } else if (data) {
-      const updated = data as JournalEntry
       setEntries(prev => {
-        const without = prev.filter(e => e.date !== selectedDate)
-        return [updated, ...without].sort((a, b) => b.date.localeCompare(a.date))
+        const without = prev.filter(e => e.date !== todayStr)
+        return [data as JournalEntry, ...without].sort((a, b) => b.date.localeCompare(a.date))
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -85,185 +83,223 @@ export default function JournalClient({
     setSaving(false)
   }
 
-  const isToday = selectedDate === today()
-  const hasContent = gratitude.trim() || insight.trim() || stressAction.trim()
+  async function handleDelete(entry: JournalEntry) {
+    if (!window.confirm(tj.deleteConfirm)) return
+    setDeleting(true)
+    const { error: err } = await supabase.from('journal_entries').delete().eq('id', entry.id)
+    if (!err) {
+      setEntries(prev => prev.filter(e => e.id !== entry.id))
+      setModalEntry(null)
+      if (entry.date === todayStr) { setGratitude(''); setInsight(''); setStressAction('') }
+    }
+    setDeleting(false)
+  }
 
-  const historyEntries = entries.filter(e => e.date !== today() || entries.some(x => x.date === today()))
-    .sort((a, b) => b.date.localeCompare(a.date))
+  const hasContent = gratitude.trim() || insight.trim() || stressAction.trim()
+  const pastEntries = entries.filter(e => e.date !== todayStr).sort((a, b) => b.date.localeCompare(a.date))
 
   return (
     <>
       {/* Page title */}
-      <h1 style={{
-        fontFamily: "'Inter', sans-serif",
-        fontSize: '12px',
-        color: 'var(--c-journal)',
-        marginBottom: '24px',
-        textShadow: '0 0 12px rgba(251,146,60,0.35)',
-      }}>
-        {t.journal.pageTitle}
+      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--c-journal)', marginBottom: 24, letterSpacing: '-0.01em' }}>
+        {tj.pageTitle}
       </h1>
 
-      {/* Form card */}
-      <div className="pixel-card card-journal" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <div className="widget-label" style={{ color: 'var(--c-journal)', marginBottom: 0 }}>
-            {isToday ? t.journal.todayLabel : `${t.journal.entryFor} ${formatDate(selectedDate, lang)}`}
+      {/* Today's entry form */}
+      <div className="pixel-card card-journal" style={{ marginBottom: 24 }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-journal)' }}>
+              {tj.todayLabel}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+              {formatDate(todayStr, lang)}
+            </div>
           </div>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            style={{
-              background: 'var(--bg)',
-              border: '2px solid var(--border)',
-              color: 'var(--muted)',
-              fontFamily: "'Inter', sans-serif",
-              fontSize: '16px',
-              padding: '4px 8px',
-              outline: 'none',
-              cursor: 'pointer',
-            }}
-          />
+          {todayEntry && (
+            <button
+              onClick={() => handleDelete(todayEntry)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 18, padding: '2px 6px', borderRadius: 6, transition: 'color 0.15s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--red)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+              title="Delete today's entry"
+            >
+              ×
+            </button>
+          )}
         </div>
 
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <JournalField
-            label={t.journal.gratitudeQ}
+            label={tj.gratitudeQ}
             value={gratitude}
             onChange={setGratitude}
-            placeholder={t.journal.gratitudePh}
-            accentColor="var(--c-journal)"
+            placeholder={tj.gratitudePh}
+            color={FIELD_COLORS.gratitude}
           />
           <JournalField
-            label={t.journal.insightQ}
+            label={tj.insightQ}
             value={insight}
             onChange={setInsight}
-            placeholder={t.journal.insightPh}
-            accentColor="#fbbf24"
+            placeholder={tj.insightPh}
+            color={FIELD_COLORS.insight}
           />
           <JournalField
-            label={t.journal.stressQ}
+            label={tj.stressQ}
             value={stressAction}
             onChange={setStressAction}
-            placeholder={t.journal.stressPh}
-            accentColor="#f87171"
+            placeholder={tj.stressPh}
+            color={FIELD_COLORS.stress}
           />
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingTop: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               type="submit"
               className="pixel-btn pixel-btn-warning"
               disabled={saving || !hasContent}
-              style={{ opacity: !hasContent ? 0.5 : 1 }}
+              style={{ opacity: !hasContent ? 0.5 : 1, fontSize: 13 }}
             >
-              {saving ? t.journal.saving : t.journal.save}
+              {saving ? tj.saving : tj.save}
             </button>
-            {saved && (
-              <span style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: '9px',
-                color: 'var(--green)',
-              }}>
-                {t.journal.saved}
-              </span>
-            )}
-            {error && (
-              <span style={{ fontSize: '15px', color: 'var(--red)' }}>⚠ {error}</span>
-            )}
+            {saved && <span style={{ fontSize: 12, color: 'var(--green)' }}>{tj.saved}</span>}
+            {error && <span style={{ fontSize: 12, color: 'var(--red)' }}>⚠ {error}</span>}
           </div>
         </form>
       </div>
 
-      {/* History */}
-      <div className="pixel-card card-journal" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{
-          fontFamily: "'Inter', sans-serif",
-          fontSize: '8px',
-          color: 'var(--muted)',
-          padding: '12px 16px',
-          borderBottom: '2px solid var(--border)',
-          background: 'var(--bg3)',
-        }}>
-          {t.journal.history}
-        </div>
-
-        {historyEntries.length === 0 ? (
-          <div style={{ padding: '24px 16px', color: 'var(--muted)', fontSize: '16px' }}>
-            {t.journal.noEntries}
+      {/* Past entries list */}
+      {pastEntries.length > 0 && (
+        <div className="pixel-card card-journal" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)' }}>
+            {tj.history}
           </div>
-        ) : (
-          historyEntries.map(entry => {
+
+          {pastEntries.map((entry, idx) => {
             const preview = firstNonEmpty(entry.gratitude, entry.insight, entry.stress_action)
-            const isSelected = entry.date === selectedDate
             return (
               <div
                 key={entry.id}
-                onClick={() => setSelectedDate(entry.date)}
+                onClick={() => setModalEntry(entry)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '14px',
+                  gap: 14,
                   padding: '12px 16px',
-                  borderBottom: '1px solid var(--border)',
+                  borderBottom: idx < pastEntries.length - 1 ? '1px solid var(--border)' : 'none',
                   cursor: 'pointer',
-                  background: isSelected ? 'rgba(251,146,60,0.07)' : 'transparent',
-                  borderLeft: isSelected ? '3px solid var(--c-journal)' : '3px solid transparent',
-                  transition: 'background 0.15s',
+                  transition: 'background 0.12s',
                 }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg3)' }}
-                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg3)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
-                <div style={{ minWidth: 120 }}>
-                  <div style={{
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: '8px',
-                    color: isSelected ? 'var(--c-journal)' : 'var(--muted)',
-                  }}>
-                    {entry.date === today() ? '● TODAY' : formatDate(entry.date, lang)}
-                  </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', minWidth: 90, flexShrink: 0 }}>
+                  {formatDate(entry.date, lang)}
                 </div>
-                <div style={{
-                  flex: 1,
-                  fontSize: '16px',
-                  color: 'var(--muted)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {preview
-                    ? preview.slice(0, 100) + (preview.length > 100 ? '…' : '')
-                    : <span style={{ fontStyle: 'italic' }}>{t.journal.noPreview}</span>
-                  }
+                <div style={{ flex: 1, fontSize: 13, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {preview ? preview.slice(0, 80) + (preview.length > 80 ? '…' : '') : <em>{tj.noPreview}</em>}
                 </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--muted)', flexShrink: 0 }}>
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
               </div>
             )
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
+
+      {entries.length === 0 && (
+        <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          {tj.noEntries}
+        </div>
+      )}
+
+      {/* Past entry modal */}
+      {modalEntry && (
+        <div
+          className="modal-overlay"
+          onClick={() => setModalEntry(null)}
+          style={{ alignItems: 'flex-end' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg2)',
+              border: '1px solid var(--border)',
+              borderRadius: '16px 16px 0 0',
+              padding: '20px 20px 32px',
+              width: '100%',
+              maxWidth: 560,
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 -4px 32px rgba(0,0,0,0.15)',
+            }}
+          >
+            {/* Modal header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                  {formatDate(modalEntry.date, lang)}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tj.readOnly}</div>
+              </div>
+              <button
+                onClick={() => setModalEntry(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 20, padding: '2px 6px', borderRadius: 6 }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Read-only fields */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {[
+                { label: tj.gratitudeQ, value: modalEntry.gratitude, color: FIELD_COLORS.gratitude },
+                { label: tj.insightQ,   value: modalEntry.insight,   color: FIELD_COLORS.insight },
+                { label: tj.stressQ,    value: modalEntry.stress_action, color: FIELD_COLORS.stress },
+              ].map(({ label, value, color }) => value?.trim() ? (
+                <div key={label}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color, marginBottom: 6 }}>{label}</div>
+                  <div style={{
+                    fontSize: 14, lineHeight: 1.6, color: 'var(--text)',
+                    background: 'var(--bg3)', borderRadius: 8, padding: '10px 12px',
+                    borderLeft: `3px solid ${color}`,
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {value}
+                  </div>
+                </div>
+              ) : null)}
+            </div>
+
+            {/* Delete button */}
+            <button
+              onClick={() => handleDelete(modalEntry)}
+              disabled={deleting}
+              className="pixel-btn pixel-btn-danger"
+              style={{ marginTop: 24, width: '100%', justifyContent: 'center', fontSize: 13 }}
+            >
+              {deleting ? '...' : tj.deleteConfirm}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
 
 function JournalField({
-  label, value, onChange, placeholder, accentColor,
+  label, value, onChange, placeholder, color,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   placeholder: string
-  accentColor: string
+  color: string
 }) {
   return (
     <div>
-      <label style={{
-        fontFamily: "'Inter', sans-serif",
-        fontSize: '8px',
-        color: accentColor,
-        display: 'block',
-        marginBottom: '8px',
-        lineHeight: 1.8,
-      }}>
+      <label style={{ fontSize: 13, fontWeight: 600, color, display: 'block', marginBottom: 8, lineHeight: 1.5 }}>
         {label}
       </label>
       <textarea
@@ -271,12 +307,13 @@ function JournalField({
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        rows={4}
+        rows={3}
         style={{
           resize: 'vertical',
-          lineHeight: '1.5',
-          borderColor: value.trim() ? accentColor : undefined,
-          boxShadow: value.trim() ? `0 0 6px ${accentColor}33` : undefined,
+          lineHeight: 1.6,
+          borderColor: value.trim() ? color : undefined,
+          boxShadow: value.trim() ? `0 0 0 3px ${color}22` : undefined,
+          transition: 'border-color 0.15s, box-shadow 0.15s',
         }}
       />
     </div>
