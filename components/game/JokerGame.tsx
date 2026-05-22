@@ -502,56 +502,123 @@ function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick,
 }
 
 // ── DraggableHand ─────────────────────────────────────────────────────────────
-type DragState={cardId:string;fromIndex:number;toIndex:number;x:number;y:number}|null
+type DragState={cardId:string;fromIndex:number;toIndex:number;x:number;y:number;startX:number;startY:number;active:boolean}|null
 function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorder,cardBack,highlights,dealAnimating=false}:{
   hand:Card[];selectedIds:string[];stagedIds:string[];drawnCardId?:string|null
   onToggle:(id:string)=>void;onReorder:(from:number,to:number)=>void
   cardBack:CardBack;highlights:Map<string,'green'|'yellow'>;dealAnimating?:boolean
 }){
   const[drag,setDrag]=useState<DragState>(null)
-  const timerRef=useRef<ReturnType<typeof setTimeout>|null>(null)
   const cardElsRef=useRef<Map<string,HTMLElement>>(new Map())
+
   const calcDrop=useCallback((cx:number,cy:number,dragId:string):number=>{
-    const pos=hand.filter(c=>c.id!==dragId).map(c=>{const el=cardElsRef.current.get(c.id);if(!el)return null;const r=el.getBoundingClientRect();return{origIdx:hand.indexOf(c),cx:r.left+r.width/2,cy:r.top+r.height/2}}).filter(Boolean) as{origIdx:number;cx:number;cy:number}[]
+    const others=hand.filter(c=>c.id!==dragId)
+    const pos=others.map(c=>{
+      const el=cardElsRef.current.get(c.id); if(!el)return null
+      const r=el.getBoundingClientRect()
+      return{origIdx:hand.indexOf(c),cx:r.left+r.width/2}
+    }).filter(Boolean) as{origIdx:number;cx:number}[]
     if(!pos.length)return 0
-    let minD=Infinity,near=pos[0];for(const p of pos){const d=Math.hypot(cx-p.cx,cy-p.cy);if(d<minD){minD=d;near=p}}
-    const el=hand[near.origIdx]?cardElsRef.current.get(hand[near.origIdx].id):null
-    return el?(cx>el.getBoundingClientRect().left+el.getBoundingClientRect().width/2?near.origIdx+1:near.origIdx):near.origIdx
+    // Find insertion index based on x position
+    for(let i=0;i<pos.length;i++){
+      if(cx<pos[i].cx)return pos[i].origIdx
+    }
+    return pos[pos.length-1].origIdx+1
   },[hand])
+
   useEffect(()=>{
     if(!drag)return
-    const onMove=(e:PointerEvent)=>{const ti=calcDrop(e.clientX,e.clientY,drag.cardId);setDrag(d=>d?{...d,x:e.clientX,y:e.clientY,toIndex:ti}:null)}
-    const onUp=(e:PointerEvent)=>{setDrag(prev=>{if(prev){const ti=calcDrop(e.clientX,e.clientY,prev.cardId);if(ti!==prev.fromIndex)onReorder(prev.fromIndex,ti)}return null})}
-    document.addEventListener('pointermove',onMove);document.addEventListener('pointerup',onUp)
+    const onMove=(e:PointerEvent)=>{
+      const dx=e.clientX-drag.startX, dy=e.clientY-drag.startY
+      // Activate drag after 6px movement
+      if(!drag.active&&Math.hypot(dx,dy)<6)return
+      const ti=calcDrop(e.clientX,e.clientY,drag.cardId)
+      setDrag(d=>d?{...d,x:e.clientX,y:e.clientY,toIndex:ti,active:true}:null)
+    }
+    const onUp=(e:PointerEvent)=>{
+      setDrag(prev=>{
+        if(prev){
+          if(prev.active){
+            const ti=calcDrop(e.clientX,e.clientY,prev.cardId)
+            if(ti!==prev.fromIndex)onReorder(prev.fromIndex,ti)
+          } else {
+            // Short tap without real drag → treat as toggle
+            onToggle(prev.cardId)
+          }
+        }
+        return null
+      })
+    }
+    document.addEventListener('pointermove',onMove,{passive:true})
+    document.addEventListener('pointerup',onUp)
     return()=>{document.removeEventListener('pointermove',onMove);document.removeEventListener('pointerup',onUp)}
-  },[drag,calcDrop,onReorder])
-  const visible=hand.map((card,i)=>({card,origIndex:i})).filter(item=>!drag||item.card.id!==drag.cardId)
+  },[drag,calcDrop,onReorder,onToggle])
+
+  // Build display list: hide dragged card, insert gap at drop target
+  const visible=hand.map((card,i)=>({card,origIndex:i})).filter(item=>!drag?.active||item.card.id!==drag.cardId)
   const withGap:({type:'card';card:Card;origIndex:number}|{type:'gap'})[]=[]; let gapDone=false
   for(let i=0;i<=visible.length;i++){
-    if(drag&&!gapDone&&(i===visible.length||(visible[i]&&visible[i].origIndex>=drag.toIndex))){withGap.push({type:'gap'});gapDone=true}
+    if(drag?.active&&!gapDone&&(i===visible.length||(visible[i]&&visible[i].origIndex>=drag.toIndex))){
+      withGap.push({type:'gap'});gapDone=true
+    }
     if(i<visible.length)withGap.push({type:'card',...visible[i]})
   }
-  if(drag&&!gapDone)withGap.push({type:'gap'})
+  if(drag?.active&&!gapDone)withGap.push({type:'gap'})
+
   return(
-    <div style={{display:'flex',flexWrap:'wrap',gap:5,position:'relative',touchAction:'none'}}>
-      {withGap.map((item,ri)=>{
-        if(item.type==='gap')return <div key="gap" style={{width:56,height:80,border:'2px dashed var(--c-dash)',borderRadius:4,flexShrink:0,background:'rgba(34,211,238,0.08)'}}/>
-        const{card,origIndex}=item,isSel=!drag&&selectedIds.includes(card.id),isStaged=stagedIds.includes(card.id),isDrawn=card.id===drawnCardId
+    <div style={{display:'flex',flexWrap:'wrap',gap:4,position:'relative',touchAction:'none',userSelect:'none'}}>
+      {withGap.map((item)=>{
+        if(item.type==='gap')return(
+          <div key="gap" style={{
+            width:50,height:80,flexShrink:0,borderRadius:6,
+            border:'2px dashed rgba(34,211,238,0.5)',
+            background:'rgba(34,211,238,0.06)',
+            transition:'width 0.12s',
+          }}/>
+        )
+        const{card,origIndex}=item
+        const isSel=!drag?.active&&selectedIds.includes(card.id)
+        const isStaged=stagedIds.includes(card.id)
+        const isDrawn=card.id===drawnCardId
+        const isDragging=drag?.active&&drag.cardId===card.id
         return(
-          <div key={card.id} ref={el=>{if(el)cardElsRef.current.set(card.id,el);else cardElsRef.current.delete(card.id)}} style={{flexShrink:0}}>
-            <CardView card={card} selected={isSel&&!isStaged} dimmed={isStaged} cardBack={cardBack}
+          <div key={card.id}
+            ref={el=>{if(el)cardElsRef.current.set(card.id,el);else cardElsRef.current.delete(card.id)}}
+            style={{flexShrink:0,opacity:isDragging?0:1,transition:'opacity 0.1s'}}
+          >
+            <CardView card={card}
+              selected={isSel&&!isStaged} dimmed={isStaged} cardBack={cardBack}
               animClass={isDrawn?'card-draw-in':dealAnimating?'card-deal-in':''}
               extraStyle={dealAnimating?{animationDelay:`${origIndex*52}ms`}:{}}
               highlight={!isSel&&!isStaged?(highlights.get(card.id)??null):null}
-              onClick={drag?undefined:()=>onToggle(card.id)}
-              onPointerDown={(e:React.PointerEvent)=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);const{clientX,clientY}=e;timerRef.current=setTimeout(()=>{setDrag({cardId:card.id,fromIndex:origIndex,toIndex:origIndex,x:clientX,y:clientY});timerRef.current=null},200)}}
-              onPointerUp={()=>{if(timerRef.current){clearTimeout(timerRef.current);timerRef.current=null}}}
-              onPointerMove={(e:React.PointerEvent)=>{if(timerRef.current&&Math.hypot(e.movementX,e.movementY)>3){clearTimeout(timerRef.current);timerRef.current=null}}}
+              onClick={undefined}
+              onPointerDown={(e:React.PointerEvent)=>{
+                e.preventDefault()
+                e.currentTarget.setPointerCapture(e.pointerId)
+                setDrag({cardId:card.id,fromIndex:origIndex,toIndex:origIndex,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,active:false})
+              }}
+              onPointerUp={undefined}
+              onPointerMove={undefined}
             />
           </div>
         )
       })}
-      {drag&&(()=>{const d=hand.find(c=>c.id===drag.cardId);if(!d)return null;return <div style={{position:'fixed',left:drag.x-28,top:drag.y-40,zIndex:999,pointerEvents:'none'}}><CardView card={d} lifted cardBack={cardBack}/></div>})()}
+      {/* Floating drag ghost */}
+      {drag?.active&&(()=>{
+        const d=hand.find(c=>c.id===drag.cardId); if(!d)return null
+        return(
+          <div style={{
+            position:'fixed',
+            left:drag.x-28,top:drag.y-48,
+            zIndex:999,pointerEvents:'none',
+            transform:'scale(1.12) rotate(2deg)',
+            filter:'drop-shadow(0 12px 24px rgba(0,0,0,0.5))',
+            transition:'none',
+          }}>
+            <CardView card={d} lifted cardBack={cardBack}/>
+          </div>
+        )
+      })()}
     </div>
   )
 }
