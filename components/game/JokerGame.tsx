@@ -137,10 +137,13 @@ function dealRound(base: GameState): GameState {
     currentPlayerIndex:firstIdx,phase:firstPhase,message:'',burningMeldId:null,burningHasJoker:false,firstMeldSingleCardLeft:false,
   }
 }
-// allAtOnce=true  → player emptied hand in a single turn, first meld of the round → -10 (or -20 with joker)
-// allAtOnce=false → player had already melded 51+ before, then disposed remaining → -5
-function finishRound(state: GameState, winnerIdx: number, allAtOnce: boolean, lastJoker: boolean): GameState {
-  const bonus = allAtOnce ? (lastJoker ? -20 : -10) : -5
+// jokerCount: number of jokers used in the winning move
+// allAtOnce + 2 jokers = -30, allAtOnce + 1 joker = -20, allAtOnce no joker = -10
+// after prior melds + joker discard = -10, after prior melds no joker = -5
+function finishRound(state: GameState, winnerIdx: number, allAtOnce: boolean, jokerCount: number): GameState {
+  const bonus = allAtOnce
+    ? (jokerCount >= 2 ? -30 : jokerCount === 1 ? -20 : -10)
+    : (jokerCount >= 1 ? -10 : -5)
   const scores=state.players.map((p,i)=>{if(i===winnerIdx)return bonus;if(!p.hasMelded)return 10;return calcPenalty(p.hand,p.hasMelded)})
   // After final round: go directly to game-end (no round-end intermediate)
   const nextPhase: Phase = state.roundNumber >= 7 ? 'game-end' : 'round-end'
@@ -238,21 +241,22 @@ function reducer(state: GameState, action: Action): GameState {
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
       const allAtOnce = !cur.hasMelded
       const isFirstMeldOneLeft = !cur.hasMelded && newHand.length === 1
+      const jokerCount = cur.hand.filter(c=>usedIds.has(c.id)&&c.isJoker).length
       const burning=newMelds.find(m=>isBurningGroup(m))
       if(burning){
         const hasJ=burning.cards.some(c=>c.isJoker)
         if(hasJ){
           // Joker in group: player must decide to steal or burn
-          if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,false)
+          if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[]},cp,allAtOnce,jokerCount)
           return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:burning.id,burningHasJoker:true,message:'🔥 4-of-a-kind with JOKER! Steal or burn?'}
         }
         // No joker: auto-burn immediately
         const burnedMelds=allMelds.filter(m=>m.id!==burning.id)
         const newDiscard=burnIntoDiscard(state.discardPile,burning.cards)
-        if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,stagedMelds:[]},cp,allAtOnce,false)
+        if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,stagedMelds:[]},cp,allAtOnce,jokerCount)
         return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,firstMeldSingleCardLeft:isFirstMeldOneLeft,message:'🔥 4-of-a-kind! Auto-burned.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],firstMeldSingleCardLeft:false},cp,allAtOnce,false)
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],firstMeldSingleCardLeft:false},cp,allAtOnce,jokerCount)
       return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:allMelds,stagedMelds:[],selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,firstMeldSingleCardLeft:isFirstMeldOneLeft,message:''}
     }
     case 'ADD_TO_MELD':{
@@ -267,19 +271,20 @@ function reducer(state: GameState, action: Action): GameState {
       const discardUsed=state.drawnFromDiscardCardId&&usedIds.has(state.drawnFromDiscardCardId)
       // allAtOnce: true if this is the player's first card placement this round
       const addAllAtOnce=!cur.hasMelded
+      const addJokerCount=selected.filter(c=>c.isJoker).length
       if(isBurningGroup(newMeld)){
         const hasJ=newMeld.cards.some(c=>c.isJoker)
         if(hasJ){
-          if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
+          if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,addJokerCount)
           return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,burningMeldId:newMeld.id,burningHasJoker:true,message:'🔥 4-of-a-kind with JOKER! Steal or burn?'}
         }
         // No joker: auto-burn immediately
         const burnedMelds=newMelds.filter(m=>m.id!==newMeld.id)
         const newDiscard=burnIntoDiscard(state.discardPile,newMeld.cards)
-        if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,selectedCardIds:[]},cp,addAllAtOnce,false)
+        if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,selectedCardIds:[]},cp,addAllAtOnce,addJokerCount)
         return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:burnedMelds,discardPile:newDiscard,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:'🔥 4-of-a-kind! Auto-burned.'}
       }
-      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,false)
+      if(!newHand.length) return finishRound({...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[]},cp,addAllAtOnce,addJokerCount)
       return{...state,players:mutPlayer(state,cp,{hand:newHand,hasMelded:true}),melds:newMelds,selectedCardIds:[],drawnFromDiscardCardId:discardUsed?null:state.drawnFromDiscardCardId,message:''}
     }
     case 'STEAL_JOKER':{
@@ -346,7 +351,7 @@ function reducer(state: GameState, action: Action): GameState {
       // Fix 2: if this was the first-meld-one-card-left scenario, treat discard as allAtOnce (-10)
       const discardAllAtOnce = s.firstMeldSingleCardLeft
       console.log(`[SCORING] DISCARD cp=${cp} firstMeldSingleCardLeft=${s.firstMeldSingleCardLeft} allAtOnce=${discardAllAtOnce} handEmpty=${!newHand.length}`)
-      if(!newHand.length) return finishRound({...s,players:upd,discardPile:pile,firstMeldSingleCardLeft:false},cp,discardAllAtOnce,card.isJoker)
+      if(!newHand.length) return finishRound({...s,players:upd,discardPile:pile,firstMeldSingleCardLeft:false},cp,discardAllAtOnce,card.isJoker?1:0)
       return advanceTurn({...s,players:upd,discardPile:pile})
     }
     case 'AI_TURN_DONE': return{...state,...action.next}
@@ -415,14 +420,14 @@ function runAITurn(state: GameState, dispatch: (a:Action)=>void, tg: any, addToa
   const aiAllAtOnce = !player.hasMelded
   if(!dc){
     addToast(`🏆 ${player.name} ${tg.logWins}`)
-    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,aiAllAtOnce,false)});return
+    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false},cp,aiAllAtOnce,0)});return
   }
   const finalHand=newPlayers[cp].hand;discardPile=[...discardPile,dc]
   addToast(`${player.name} ${tg.logDiscards} [${dc.rank}${suitSymbol(dc.suit)}]`)
   if(!finalHand.length){
     addToast(`🏆 ${player.name} ${tg.logWins}`)
     // Fix 2: if AI first melded with 1 card left and now discards it, treat as allAtOnce
-    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false,firstMeldSingleCardLeft:false},cp,aiFirstMeldOneCard,dc.isJoker)});return
+    dispatch({type:'AI_TURN_DONE',next:finishRound({...s,players:newPlayers,deck,discardPile,melds,burningMeldId:null,burningHasJoker:false,firstMeldSingleCardLeft:false},cp,aiFirstMeldOneCard,dc.isJoker?1:0)});return
   }
   const ni=nextIdx(cp,state.numPlayers),nxt=newPlayers[ni]
   // Fix 8: pass the last meld ID that was modified so animation highlights the correct set
@@ -670,8 +675,24 @@ export default function JokerGame({
   // ── Dispatch wrapper — local actions save to Supabase in online mode ──────
   // Cosmetic/UI-only actions are not persisted — they only affect local display
   const LOCAL_ONLY = new Set<Action['type']>(['TOGGLE_CARD','REORDER_HAND','REORDER_HAND_TO','STAGE_MELD','CLEAR_STAGED'])
+  // Separate ref for hand order — lives outside stateRef so SYNC_STATE doesn't overwrite it
+  const myHandOrderRef = useRef<string[] | null>(null)
+  function applyLocalHandOrder(gs: GameState, myIdx: number) {
+    if(!myHandOrderRef.current||!gs.players[myIdx])return
+    const order=myHandOrderRef.current
+    const incomingHand=gs.players[myIdx].hand
+    const incomingIds=new Set(incomingHand.map(c=>c.id))
+    // If cards changed (drawn/discarded), reset the saved order
+    if(order.length!==incomingHand.length||!order.every(id=>incomingIds.has(id))){
+      myHandOrderRef.current=null; return
+    }
+    const posMap=new Map(order.map((id,i)=>[id,i] as [string,number]))
+    const reordered=[...incomingHand].sort((a,b)=>(posMap.get(a.id)??999)-(posMap.get(b.id)??999))
+    gs.players=gs.players.map((p,i)=>i===myIdx?{...p,hand:reordered}:p)
+  }
   function dispatch(action: Action) {
     baseDispatch(action)
+    if (action.type === 'REORDER_HAND_TO') myHandOrderRef.current = action.hand.map(c => c.id)
     if (!isOnline || !roomId || action.type === 'SYNC_STATE') return
     if (LOCAL_ONLY.has(action.type)) return
     // Compute next state synchronously to save it (pure function, cheap)
@@ -778,8 +799,9 @@ export default function JokerGame({
       const phase=stateRef.current.phase
       if(phase==='game-end'||cancelled)return
       // Skip sync when it's our own turn — we are the source of truth
-      const isOurTurn=phase!=='setup'&&stateRef.current.currentPlayerIndex===mySeatRef.current
-      if(isOurTurn)return
+      // Only block sync during active turn phases — not during round-end/game-end
+      const activeTurn=(phase==='player-draw'||phase==='player-action')&&stateRef.current.currentPlayerIndex===mySeatRef.current
+      if(activeTurn)return
       const{data:room}=await supabase.from('game_rooms').select('game_state,updated_at').eq('id',roomId!).single()
       if(!room?.game_state||cancelled)return
       if(room.updated_at===lastUpdatedAt)return
@@ -793,17 +815,9 @@ export default function JokerGame({
           if(idx>=0){setMySeatIndex(idx);myIdx=idx}
         }
       }
-      // Preserve local hand order: if incoming hand has same cards (just different order), keep local order
       const incomingState=room.game_state as GameState
-      const localHand=stateRef.current.players[myIdx]?.hand
-      if(localHand&&incomingState.players[myIdx]){
-        const localIds=new Set(localHand.map(c=>c.id))
-        const incomingIds=new Set(incomingState.players[myIdx].hand.map(c=>c.id))
-        const sameCards=localIds.size===incomingIds.size&&Array.from(localIds).every(id=>incomingIds.has(id))
-        if(sameCards){
-          incomingState.players=incomingState.players.map((p,i)=>i===myIdx?{...p,hand:localHand}:p)
-        }
-      }
+      // Restore local hand order using the dedicated ref (not stateRef, which can be stale)
+      applyLocalHandOrder(incomingState,myIdx)
       baseDispatch({type:'SYNC_STATE',state:incomingState})
     },2000)
     return()=>{cancelled=true;clearInterval(interval)}
@@ -817,16 +831,9 @@ export default function JokerGame({
         (payload)=>{
           if(!payload.new?.game_state)return
           const phase=stateRef.current.phase
-          if(phase!=='setup'&&stateRef.current.currentPlayerIndex===mySeatRef.current)return
+          if((phase==='player-draw'||phase==='player-action')&&stateRef.current.currentPlayerIndex===mySeatRef.current)return
           const incoming=payload.new.game_state as GameState
-          const myIdx=mySeatRef.current
-          const localHand=stateRef.current.players[myIdx]?.hand
-          if(localHand&&incoming.players[myIdx]){
-            const lIds=new Set(localHand.map(c=>c.id))
-            const iIds=new Set(incoming.players[myIdx].hand.map(c=>c.id))
-            if(lIds.size===iIds.size&&Array.from(lIds).every(id=>iIds.has(id)))
-              incoming.players=incoming.players.map((p,i)=>i===myIdx?{...p,hand:localHand}:p)
-          }
+          applyLocalHandOrder(incoming,mySeatRef.current)
           baseDispatch({type:'SYNC_STATE',state:incoming})
         })
       .subscribe()
@@ -863,7 +870,8 @@ export default function JokerGame({
     prevDeckLen.current=state.deck.length
   },[state.deck.length])
 
-  // New melds animate in; track which set got added to
+  // New melds animate in; track which set got added to (compare card count to detect actual modification)
+  const prevMeldCards=useRef<Map<string,number>>(new Map())
   useEffect(()=>{
     const cur=state.melds.map(m=>m.id)
     const fresh=new Set(cur.filter(id=>!prevMeldIds.current.includes(id)))
@@ -871,14 +879,20 @@ export default function JokerGame({
       setNewMeldIds(fresh)
       setTimeout(()=>setNewMeldIds(new Set()),500)
     }
-    // Fix 8: use AI-provided meld ID if available, otherwise detect by size change
-    const aiHint = aiFlashMeldIdRef.current; aiFlashMeldIdRef.current = null
-    const changedId = aiHint || state.melds.find(m=>prevMeldIds.current.includes(m.id)&&!fresh.has(m.id))?.id
+    // Only flash a meld when its card COUNT actually changed (avoids false positives from SYNC_STATE)
+    const aiHint=aiFlashMeldIdRef.current; aiFlashMeldIdRef.current=null
+    const modifiedMeld=state.melds.find(m=>
+      prevMeldIds.current.includes(m.id)&&
+      !fresh.has(m.id)&&
+      prevMeldCards.current.get(m.id)!==m.cards.length
+    )
+    const changedId=aiHint||(modifiedMeld?.id)
     if(changedId){
       setFlashMeldId(changedId)
       setTimeout(()=>setFlashMeldId(null),400)
     }
     prevMeldIds.current=cur
+    prevMeldCards.current=new Map(state.melds.map(m=>[m.id,m.cards.length]))
   },[state.melds])
 
   // Discard pile flash when new card lands
