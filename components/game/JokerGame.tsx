@@ -516,14 +516,14 @@ function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorde
     const pos=others.map(c=>{
       const el=cardElsRef.current.get(c.id); if(!el)return null
       const r=el.getBoundingClientRect()
-      return{origIdx:hand.indexOf(c),cx:r.left+r.width/2}
-    }).filter(Boolean) as{origIdx:number;cx:number}[]
+      return{origIdx:hand.indexOf(c),cx:r.left+r.width/2,cy:r.top+r.height/2}
+    }).filter(Boolean) as{origIdx:number;cx:number;cy:number}[]
     if(!pos.length)return 0
-    // Find insertion index based on x position
-    for(let i=0;i<pos.length;i++){
-      if(cx<pos[i].cx)return pos[i].origIdx
-    }
-    return pos[pos.length-1].origIdx+1
+    // Find nearest card by 2D distance (works for multi-row wrapping)
+    let minD=Infinity,near=pos[0]
+    for(const p of pos){const d=Math.hypot(cx-p.cx,cy-p.cy);if(d<minD){minD=d;near=p}}
+    // Insert before or after based on X relative to nearest card's center
+    return cx>near.cx?near.origIdx+1:near.origIdx
   },[hand])
 
   useEffect(()=>{
