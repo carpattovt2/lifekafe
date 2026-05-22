@@ -503,6 +503,7 @@ function CardView({ card, faceDown=false, selected=false, dimmed=false, onClick,
 
 // ── DraggableHand ─────────────────────────────────────────────────────────────
 type DragState={cardId:string;fromIndex:number;toIndex:number;x:number;y:number;startX:number;startY:number;active:boolean}|null
+type SavedPos={origIdx:number;cx:number;cy:number}
 function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorder,cardBack,highlights,dealAnimating=false}:{
   hand:Card[];selectedIds:string[];stagedIds:string[];drawnCardId?:string|null
   onToggle:(id:string)=>void;onReorder:(from:number,to:number)=>void
@@ -510,49 +511,69 @@ function DraggableHand({hand,selectedIds,stagedIds,drawnCardId,onToggle,onReorde
 }){
   const[drag,setDrag]=useState<DragState>(null)
   const cardElsRef=useRef<Map<string,HTMLElement>>(new Map())
+  // Positions saved at drag-start — not affected by gap layout shifts
+  const savedPosRef=useRef<SavedPos[]>([])
 
-  const calcDrop=useCallback((cx:number,cy:number,dragId:string):number=>{
-    const others=hand.filter(c=>c.id!==dragId)
-    const pos=others.map(c=>{
-      const el=cardElsRef.current.get(c.id); if(!el)return null
-      const r=el.getBoundingClientRect()
-      return{origIdx:hand.indexOf(c),cx:r.left+r.width/2,cy:r.top+r.height/2}
-    }).filter(Boolean) as{origIdx:number;cx:number;cy:number}[]
+  function snapshotPositions(dragId:string){
+    savedPosRef.current=hand
+      .map((c,i)=>{
+        if(c.id===dragId)return null
+        const el=cardElsRef.current.get(c.id); if(!el)return null
+        const r=el.getBoundingClientRect()
+        return{origIdx:i,cx:r.left+r.width/2,cy:r.top+r.height/2}
+      })
+      .filter(Boolean) as SavedPos[]
+  }
+
+  function calcDropFromSaved(cx:number,cy:number):number{
+    const pos=savedPosRef.current
     if(!pos.length)return 0
-    // Find nearest card by 2D distance (works for multi-row wrapping)
-    let minD=Infinity,near=pos[0]
-    for(const p of pos){const d=Math.hypot(cx-p.cx,cy-p.cy);if(d<minD){minD=d;near=p}}
-    // Insert before or after based on X relative to nearest card's center
-    return cx>near.cx?near.origIdx+1:near.origIdx
-  },[hand])
+    // Group into rows (cards within 30px Y = same row)
+    const rows:SavedPos[][]=[]
+    for(const p of [...pos].sort((a,b)=>a.cy-b.cy)){
+      const row=rows.find(r=>Math.abs(r[0].cy-p.cy)<30)
+      if(row)row.push(p)
+      else rows.push([p])
+    }
+    // Find nearest row by Y distance
+    const nearRow=rows.reduce((best,row)=>Math.abs(cy-row[0].cy)<Math.abs(cy-best[0].cy)?row:best)
+    // Sort row left→right, find insertion point
+    nearRow.sort((a,b)=>a.cx-b.cx)
+    for(const p of nearRow){if(cx<p.cx)return p.origIdx}
+    return nearRow[nearRow.length-1].origIdx+1
+  }
 
   useEffect(()=>{
     if(!drag)return
     const onMove=(e:PointerEvent)=>{
       const dx=e.clientX-drag.startX, dy=e.clientY-drag.startY
-      // Activate drag after 6px movement
-      if(!drag.active&&Math.hypot(dx,dy)<6)return
-      const ti=calcDrop(e.clientX,e.clientY,drag.cardId)
+      if(!drag.active){
+        if(Math.hypot(dx,dy)<6)return
+        // Snapshot stable positions the moment drag activates
+        snapshotPositions(drag.cardId)
+      }
+      const ti=calcDropFromSaved(e.clientX,e.clientY)
       setDrag(d=>d?{...d,x:e.clientX,y:e.clientY,toIndex:ti,active:true}:null)
     }
     const onUp=(e:PointerEvent)=>{
       setDrag(prev=>{
         if(prev){
           if(prev.active){
-            const ti=calcDrop(e.clientX,e.clientY,prev.cardId)
+            const ti=calcDropFromSaved(e.clientX,e.clientY)
             if(ti!==prev.fromIndex)onReorder(prev.fromIndex,ti)
           } else {
-            // Short tap without real drag → treat as toggle
             onToggle(prev.cardId)
           }
         }
+        savedPosRef.current=[]
         return null
       })
     }
     document.addEventListener('pointermove',onMove,{passive:true})
     document.addEventListener('pointerup',onUp)
     return()=>{document.removeEventListener('pointermove',onMove);document.removeEventListener('pointerup',onUp)}
-  },[drag,calcDrop,onReorder,onToggle])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[drag,onReorder,onToggle])
 
   // Build display list: hide dragged card, insert gap at drop target
   const visible=hand.map((card,i)=>({card,origIndex:i})).filter(item=>!drag?.active||item.card.id!==drag.cardId)
