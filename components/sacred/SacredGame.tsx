@@ -6,6 +6,7 @@ import {
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
+import PlacementScreen from './PlacementScreen'
 
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
 const CLASS_ICON: Record<string, string> = { warrior: '⚔', archer: '🏹', mage: '✨' }
@@ -345,8 +346,12 @@ function Landing({ onNewGame }: { onNewGame: () => void }) {
 // Row slot counts: warriors 0→4, archers 1→3, mages 2→2
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 2 }
 
-function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => void }) {
-  const [state, dispatch] = useReducer(battleReducer, counts, createInitialState)
+function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; playerUnits?: GameUnit[]; onRestart: () => void }) {
+  const [state, dispatch] = useReducer(
+    battleReducer,
+    undefined as unknown as ArmyCounts,
+    () => createInitialState(counts, playerUnits),
+  )
   const [floats, setFloats] = useState<BattleEvent[]>([])
   const [infoUnit, setInfoUnit] = useState<GameUnit | null>(null)
 
@@ -573,12 +578,20 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
 
 // ── Root component ─────────────────────────────────────────────────────────────
 export default function SacredGame() {
-  const [screen, setScreen] = useState<'landing' | 'army-builder' | 'battle'>('landing')
+  const [screen, setScreen] = useState<'landing' | 'army-builder' | 'placement' | 'battle'>('landing')
   const [counts, setCounts] = useState<ArmyCounts | null>(null)
+  const [playerUnits, setPlayerUnits] = useState<GameUnit[] | null>(null)
 
   if (screen === 'landing') return <Landing onNewGame={() => setScreen('army-builder')} />
   if (screen === 'army-builder') return (
-    <ArmyBuilder onStart={c => { setCounts(c); setScreen('battle') }} />
+    <ArmyBuilder onStart={c => { setCounts(c); setScreen('placement') }} />
   )
-  return <Battle counts={counts!} onRestart={() => setScreen('landing')} />
+  if (screen === 'placement') return (
+    <PlacementScreen
+      counts={counts!}
+      onStart={units => { setPlayerUnits(units); setScreen('battle') }}
+      onBack={() => setScreen('army-builder')}
+    />
+  )
+  return <Battle counts={counts!} playerUnits={playerUnits ?? undefined} onRestart={() => setScreen('landing')} />
 }

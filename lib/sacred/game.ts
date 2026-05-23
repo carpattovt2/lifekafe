@@ -49,7 +49,7 @@ export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
   return units
 }
 
-function buildDefaultAIArmy(): GameUnit[] {
+export function buildDefaultAIArmy(): GameUnit[] {
   return buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'ai')
 }
 
@@ -371,10 +371,9 @@ const TURN_RESET = {
   pendingPlayerBonus: null as 'warrior-cry' | 'archer-shot' | null,
 }
 
-export function createInitialState(counts?: ArmyCounts): BattleState {
-  const playerUnits = counts
-    ? buildCustomArmy(counts, 'player')
-    : buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'player')
+export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[]): BattleState {
+  const playerUnits = prebuiltPlayerUnits
+    ?? (counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'player'))
   const units = [...playerUnits, ...buildDefaultAIArmy()]
   const queue = buildQueue(units)
   const first = units.find(u => u.id === queue[0])!
