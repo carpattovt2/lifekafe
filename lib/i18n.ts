@@ -20,6 +20,7 @@ const en = {
     planner:   'Planner',
     journal:   'Journal',
     game:      'Joker',
+    sacred:    'Seraphites',
     logout:    'LOGOUT',
   },
   dashboard: {
@@ -326,6 +327,7 @@ const ua: typeof en = {
     planner:   'Планувальник',
     journal:   'Журнал',
     game:      'Джокер',
+    sacred:    'Серафити',
     logout:    'ВИЙТИ',
   },
   dashboard: {
