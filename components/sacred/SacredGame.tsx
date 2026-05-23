@@ -2,25 +2,21 @@
 
 import { useReducer, useEffect, useRef, useState } from 'react'
 import {
-  createInitialState, battleReducer, getMainActions, getValidTargets, getBonusTargets, ACTIONS,
+  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
 const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Дальній', 2: 'Підтримка' }
 const BUFF_ICON: Record<string, string> = {
-  defense_up: '🛡', damage_up: '📯', aimed: '🎯',
-  damage_taken_up: '🩸', exhausted: '💤', weakness: '🌑',
+  defense_up: '🛡',
+  aimed: '🎯',
 }
 const BUFF_LABEL: Record<string, string> = {
-  defense_up: '+50% захист цього ходу',
-  damage_up: '+20% урон атак',
-  aimed: 'Прицілення — бонус на наступні постріли',
-  damage_taken_up: 'Розрив — +30% отримуваного урону',
-  exhausted: 'Виснаження — ходить останнім',
-  weakness: 'Слабкість — -25% урон атак',
+  defense_up: '+50% броні цей хід',
+  aimed: 'Прицілення — +% точн., 35% крит ×2',
 }
 const FLOAT_COLOR: Record<BattleEvent['type'], string> = {
   damage: '#c0392b', crit: '#b07850', miss: '#9b9289',
@@ -406,52 +402,35 @@ function ActionBtn({ actionKey, selected, onSelect }: {
 // ── Unit info sheet ────────────────────────────────────────────────────────────
 const CLASS_ACTIONS_INFO: Record<string, {
   actions: { key: ActionKey; extra?: string }[]
-  bonus: { icon: string; title: string; chance: string; desc: string; sub?: { label: string; desc: string }[] } | null
+  bonus: null
 }> = {
   warrior: {
     actions: [
-      { key: 'strike', extra: 'Тільки сусідні слоти в тому ж ряду' },
-      { key: 'shield' },
+      { key: 'strike', extra: 'Лише сусідні слоти в тому ж ряду. Переходить у перший доступний ряд ворога.' },
+      { key: 'shield', extra: '+50% броні до кінця цього ходу.' },
     ],
-    bonus: {
-      icon: '📯', title: 'Бойовий клич', chance: '33% після удару',
-      desc: 'Обираєш союзника — він отримує +20% урону на 2 ходи.',
-    },
+    bonus: null,
   },
   archer: {
     actions: [
-      { key: 'shot', extra: 'Будь-який ворог на полі' },
-      { key: 'aim',  extra: '20% шанс бонусу спрацьовує щоразу при пострілі' },
+      { key: 'shot', extra: 'Атакує будь-якого ворога на полі.' },
+      { key: 'aim',  extra: 'Фіксує +25–40% точності та 35% шанс крит ×2 на наступні 2 ходи.' },
     ],
-    bonus: {
-      icon: '🏹', title: 'Додатковий постріл', chance: '25% після пострілу',
-      desc: 'Обираєш будь-якого ворога — безкоштовний додатковий постріл.',
-    },
+    bonus: null,
   },
   mage: {
     actions: [
-      { key: 'spell', extra: 'Ігнорує частину захисту' },
-      { key: 'heal',  extra: 'Будь-який живий союзник' },
+      { key: 'chain_lightning', extra: 'Б\'є кожного живого ворога — повний урон кожному.' },
+      { key: 'fireball',        extra: 'Потрійний урон по одній цілі. Точність та ухилення застосовуються.' },
     ],
-    bonus: {
-      icon: '✨', title: 'Дебаф', chance: '20% після закляття',
-      desc: 'Обираєш один із трьох дебафів та ціль:',
-      sub: [
-        { label: 'Розрив',     desc: '+30% отримуваного урону — 2 ходи' },
-        { label: 'Виснаження', desc: 'Ціль ходить останньою — 2 ходи' },
-        { label: 'Слабкість',  desc: '-25% урону цілі — 2 ходи' },
-      ],
-    },
+    bonus: null,
   },
   catapult: {
     actions: [
-      { key: 'barrage', extra: 'Усі 8 сусідів (±ряд, ±слот) отримують 25–75% урону' },
-      { key: 'repair',  extra: 'Тільки на себе' },
+      { key: 'barrage',   extra: 'Усі 8 сусідів цілі (±ряд, ±слот) отримують 25–50% урону якщо влучив.' },
+      { key: 'grapeshot', extra: 'Б\'є всіх ворогів у тому ж ряду що й ціль. Урон -40% для кожного.' },
     ],
-    bonus: {
-      icon: '💥', title: 'Осколковий удар', chance: '25% після барражу',
-      desc: 'Випадковий живий ворог отримує автоматичний удар (гарантоване влучення).',
-    },
+    bonus: null,
   },
 }
 
@@ -558,44 +537,6 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
             </div>
           )}
 
-          {/* Bonus */}
-          {classInfo?.bonus && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
-                Бонусна дія
-              </div>
-              <div style={{
-                padding: '10px 12px', borderRadius: 9,
-                background: `${color}08`, border: `1px solid ${color}33`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  <span style={{ fontSize: 16 }}>{classInfo.bonus.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color }}>{classInfo.bonus.title}</span>
-                  <span style={{
-                    fontSize: 9, fontWeight: 600, color, opacity: 0.75,
-                    background: `${color}18`, padding: '2px 6px', borderRadius: 20,
-                  }}>{classInfo.bonus.chance}</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5, marginBottom: classInfo.bonus.sub ? 8 : 0 }}>
-                  {classInfo.bonus.desc}
-                </div>
-                {classInfo.bonus.sub && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {classInfo.bonus.sub.map(s => (
-                      <div key={s.label} style={{
-                        display: 'flex', gap: 6, alignItems: 'baseline',
-                        padding: '5px 8px', borderRadius: 6,
-                        background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
-                      }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color, minWidth: 80 }}>{s.label}</span>
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{s.desc}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Active buffs */}
           {unit.buffs.length > 0 && (
@@ -611,7 +552,11 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                     background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
                   }}>
                     <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{BUFF_LABEL[b.type] ?? b.type}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>
+                    {b.type === 'aimed'
+                      ? `Прицілення +${Math.round(b.value * 100)}% точн., 35% крит ×2`
+                      : (BUFF_LABEL[b.type] ?? b.type)}
+                  </span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.turnsLeft} хід.</span>
                   </div>
                 ))}
@@ -690,11 +635,9 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
   const mainActions = actor ? getMainActions(actor.class) : []
 
-  const targetIds = state.pendingPlayerBonus && actor
-    ? getBonusTargets(state.pendingPlayerBonus, actor, state.units)
-    : actor && state.selectedAction
-      ? getValidTargets(actor, state.selectedAction, state.units)
-      : []
+  const targetIds = actor && state.selectedAction
+    ? getValidTargets(actor, state.selectedAction, state.units)
+    : []
 
   // Accumulate floats
   useEffect(() => {
@@ -725,13 +668,9 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
   // AI turn trigger
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
-    if (state.pendingAIBonus) {
-      const t = setTimeout(() => dispatch({ type: 'AI_RUN_BONUS' }), 2400)
-      return () => clearTimeout(t)
-    }
     const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 2400)
     return () => clearTimeout(t)
-  }, [state.phase, state.queueIdx, state.pendingAIBonus])
+  }, [state.phase, state.queueIdx])
 
   function handleSelectAction(a: ActionKey) {
     if (state.selectedAction === a) { dispatch({ type: 'CANCEL_ACTION' }); return }
@@ -739,7 +678,6 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
   }
 
   function handleUnitClick(id: string) {
-    if (state.pendingPlayerBonus) { dispatch({ type: 'CONFIRM_BONUS_TARGET', targetId: id }); return }
     if (!state.needsTarget) return
     dispatch({ type: 'CONFIRM_TARGET', targetId: id })
   }
@@ -796,42 +734,54 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
         <ProjectileLayer battlefieldRef={battlefieldRef} events={state.events} />
 
         {/* AI side: rows 2→1→0 */}
-        <div style={{ fontSize: 10, fontWeight: 600, color: '#c07070', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
-          Ворог
-        </div>
-        {([2, 1, 0] as Row[]).map(row => (
-          <div key={row}>
-            <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 2 }}>{ROW_LABEL[row]}</div>
-            <UnitRow
-              units={state.units} side="ai" row={row}
-              activeId={actor?.side === 'ai' ? actorId : null}
-              targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-              floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-            />
+        <div style={{
+          borderRadius: 8, padding: '6px 4px 4px',
+          background: 'rgba(192,112,112,0.05)',
+          border: '1px solid rgba(192,112,112,0.08)',
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#c07070', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingLeft: 2 }}>
+            Ворог
           </div>
-        ))}
+          {([2, 1, 0] as Row[]).map(row => (
+            <div key={row}>
+              <div style={{ fontSize: 9, color: 'rgba(192,112,112,0.6)', marginBottom: 2, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
+              <UnitRow
+                units={state.units} side="ai" row={row}
+                activeId={actor?.side === 'ai' ? actorId : null}
+                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+              />
+            </div>
+          ))}
+        </div>
 
         {/* Divider */}
-        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0', position: 'relative' }}>
+        <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0', position: 'relative' }}>
           <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 16, background: '#faf8f5', padding: '0 8px', color: 'var(--muted)' }}>
             ⚔
           </div>
         </div>
 
         {/* Player side: rows 0→1→2 */}
-        {([0, 1, 2] as Row[]).map(row => (
-          <div key={row}>
-            <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 2 }}>{ROW_LABEL[row]}</div>
-            <UnitRow
-              units={state.units} side="player" row={row}
-              activeId={actor?.side === 'player' ? actorId : null}
-              targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-              floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-            />
+        <div style={{
+          borderRadius: 8, padding: '4px 4px 6px',
+          background: 'rgba(111,166,122,0.05)',
+          border: '1px solid rgba(111,166,122,0.08)',
+        }}>
+          {([0, 1, 2] as Row[]).map(row => (
+            <div key={row}>
+              <div style={{ fontSize: 9, color: 'rgba(111,166,122,0.7)', marginBottom: 2, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
+              <UnitRow
+                units={state.units} side="player" row={row}
+                activeId={actor?.side === 'player' ? actorId : null}
+                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+              />
+            </div>
+          ))}
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#7aaa82', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, paddingLeft: 2 }}>
+            Твоя армія
           </div>
-        ))}
-        <div style={{ fontSize: 10, fontWeight: 600, color: '#7aaa82', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 2 }}>
-          Твоя армія
         </div>
       </div>
 
@@ -849,44 +799,6 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
               style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
               Новий бій
             </button>
-          </div>
-
-        ) : state.pendingPlayerBonus && actor ? (
-          <div style={{ padding: '12px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8,
-              color: state.pendingPlayerBonus === 'warrior-cry' ? '#a891c4' : '#c4a040' }}>
-              {state.pendingPlayerBonus === 'warrior-cry'
-                ? `📯 ${actor.name} — оберіть союзника для бойового кличу`
-                : `🏹 ${actor.name} — оберіть ціль для додаткового пострілу`}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Натисніть на підсвіченого юніта на полі бою</div>
-            <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
-              style={{ marginTop: 8, padding: '6px 14px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
-              Пропустити бонус
-            </button>
-          </div>
-
-        ) : state.pendingDebuff && actor ? (
-          <div style={{ padding: '12px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#a891c4', marginBottom: 8 }}>
-              ✨ {actor.name} — оберіть дебаф:
-            </div>
-            {!state.needsTarget ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['debuff_rupture', 'debuff_exhaust', 'debuff_weakness'] as ActionKey[]).map(a => (
-                  <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
-                    onSelect={() => handleSelectAction(a)} />
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 13, color: '#b07850' }}>Обери ворога →</div>
-                <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
-                  style={{ padding: '8px 16px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
-                  Скасувати
-                </button>
-              </div>
-            )}
           </div>
 
         ) : isPlayerTurn && actor ? (

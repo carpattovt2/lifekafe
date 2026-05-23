@@ -3,12 +3,8 @@ export type Side = 'player' | 'ai'
 export type Row = 0 | 1 | 2
 
 export type BuffType =
-  | 'defense_up'      // warrior shield / catapult repair: +N% damage taken reduction
-  | 'damage_up'       // warrior battle cry bonus: +20% damage dealt
-  | 'aimed'           // archer aim: 20% chance per shot for +20% acc / +35% dmg
-  | 'damage_taken_up' // mage debuff Розрив: +30% damage taken
-  | 'exhausted'       // mage debuff Виснаження: goes last in next round
-  | 'weakness'        // mage debuff Слабкість: -25% damage dealt
+  | 'defense_up'  // warrior shield: +50% damage reduction this turn
+  | 'aimed'       // archer aim: fixed acc bonus + 35% crit for 2 turns
 
 export interface Buff {
   id: string
@@ -43,17 +39,14 @@ export interface GameUnit {
 }
 
 export type ActionKey =
-  | 'strike'           // warrior: melee attack
-  | 'shield'           // warrior: defense buff
-  | 'shot'             // archer: ranged attack
-  | 'aim'              // archer: aimed buff
-  | 'spell'            // mage: magic attack
-  | 'heal'             // mage: heal ally
-  | 'debuff_rupture'   // mage bonus: +30% dmg taken
-  | 'debuff_exhaust'   // mage bonus: acts last next round
-  | 'debuff_weakness'  // mage bonus: -25% dmg dealt
-  | 'barrage'          // catapult: area strike (primary + 8-direction splash 25–75%)
-  | 'repair'           // catapult: self-heal 10 HP + +20% defense 2 turns
+  | 'strike'          // warrior: melee attack (adjacent slots, same row)
+  | 'shield'          // warrior: +50% defense this turn
+  | 'shot'            // archer: ranged attack any enemy
+  | 'aim'             // archer: +25–40% acc + 35% crit ×2 for 2 turns
+  | 'chain_lightning' // mage: hits all enemies, full damage each
+  | 'fireball'        // mage: ×3 damage to single target
+  | 'barrage'         // catapult: area strike, adjacents get 25–50% damage
+  | 'grapeshot'       // catapult: all enemies in same row, -40% damage
 
 export interface ActionDef {
   key: ActionKey
@@ -76,7 +69,7 @@ export interface BattleEvent {
   unitId: string
   text: string
   type: 'damage' | 'crit' | 'miss' | 'evade' | 'heal' | 'buff' | 'debuff'
-  sourceId?: string  // attacker/caster unit ID — used to spawn projectile
+  sourceId?: string
 }
 
 export interface BattleState {
@@ -90,19 +83,14 @@ export interface BattleState {
 
   selectedAction: ActionKey | null
   needsTarget: boolean
-  pendingDebuff: boolean        // mage bonus: waiting for player to pick debuff + target
-  pendingPlayerBonus: 'warrior-cry' | 'archer-shot' | null  // player picks bonus target
-  pendingAIBonus: string | null // actorId when AI bonus triggered, deferred for visual delay
   events: BattleEvent[]
 }
 
 export type BattleAction =
   | { type: 'SELECT_ACTION'; action: ActionKey }
   | { type: 'CONFIRM_TARGET'; targetId: string }
-  | { type: 'CONFIRM_BONUS_TARGET'; targetId: string }
   | { type: 'CANCEL_ACTION' }
   | { type: 'AI_TAKE_TURN' }
-  | { type: 'AI_RUN_BONUS' }
   | { type: 'ADVANCE_QUEUE' }
 
 export interface ArmyCounts {
