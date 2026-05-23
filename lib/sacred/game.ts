@@ -1,6 +1,6 @@
 import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
-  ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
+  ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase, ActionCategory,
 } from './types'
 
 // ── Morale modifier ────────────────────────────────────────────────────────────
@@ -12,24 +12,25 @@ function moraleBonus(morale: number): number {
 // ── Unit templates ─────────────────────────────────────────────────────────────
 type Template = Omit<GameUnit, 'id'|'side'|'row'|'slot'|'name'|'buffs'|'hasActed'>
 
+// ── Variant A stats ────────────────────────────────────────────────────────────
 const TEMPLATES: Record<UnitClass, Template> = {
   warrior: {
-    class: 'warrior', hp: 100, maxHp: 100,
-    minDmg: 10, maxDmg: 12, accuracy: 0.75, defense: 0.10,
+    class: 'warrior', hp: 75, maxHp: 75,
+    minDmg: 14, maxDmg: 18, accuracy: 0.75, defense: 0.10,
     initiative: 50, morale: 50,
     critChance: 0.10, critMult: 1.5, counter: 0.10, evasion: 0.05,
   },
   archer: {
-    class: 'archer', hp: 60, maxHp: 60,
-    minDmg: 14, maxDmg: 18, accuracy: 0.60, defense: 0.05,
+    class: 'archer', hp: 55, maxHp: 55,
+    minDmg: 18, maxDmg: 24, accuracy: 0.60, defense: 0.05,
     initiative: 65, morale: 50,
     critChance: 0.05, critMult: 3.0, counter: 0, evasion: 0.15,
   },
   mage: {
     class: 'mage', hp: 50, maxHp: 50,
-    minDmg: 8, maxDmg: 9, accuracy: 0.50, defense: 0,
+    minDmg: 10, maxDmg: 14, accuracy: 0.50, defense: 0,
     initiative: 40, morale: 50,
-    critChance: 0.80, critMult: 2.0, counter: 0, evasion: 0.35,
+    critChance: 0.75, critMult: 2.0, counter: 0, evasion: 0.35,
   },
 }
 
@@ -318,6 +319,12 @@ export function aiDecide(actor: GameUnit, state: BattleState): { action: ActionK
 }
 
 // ── Action definitions ─────────────────────────────────────────────────────────
+export const ACTION_CATEGORY: Record<ActionKey, ActionCategory> = {
+  strike: 'primary', shot: 'primary', cover_shot: 'primary', spell: 'primary',
+  shield: 'secondary', aim: 'secondary', ally_shield: 'secondary', debuff: 'secondary',
+  battle_cry: 'bonus', heal: 'bonus',
+}
+
 export const ACTIONS: Record<ActionKey, ActionDef> = {
   strike:     { key: 'strike',     label: 'Удар',           desc: 'Атака ворога в ближньому бою',            targetSide: 'ai',   },
   shield:     { key: 'shield',     label: 'Щит',            desc: '+15% захисту цей хід',                    targetSide: null,   },
@@ -338,21 +345,40 @@ export function getActorActions(cls: UnitClass): { primary: ActionKey[]; seconda
 }
 
 // ── Initial state ──────────────────────────────────────────────────────────────
+const TURN_RESET = { usedPrimary: false, usedSecondary: false, usedBonus: false, selectedAction: null, needsTarget: false }
+
 export function createInitialState(): BattleState {
   const units = [...buildArmy('player'), ...buildArmy('ai')]
   const queue = buildQueue(units)
   const firstId = queue[0]
   const first = units.find(u => u.id === firstId)!
   return {
-    units,
-    queue,
-    queueIdx: 0,
+    units, queue, queueIdx: 0,
     phase: first.side === 'player' ? 'player-turn' : 'ai-thinking',
     winner: null,
     log: [{ id: ++_logId, text: '⚔ Бій починається!', type: 'info' }],
     round: 1,
-    selectedAction: null,
-    needsTarget: false,
+    ...TURN_RESET,
+  }
+}
+
+// Check if current actor still has actions available
+function hasRemainingActions(state: BattleState, actorClass: UnitClass): boolean {
+  const { primary, secondary, bonus } = getActorActions(actorClass)
+  if (primary.length > 0 && !state.usedPrimary) return true
+  if (secondary.length > 0 && !state.usedSecondary) return true
+  if (bonus.length > 0 && !state.usedBonus) return true
+  return false
+}
+
+// Mark the used category after executing an action
+function markUsed(state: BattleState, action: ActionKey): BattleState {
+  const cat = ACTION_CATEGORY[action]
+  return {
+    ...state,
+    usedPrimary:   cat === 'primary'   ? true : state.usedPrimary,
+    usedSecondary: cat === 'secondary' ? true : state.usedSecondary,
+    usedBonus:     cat === 'bonus'     ? true : state.usedBonus,
   }
 }
 
@@ -368,10 +394,11 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const targets = getValidTargets(actor, a, state.units)
       const needsTarget = ACTIONS[a].targetSide !== null && targets.length > 0
 
-      // Self-targeting actions execute immediately
+      // Self-targeting: execute immediately
       if (!needsTarget) {
         const { units, newLogs } = executeAction(state, actor, a, null)
-        return advanceQueue({ ...state, units, log: [...state.log, ...newLogs] })
+        const next = markUsed({ ...state, units, log: [...state.log, ...newLogs], selectedAction: null, needsTarget: false }, a)
+        return hasRemainingActions(next, actor.class) ? next : advanceQueue(next)
       }
 
       return { ...state, selectedAction: a, needsTarget: true }
@@ -383,17 +410,54 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
     case 'CONFIRM_TARGET': {
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])!
       if (!state.selectedAction) return state
-      const { units, newLogs } = executeAction(state, actor, state.selectedAction, action.targetId)
-      return advanceQueue({ ...state, units, log: [...state.log, ...newLogs], selectedAction: null, needsTarget: false })
+      const a = state.selectedAction
+      const { units, newLogs } = executeAction(state, actor, a, action.targetId)
+      const next = markUsed({ ...state, units, log: [...state.log, ...newLogs], selectedAction: null, needsTarget: false }, a)
+      return hasRemainingActions(next, actor.class) ? next : advanceQueue(next)
     }
+
+    case 'END_TURN':
+      return advanceQueue({ ...state, selectedAction: null, needsTarget: false })
 
     case 'AI_TAKE_TURN': {
       const actorId = state.queue[state.queueIdx]
       const actor = state.units.find(u => u.id === actorId)
       if (!actor || actor.hp === 0 || actor.side !== 'ai') return advanceQueue(state)
-      const { action: aiAction, targetId } = aiDecide(actor, state)
-      const { units, newLogs } = executeAction(state, actor, aiAction, targetId)
-      return advanceQueue({ ...state, units, log: [...state.log, ...newLogs] })
+
+      // AI uses all available actions in sequence
+      let cur: BattleState = { ...state }
+      const actorRef = actor
+
+      const tryAction = (actionKey: ActionKey, s: BattleState): BattleState => {
+        const freshActor = s.units.find(u => u.id === actorRef.id)
+        if (!freshActor || freshActor.hp === 0) return s
+        const { action: act, targetId } = aiDecide(freshActor, s)
+        // Use the requested action type if possible
+        const usedAction = actionKey === act ? act : actionKey
+        const targets = getValidTargets(freshActor, usedAction, s.units)
+        const tid = ACTIONS[usedAction].targetSide !== null ? (targets[0] ?? null) : null
+        if (ACTIONS[usedAction].targetSide !== null && !tid) return s
+        const { units, newLogs } = executeAction(s, freshActor, usedAction, tid)
+        return markUsed({ ...s, units, log: [...s.log, ...newLogs] }, usedAction)
+      }
+
+      const { primary, secondary, bonus } = getActorActions(actorRef.class)
+      // Pick best primary
+      const { action: bestPrimary } = aiDecide(actor, cur)
+      if (primary.length && !cur.usedPrimary) {
+        const act = primary.includes(bestPrimary) ? bestPrimary : primary[0]
+        cur = tryAction(act, cur)
+      }
+      if (secondary.length && !cur.usedSecondary) {
+        const { action: bestSec } = aiDecide(cur.units.find(u=>u.id===actorRef.id)??actor, cur)
+        const act = secondary.includes(bestSec) ? bestSec : secondary[0]
+        cur = tryAction(act, cur)
+      }
+      if (bonus.length && !cur.usedBonus) {
+        cur = tryAction(bonus[0], cur)
+      }
+
+      return advanceQueue(cur)
     }
 
     case 'ADVANCE_QUEUE':
@@ -437,5 +501,5 @@ function advanceQueue(state: BattleState): BattleState {
   const next = units.find(u => u.id === nextId)
   const phase: Phase = next?.side === 'player' ? 'player-turn' : 'ai-thinking'
 
-  return { ...state, units, queue, queueIdx: idx, round, phase, selectedAction: null, needsTarget: false }
+  return { ...state, units, queue, queueIdx: idx, round, phase, ...TURN_RESET }
 }

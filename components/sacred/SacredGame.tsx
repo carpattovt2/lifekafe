@@ -4,7 +4,7 @@ import { useReducer, useEffect, useRef } from 'react'
 import {
   createInitialState, battleReducer, getActorActions, getValidTargets, ACTIONS,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ActionCategory } from '@/lib/sacred/types'
 
 // ── Colour palette ────────────────────────────────────────────────────────────
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
@@ -180,20 +180,24 @@ function BattleLog({ entries }: { entries: LogEntry[] }) {
 }
 
 // ── Action button ─────────────────────────────────────────────────────────────
-function ActionBtn({ actionKey, selected, onSelect }: { actionKey: ActionKey; selected: boolean; onSelect: () => void }) {
+function ActionBtn({ actionKey, selected, used, onSelect }: {
+  actionKey: ActionKey; selected: boolean; used: boolean; onSelect: () => void
+}) {
   const def = ACTIONS[actionKey]
   return (
     <button
-      onClick={onSelect}
+      onClick={used ? undefined : onSelect}
       style={{
-        padding: '10px 14px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-        background: selected ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.06)',
-        border: `1px solid ${selected ? '#ffd700' : 'rgba(255,255,255,0.12)'}`,
-        color: 'var(--text)', transition: 'all 0.15s', flex: '1 1 140px', minWidth: 0,
+        padding: '10px 14px', borderRadius: 8, cursor: used ? 'not-allowed' : 'pointer', textAlign: 'left',
+        background: used ? 'rgba(255,255,255,0.03)' : selected ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.06)',
+        border: `1px solid ${used ? 'rgba(255,255,255,0.06)' : selected ? '#ffd700' : 'rgba(255,255,255,0.14)'}`,
+        color: used ? 'rgba(255,255,255,0.25)' : 'var(--text)',
+        transition: 'all 0.15s', flex: '1 1 140px', minWidth: 0,
+        position: 'relative', overflow: 'hidden',
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{def.label}</div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>{def.desc}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{def.label} {used ? '✓' : ''}</div>
+      <div style={{ fontSize: 11, color: used ? 'rgba(255,255,255,0.2)' : 'var(--muted)', lineHeight: 1.4 }}>{def.desc}</div>
     </button>
   )
 }
@@ -324,7 +328,8 @@ export default function SacredGame() {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 10, color: 'var(--muted)', width: '100%', fontWeight: 600 }}>🗡 Основна дія</div>
                 {actorActions.primary.map(a => (
-                  <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a} onSelect={() => handleSelectAction(a)} />
+                  <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
+                    used={state.usedPrimary} onSelect={() => handleSelectAction(a)} />
                 ))}
               </div>
               {/* Secondary */}
@@ -332,7 +337,8 @@ export default function SacredGame() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 10, color: 'var(--muted)', width: '100%', fontWeight: 600 }}>🛡 Додаткова дія</div>
                   {actorActions.secondary.map(a => (
-                    <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a} onSelect={() => handleSelectAction(a)} />
+                    <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
+                      used={state.usedSecondary} onSelect={() => handleSelectAction(a)} />
                   ))}
                 </div>
               )}
@@ -341,10 +347,18 @@ export default function SacredGame() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 10, color: 'var(--muted)', width: '100%', fontWeight: 600 }}>⭐ Бонусна дія</div>
                   {actorActions.bonus.map(a => (
-                    <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a} onSelect={() => handleSelectAction(a)} />
+                    <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
+                      used={state.usedBonus} onSelect={() => handleSelectAction(a)} />
                   ))}
                 </div>
               )}
+              {/* End turn */}
+              <button
+                onClick={() => dispatch({ type: 'END_TURN' })}
+                style={{ padding: '9px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12, marginTop: 2 }}
+              >
+                Завершити хід →
+              </button>
             </div>
           ) : (
             <button

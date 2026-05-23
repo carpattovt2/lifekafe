@@ -69,6 +69,7 @@ export interface LogEntry {
 }
 
 export type Phase = 'player-turn' | 'ai-thinking' | 'game-over'
+export type ActionCategory = 'primary' | 'secondary' | 'bonus'
 
 export interface BattleState {
   units: GameUnit[]
@@ -80,7 +81,12 @@ export interface BattleState {
   round: number
 
   selectedAction: ActionKey | null
-  needsTarget: boolean   // waiting for player to click a target
+  needsTarget: boolean
+
+  // Multi-action tracking for current actor's turn
+  usedPrimary: boolean
+  usedSecondary: boolean
+  usedBonus: boolean
 }
 
 export type BattleAction =
@@ -88,4 +94,5 @@ export type BattleAction =
   | { type: 'CONFIRM_TARGET'; targetId: string | null }
   | { type: 'CANCEL_ACTION' }
   | { type: 'AI_TAKE_TURN' }
+  | { type: 'END_TURN' }
   | { type: 'ADVANCE_QUEUE' }
