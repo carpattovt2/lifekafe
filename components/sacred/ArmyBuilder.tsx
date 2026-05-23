@@ -10,6 +10,7 @@ const CLASS_INFO = [
     label: 'Воїни',
     row: 'Передній ряд',
     max: 4,
+    unitCost: 1,
     color: '#c07070',
     desc: 'Ближній бій. Удар або щит. Шанс 33% бойового кличу союзнику.',
   },
@@ -19,6 +20,7 @@ const CLASS_INFO = [
     label: 'Лучники',
     row: 'Дальній ряд',
     max: 3,
+    unitCost: 1,
     color: '#c4a040',
     desc: 'Постріл або прицілення (+20% шанс бонусу на 3 ходи). Шанс 25% додаткового пострілу.',
   },
@@ -28,8 +30,19 @@ const CLASS_INFO = [
     label: 'Маги',
     row: 'Підтримка',
     max: 2,
+    unitCost: 1,
     color: '#7ea8c4',
     desc: 'Закляття або зцілення. Шанс 20% накласти дебаф на ворога (вибір гравця).',
+  },
+  {
+    key: 'catapults' as const,
+    icon: '⚙',
+    label: 'Катапульта',
+    row: 'Дальній + Підтримка',
+    max: 1,
+    unitCost: 2,
+    color: '#8060a8',
+    desc: 'Займає 2 слоти. Бараж по площі або ремонт. Шанс 25% осколкового удару після барражу.',
   },
 ]
 
@@ -38,18 +51,25 @@ interface Props {
 }
 
 export default function ArmyBuilder({ onStart }: Props) {
-  const [counts, setCounts] = useState<ArmyCounts>({ warriors: 2, archers: 2, mages: 1 })
+  const [counts, setCounts] = useState<ArmyCounts>({ warriors: 2, archers: 2, mages: 1, catapults: 0 })
 
   const MAX_TOTAL = 6
-  const total = counts.warriors + counts.archers + counts.mages
+  const total = counts.warriors + counts.archers + counts.mages + counts.catapults * 2
 
   function change(key: keyof ArmyCounts, delta: number) {
-    const info = CLASS_INFO.find(c => c.key === key)!
     setCounts(prev => {
-      const next = Math.max(0, Math.min(info.max, prev[key] + delta))
-      const newTotal = total - prev[key] + next
-      if (delta > 0 && newTotal > MAX_TOTAL) return prev
-      return { ...prev, [key]: next }
+      const prevTotal = prev.warriors + prev.archers + prev.mages + prev.catapults * 2
+      const effectiveMax = key === 'archers' ? (prev.catapults > 0 ? 2 : 3)
+        : CLASS_INFO.find(c => c.key === key)!.max
+      const unitCost = CLASS_INFO.find(c => c.key === key)!.unitCost
+      const prevCost = key === 'catapults' ? prev[key] * 2 : prev[key]
+      const next = Math.max(0, Math.min(effectiveMax, prev[key] + delta))
+      if (next === prev[key]) return prev
+      const nextCost = key === 'catapults' ? next * 2 : next
+      if (prevTotal - prevCost + nextCost > MAX_TOTAL) return prev
+      const newCounts = { ...prev, [key]: next }
+      if (key === 'catapults' && next > 0 && prev.archers > 2) newCounts.archers = 2
+      return newCounts
     })
   }
 
@@ -70,6 +90,8 @@ export default function ArmyBuilder({ onStart }: Props) {
       <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {CLASS_INFO.map(info => {
           const count = counts[info.key]
+          const effectiveMax = info.key === 'archers' ? (counts.catapults > 0 ? 2 : 3) : info.max
+          const canAdd = count < effectiveMax && total + info.unitCost <= MAX_TOTAL
           return (
             <div key={info.key} style={{
               padding: '16px 18px',
@@ -93,7 +115,9 @@ export default function ArmyBuilder({ onStart }: Props) {
                   <div style={{ fontSize: 15, fontWeight: 700, color: count > 0 ? info.color : 'var(--text)' }}>
                     {info.label}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{info.row} · max {info.max}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                    {info.row} · max {effectiveMax}{info.unitCost > 1 ? ` · займає ${info.unitCost} слоти` : ''}
+                  </div>
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: count > 0 ? info.color : 'rgba(0,0,0,0.15)', fontVariantNumeric: 'tabular-nums', minWidth: 24, textAlign: 'right' }}>
                   {count}
@@ -116,12 +140,12 @@ export default function ArmyBuilder({ onStart }: Props) {
                 >−</button>
 
                 <div style={{ display: 'flex', gap: 6, flex: 1, justifyContent: 'center' }}>
-                  {Array.from({ length: info.max }, (_, i) => {
+                  {Array.from({ length: effectiveMax }, (_, i) => {
                     const filled = i < count
                     return (
                       <div
                         key={i}
-                        onClick={() => filled ? change(info.key, -(count - i)) : (total < MAX_TOTAL || count > i) && change(info.key, i + 1 - count)}
+                        onClick={() => filled ? change(info.key, -(count - i)) : canAdd && change(info.key, i + 1 - count)}
                         style={{
                           width: 42, height: 42, borderRadius: 10,
                           border: `2px solid ${filled ? info.color : 'rgba(0,0,0,0.1)'}`,
@@ -142,13 +166,13 @@ export default function ArmyBuilder({ onStart }: Props) {
 
                 <button
                   onClick={() => change(info.key, +1)}
-                  disabled={count >= info.max || total >= MAX_TOTAL}
+                  disabled={!canAdd}
                   style={{
                     width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                    border: `1px solid ${count < info.max && total < MAX_TOTAL ? info.color : 'rgba(0,0,0,0.1)'}`,
-                    background: count < info.max && total < MAX_TOTAL ? `${info.color}18` : 'transparent',
-                    color: count < info.max && total < MAX_TOTAL ? info.color : 'rgba(0,0,0,0.2)',
-                    fontSize: 20, cursor: count >= info.max || total >= MAX_TOTAL ? 'not-allowed' : 'pointer',
+                    border: `1px solid ${canAdd ? info.color : 'rgba(0,0,0,0.1)'}`,
+                    background: canAdd ? `${info.color}18` : 'transparent',
+                    color: canAdd ? info.color : 'rgba(0,0,0,0.2)',
+                    fontSize: 20, cursor: canAdd ? 'pointer' : 'not-allowed',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
                 >+</button>
@@ -172,7 +196,7 @@ export default function ArmyBuilder({ onStart }: Props) {
           background: 'rgba(0,0,0,0.03)',
           border: '1px solid rgba(0,0,0,0.07)',
         }}>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Загалом бійців</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Використано слотів</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: total === MAX_TOTAL ? '#5a9a6a' : total > 0 ? '#b07850' : 'rgba(0,0,0,0.2)' }}>
             {total} / {MAX_TOTAL}
           </div>
@@ -193,7 +217,7 @@ export default function ArmyBuilder({ onStart }: Props) {
             transition: 'background 0.2s',
           }}
         >
-          {total > 0 ? `⚔ До бою! (${total} бійців)` : 'Додайте хоча б одного бійця'}
+          {total > 0 ? `⚔ До бою! (${counts.warriors + counts.archers + counts.mages + counts.catapults} юнітів)` : 'Додайте хоча б одного бійця'}
         </button>
       </div>
     </div>

@@ -1,9 +1,9 @@
-export type UnitClass = 'warrior' | 'archer' | 'mage'
+export type UnitClass = 'warrior' | 'archer' | 'mage' | 'catapult'
 export type Side = 'player' | 'ai'
 export type Row = 0 | 1 | 2
 
 export type BuffType =
-  | 'defense_up'      // warrior shield: -15% damage taken
+  | 'defense_up'      // warrior shield / catapult repair: +N% damage taken reduction
   | 'damage_up'       // warrior battle cry bonus: +20% damage dealt
   | 'aimed'           // archer aim: 20% chance per shot for +20% acc / +35% dmg
   | 'damage_taken_up' // mage debuff Розрив: +30% damage taken
@@ -52,6 +52,8 @@ export type ActionKey =
   | 'debuff_rupture'   // mage bonus: +30% dmg taken
   | 'debuff_exhaust'   // mage bonus: acts last next round
   | 'debuff_weakness'  // mage bonus: -25% dmg dealt
+  | 'barrage'          // catapult: area strike (primary + 8-direction splash 25–75%)
+  | 'repair'           // catapult: self-heal 10 HP + +20% defense 2 turns
 
 export interface ActionDef {
   key: ActionKey
@@ -104,7 +106,8 @@ export type BattleAction =
   | { type: 'ADVANCE_QUEUE' }
 
 export interface ArmyCounts {
-  warriors: number  // 0–4, row 0
-  archers: number   // 0–3, row 1
-  mages: number     // 0–2, row 2
+  warriors: number   // 0–4, row 0
+  archers: number    // 0–2, row 1 (max 2 when catapult present)
+  mages: number      // 0–2, row 2
+  catapults: number  // 0–1, row 1 slot 2 + row 2 slot 2 base; counts as 2 units
 }

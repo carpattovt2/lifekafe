@@ -12,7 +12,7 @@ const TEMPLATES: Record<UnitClass, Template> = {
     class: 'warrior', hp: 75, maxHp: 75,
     minDmg: 14, maxDmg: 18, accuracy: 0.75, defense: 0.10,
     initiative: 50, morale: 50,
-    critChance: 0.10, critMult: 1.5, counter: 0.10, evasion: 0.05,
+    critChance: 0.10, critMult: 1.5, counter: 0, evasion: 0.05,
   },
   archer: {
     class: 'archer', hp: 55, maxHp: 55,
@@ -26,9 +26,17 @@ const TEMPLATES: Record<UnitClass, Template> = {
     initiative: 40, morale: 50,
     critChance: 0.75, critMult: 2.0, counter: 0, evasion: 0.35,
   },
+  catapult: {
+    class: 'catapult', hp: 95, maxHp: 95,
+    minDmg: 22, maxDmg: 32, accuracy: 0.55, defense: 0.15,
+    initiative: 28, morale: 50,
+    critChance: 0.08, critMult: 1.8, counter: 0, evasion: 0,
+  },
 }
 
-const CLASS_LABEL: Record<UnitClass, string> = { warrior: 'Воїн', archer: 'Лучник', mage: 'Маг' }
+const CLASS_LABEL: Record<UnitClass, string> = {
+  warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта',
+}
 const ROMAN = ['I', 'II', 'III', 'IV']
 
 let _uid = 0
@@ -36,21 +44,24 @@ function uid() { return `u${++_uid}` }
 
 function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number): GameUnit {
   const prefix = side === 'ai' ? 'Вор.' : ''
-  const name = `${prefix}${CLASS_LABEL[cls]} ${ROMAN[slot] ?? slot + 1}`
+  const label = cls === 'catapult' ? 'Катапульта' : `${CLASS_LABEL[cls]} ${ROMAN[slot] ?? slot + 1}`
+  const name = `${prefix}${label}`
   return { ...TEMPLATES[cls], id: uid(), side, row, slot, hasActed: false, buffs: [], name }
 }
 
 // ── Army builders ──────────────────────────────────────────────────────────────
+// Catapult always occupies row 1 slot 2 and derives a "base" in row 2 slot 2.
 export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
   const units: GameUnit[] = []
-  for (let i = 0; i < counts.warriors; i++) units.push(makeUnit('warrior', side, 0, i))
-  for (let i = 0; i < counts.archers;  i++) units.push(makeUnit('archer',  side, 1, i))
-  for (let i = 0; i < counts.mages;    i++) units.push(makeUnit('mage',    side, 2, i))
+  for (let i = 0; i < counts.warriors;  i++) units.push(makeUnit('warrior',  side, 0, i))
+  for (let i = 0; i < counts.archers;   i++) units.push(makeUnit('archer',   side, 1, i))
+  if ((counts.catapults ?? 0) > 0)           units.push(makeUnit('catapult', side, 1, 2))
+  for (let i = 0; i < counts.mages;     i++) units.push(makeUnit('mage',     side, 2, i))
   return units
 }
 
 export function buildDefaultAIArmy(): GameUnit[] {
-  return buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'ai')
+  return buildCustomArmy({ warriors: 2, archers: 1, mages: 1, catapults: 1 }, 'ai')
 }
 
 // ── Initiative queue ───────────────────────────────────────────────────────────
@@ -78,18 +89,27 @@ function tickBuffs(unit: GameUnit): GameUnit {
 }
 
 // ── Front-line shield bonus ────────────────────────────────────────────────────
-// If the defender's side has living units in row 0, rows 1 and 2 get +20% defense.
 function frontLineBonus(def: GameUnit, units: GameUnit[]): number {
   if (def.row === 0) return 0
   const frontAlive = units.some(u => u.side === def.side && u.hp > 0 && u.row === 0)
   return frontAlive ? 0.20 : 0
 }
 
+// ── Adjacent units (3D grid: row ±1, slot ±1) ─────────────────────────────────
+function getAdjacentEnemies(target: GameUnit, units: GameUnit[], enemySide: Side): GameUnit[] {
+  return units.filter(u => {
+    if (u.side !== enemySide || u.hp === 0 || u.id === target.id) return false
+    return Math.abs(u.row - target.row) <= 1 && Math.abs(u.slot - target.slot) <= 1
+  })
+}
+
 // ── Combat ─────────────────────────────────────────────────────────────────────
 let _logId = 0
 let _evId  = 0
 function log(text: string, type: LogEntry['type']): LogEntry { return { id: ++_logId, text, type } }
-function ev(unitId: string, text: string, type: BattleEvent['type'], sourceId?: string): BattleEvent { return { id: ++_evId, unitId, text, type, sourceId } }
+function ev(unitId: string, text: string, type: BattleEvent['type'], sourceId?: string): BattleEvent {
+  return { id: ++_evId, unitId, text, type, sourceId }
+}
 
 interface AttackResult {
   hit: boolean; evaded: boolean; crit: boolean; damage: number
@@ -104,7 +124,6 @@ function resolveAttack(
   const logs: LogEntry[] = []
   const events: BattleEvent[] = []
 
-  // Aimed buff: 20% chance to activate +20% acc / +35% dmg
   const aimedBuff = atk.buffs.find(b => b.type === 'aimed')
   if (aimedBuff && Math.random() < 0.20) {
     accBonus += 0.20
@@ -112,7 +131,6 @@ function resolveAttack(
     logs.push(log(`🎯 Прицільний постріл активовано!`, 'buff'))
   }
 
-  // Hit check
   const acc = Math.min(0.97, atk.accuracy + accBonus)
   if (Math.random() > acc) {
     logs.push(log(`${atk.name} промахується!`, 'miss'))
@@ -120,33 +138,22 @@ function resolveAttack(
     return { hit: false, evaded: false, crit: false, damage: 0, logs, events }
   }
 
-  // Evasion check
   if (Math.random() < def.evasion) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
     events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
   }
 
-  // Base damage
   let dmg = (atk.minDmg + Math.random() * (atk.maxDmg - atk.minDmg)) * dmgMult
-
-  // damage_up buff (battle cry)
   dmg *= (1 + getBuffValue(atk, 'damage_up'))
-
-  // weakness debuff on attacker
   dmg *= (1 - getBuffValue(atk, 'weakness'))
 
-  // Crit
   const isCrit = Math.random() < atk.critChance
   if (isCrit) dmg *= atk.critMult
 
-  // Defense: base + shield buff + front-line bonus
   const defTotal = def.defense + getBuffValue(def, 'defense_up') + frontLineBonus(def, units)
   dmg *= (1 - Math.max(0, defTotal))
-
-  // Розрив debuff
   dmg *= (1 + getBuffValue(def, 'damage_taken_up'))
-
   dmg = Math.max(1, Math.round(dmg))
 
   if (isCrit) {
@@ -166,13 +173,10 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
   const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
 
   if (action === 'strike') {
-    // Find the front-most enemy row that has living units
     for (const r of [0, 1, 2] as Row[]) {
       const row = living(enemySide).filter(u => u.row === r)
       if (!row.length) continue
-      // Restrict to slots adjacent to the attacker's slot (slot N-1, N, N+1)
       const reachable = row.filter(u => Math.abs(u.slot - actor.slot) <= 1)
-      // If none in range (e.g. all opponents are far slots), allow nearest edge unit
       if (reachable.length) return reachable.map(u => u.id)
       const nearest = row.sort((a, b) => Math.abs(a.slot - actor.slot) - Math.abs(b.slot - actor.slot))[0]
       return [nearest.id]
@@ -180,7 +184,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'spell', 'debuff_rupture', 'debuff_exhaust', 'debuff_weakness'].includes(action)) {
+  if (['shot', 'spell', 'debuff_rupture', 'debuff_exhaust', 'debuff_weakness', 'barrage'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 
@@ -217,11 +221,57 @@ export function executeAction(
       break
     }
 
+    case 'barrage': {
+      if (!target) break
+      const res = resolveAttack(actor, target, units)
+      newLogs.push(...res.logs)
+      newEvents.push(...res.events)
+      if (res.damage > 0) {
+        const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
+        update(updated)
+        if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      // Splash damage to adjacent enemies (25–75% damage, very high hit chance)
+      if (res.hit && !res.evaded) {
+        const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
+        const adjacent = getAdjacentEnemies(target, units, enemySide)
+        for (const adjInit of adjacent) {
+          const adj = getUnit(adjInit.id)
+          if (adj.hp === 0) continue
+          const splashMult = 0.25 + Math.random() * 0.50
+          const splashRes = resolveAttack(actor, adj, units, {
+            dmgMult: splashMult,
+            accBonus: Math.max(0, 1 - actor.accuracy),  // splash almost always hits
+          })
+          newLogs.push(...splashRes.logs)
+          newEvents.push(...splashRes.events)
+          if (splashRes.damage > 0) {
+            const adjUp = { ...adj, hp: Math.max(0, adj.hp - splashRes.damage) }
+            update(adjUp)
+            if (adjUp.hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
+          }
+        }
+      }
+      break
+    }
+
     case 'shield': {
       const a = getUnit(actor.id)
       update({ ...a, buffs: [...a.buffs, makeBuff('defense_up', 0.50, 1)] })
       newLogs.push(log(`🛡 ${actor.name} піднімає щит (+50% захисту)`, 'buff'))
       newEvents.push(ev(actor.id, '🛡 +50%', 'buff'))
+      break
+    }
+
+    case 'repair': {
+      const a = getUnit(actor.id)
+      const before = a.hp
+      const healed = Math.min(a.maxHp, a.hp + 10)
+      const amt = healed - before
+      update({ ...a, hp: healed, buffs: [...a.buffs, makeBuff('defense_up', 0.20, 2)] })
+      newLogs.push(log(`🔧 ${actor.name} — ремонт (+${amt} HP, +20% захист 2 ходи)`, 'buff'))
+      newEvents.push(ev(actor.id, `🔧 +${amt}`, 'heal'))
+      newEvents.push(ev(actor.id, '🛡 +20%', 'buff'))
       break
     }
 
@@ -273,10 +323,7 @@ export function executeAction(
 }
 
 // ── Auto-bonus after player action ────────────────────────────────────────────
-// Warrior / archer: pause for player to pick a target.
-// Mage: pause for player to pick debuff type + target.
-// Events merged with state.events so main-action floats persist.
-function handleAutoBonus(state: BattleState, actorId: string): BattleState {
+function handleAutoBonus(state: BattleState, actorId: string, triggeredAction?: ActionKey): BattleState {
   const actor = state.units.find(u => u.id === actorId)
   if (!actor || actor.hp === 0) return state
 
@@ -299,6 +346,29 @@ function handleAutoBonus(state: BattleState, actorId: string): BattleState {
   if (actor.class === 'mage' && Math.random() < 0.20) {
     const msg = log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff')
     return { ...state, log: [...state.log, msg], events: [...state.events], pendingDebuff: true }
+  }
+
+  // Catapult shrapnel — auto, fires immediately, only after barrage
+  if (actor.class === 'catapult' && triggeredAction === 'barrage' && Math.random() < 0.25) {
+    const enemies = state.units.filter(u => u.side !== actor.side && u.hp > 0)
+    if (enemies.length > 0) {
+      const randEnemy = enemies[Math.floor(Math.random() * enemies.length)]
+      const freshActor = state.units.find(u => u.id === actorId)!
+      const res = resolveAttack(freshActor, randEnemy, state.units)
+      const newUnits = res.damage > 0
+        ? state.units.map(u => u.id === randEnemy.id ? { ...u, hp: Math.max(0, u.hp - res.damage) } : u)
+        : state.units
+      const deathLogs = newUnits.find(u => u.id === randEnemy.id)?.hp === 0
+        ? [log(`☠ ${randEnemy.name} гине!`, 'death')]
+        : []
+      const msgLog = log(`💥 ${actor.name} — осколок по ${randEnemy.name}!`, 'attack')
+      return {
+        ...state,
+        units: newUnits,
+        log: [...state.log, msgLog, ...res.logs, ...deathLogs],
+        events: [...state.events, ...res.events],
+      }
+    }
   }
 
   return state
@@ -332,6 +402,20 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     return { action: 'spell', targetId: weakestPlayer?.id ?? null }
   }
 
+  if (actor.class === 'catapult') {
+    if (actor.hp < actor.maxHp * 0.40 && Math.random() < 0.60) return { action: 'repair', targetId: null }
+    if (!playerUnits.length) return { action: 'repair', targetId: null }
+    // Pick enemy with most adjacent enemies to maximize splash
+    const scored = playerUnits.map(e => ({
+      id: e.id,
+      score: playerUnits.filter(o => o.id !== e.id
+        && Math.abs(o.row - e.row) <= 1
+        && Math.abs(o.slot - e.slot) <= 1).length,
+    }))
+    const best = scored.reduce((a, b) => a.score >= b.score ? a : b)
+    return { action: 'barrage', targetId: best.id }
+  }
+
   return { action: 'strike', targetId: weakestPlayer?.id ?? null }
 }
 
@@ -346,6 +430,8 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   debuff_rupture:  { key: 'debuff_rupture',  label: 'Розрив',     desc: '+30% урону по цілі (2 ходи)',               needsTarget: true,  targetSide: 'ai'   },
   debuff_exhaust:  { key: 'debuff_exhaust',  label: 'Виснаження', desc: 'Ціль ходить останньою (2 ходи)',            needsTarget: true,  targetSide: 'ai'   },
   debuff_weakness: { key: 'debuff_weakness', label: 'Слабкість',  desc: '-25% урону цілі (2 ходи)',                  needsTarget: true,  targetSide: 'ai'   },
+  barrage:         { key: 'barrage',         label: 'Бараж',      desc: 'Удар по площі — сусіди отримують 25–75%',  needsTarget: true,  targetSide: 'ai'   },
+  repair:          { key: 'repair',          label: 'Ремонт',     desc: '+10 HP та +20% захист на 2 ходи',           needsTarget: false, targetSide: null   },
 }
 
 export function getBonusTargets(
@@ -358,8 +444,9 @@ export function getBonusTargets(
 }
 
 export function getMainActions(cls: UnitClass): ActionKey[] {
-  if (cls === 'warrior') return ['strike', 'shield']
-  if (cls === 'archer')  return ['shot',   'aim']
+  if (cls === 'warrior')  return ['strike', 'shield']
+  if (cls === 'archer')   return ['shot',   'aim']
+  if (cls === 'catapult') return ['barrage', 'repair']
   return ['spell', 'heal']
 }
 
@@ -373,7 +460,7 @@ const TURN_RESET = {
 
 export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[]): BattleState {
   const playerUnits = prebuiltPlayerUnits
-    ?? (counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'player'))
+    ?? (counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
   const units = [...playerUnits, ...buildDefaultAIArmy()]
   const queue = buildQueue(units)
   const first = units.find(u => u.id === queue[0])!
@@ -405,7 +492,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
         const { units, newLogs, newEvents } = executeAction(state, actor, a, null)
         const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
         if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
-        return advanceQueue(handleAutoBonus(next, actor.id))
+        return advanceQueue(handleAutoBonus(next, actor.id, a))
       }
       return { ...state, selectedAction: a, needsTarget: true, events: [] }
     }
@@ -417,7 +504,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const { units, newLogs, newEvents } = executeAction(state, actor, state.selectedAction, action.targetId)
       const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
       if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
-      return advanceQueue(handleAutoBonus(next, actor.id))
+      return advanceQueue(handleAutoBonus(next, actor.id, state.selectedAction))
     }
 
     case 'CONFIRM_BONUS_TARGET': {
@@ -449,13 +536,12 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
         }
       }
 
-      const next = {
+      return advanceQueue({
         ...state, units,
         log: [...state.log, ...newLogs],
         events: [...state.events, ...newEvents],
         pendingPlayerBonus: null,
-      }
-      return advanceQueue(next)
+      })
     }
 
     case 'CANCEL_ACTION':
@@ -472,8 +558,11 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const { units, newLogs, newEvents } = executeAction(state, actor, act, targetId)
       const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
 
-      // Roll for bonus — if triggered, defer to AI_RUN_BONUS so the UI shows main action first
-      const bonusChance = actor.class === 'warrior' ? 0.33 : actor.class === 'archer' ? 0.25 : actor.class === 'mage' ? 0.20 : 0
+      const bonusChance = actor.class === 'warrior' ? 0.33
+        : actor.class === 'archer'   ? 0.25
+        : actor.class === 'mage'     ? 0.20
+        : actor.class === 'catapult' && act === 'barrage' ? 0.25
+        : 0
       if (bonusChance > 0 && Math.random() < bonusChance) {
         return { ...next, pendingAIBonus: actorId }
       }
@@ -525,6 +614,21 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
           units = result.units
           newLogs.push(...result.newLogs)
           newEvents.push(...result.newEvents)
+        }
+      } else if (actor.class === 'catapult') {
+        const freshActor = units.find(u => u.id === actorId)!
+        const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+        if (enemies.length > 0) {
+          const target = enemies[Math.floor(Math.random() * enemies.length)]
+          newLogs.push(log(`💥 Осколок по ${target.name}!`, 'attack'))
+          const res = resolveAttack(freshActor, target, units)
+          newLogs.push(...res.logs)
+          newEvents.push(...res.events)
+          if (res.damage > 0) {
+            const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
+            units = units.map(u => u.id === target.id ? updated : u)
+            if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+          }
         }
       }
 

@@ -62,9 +62,35 @@ function MageSVG({ color, size = 28 }: { color: string; size?: number }) {
   )
 }
 
+function CatapultSVG({ color, size = 28 }: { color: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 28 28" fill="none">
+      <circle cx="7" cy="23" r="3" fill={color} opacity="0.15" stroke={color} strokeWidth="1.5"/>
+      <circle cx="21" cy="23" r="3" fill={color} opacity="0.15" stroke={color} strokeWidth="1.5"/>
+      <line x1="4" y1="23" x2="24" y2="23" stroke={color} strokeWidth="2" strokeLinecap="round"/>
+      <line x1="14" y1="23" x2="14" y2="17" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="6" y1="19" x2="22" y2="8" stroke={color} strokeWidth="2.5" strokeLinecap="round"/>
+      <circle cx="22" cy="7" r="3" fill={color} opacity="0.4" stroke={color} strokeWidth="1.5"/>
+    </svg>
+  )
+}
+
+function CatapultBaseSVG({ color, size = 28 }: { color: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 28 28" fill="none">
+      <circle cx="7" cy="18" r="5" fill={color} opacity="0.12" stroke={color} strokeWidth="1.5"/>
+      <circle cx="21" cy="18" r="5" fill={color} opacity="0.12" stroke={color} strokeWidth="1.5"/>
+      <line x1="2" y1="18" x2="26" y2="18" stroke={color} strokeWidth="2.5" strokeLinecap="round"/>
+      <circle cx="7" cy="18" r="1.5" fill={color} opacity="0.6"/>
+      <circle cx="21" cy="18" r="1.5" fill={color} opacity="0.6"/>
+      <line x1="7" y1="13" x2="21" y2="13" stroke={color} strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+    </svg>
+  )
+}
+
 type AvatarComponent = React.ComponentType<{ color: string; size?: number }>
 const CLASS_SVG: Record<string, AvatarComponent> = {
-  warrior: WarriorSVG, archer: ArcherSVG, mage: MageSVG,
+  warrior: WarriorSVG, archer: ArcherSVG, mage: MageSVG, catapult: CatapultSVG,
 }
 
 // ── Seraph Logo ────────────────────────────────────────────────────────────────
@@ -265,9 +291,28 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
   onSelectUnit: (id: string) => void; onInfoUnit: (id: string) => void
 }) {
   const rowUnits = units.filter(u => u.side === side && u.row === row)
+  const catapult = row === 2 ? units.find(u => u.side === side && u.class === 'catapult') : undefined
+  const sideColor = SIDE_COLOR[side]
+
   return (
     <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', minHeight: 96 }}>
       {Array.from({ length: maxSlots }, (_, i) => {
+        if (catapult && i === 2) {
+          const alive = catapult.hp > 0
+          return (
+            <div key={i} style={{
+              width: 76, minHeight: 86, flexShrink: 0,
+              border: `2px dashed ${alive ? sideColor + '44' : 'rgba(0,0,0,0.1)'}`,
+              borderRadius: 8,
+              background: alive ? `${sideColor}06` : 'rgba(0,0,0,0.02)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, opacity: alive ? 1 : 0.35,
+            }}>
+              <CatapultBaseSVG color={alive ? sideColor : '#aaa'} size={28} />
+              <span style={{ fontSize: 7, color: 'var(--muted)', fontWeight: 600 }}>База</span>
+            </div>
+          )
+        }
         const unit = rowUnits.find(u => u.slot === i)
         if (!unit) return (
           <div key={i} style={{ width: 76, height: 86, border: '1px dashed rgba(0,0,0,0.1)', borderRadius: 8, flexShrink: 0 }} />
@@ -473,15 +518,16 @@ function Landing({ onNewGame }: { onNewGame: () => void }) {
       >
         ⚔ Нова гра
       </button>
-      <div style={{ marginTop: 52, display: 'flex', gap: 36, fontSize: 11, color: 'var(--muted)' }}>
-        {([['warrior', 'Воїни'], ['archer', 'Лучники'], ['mage', 'Маги']] as const).map(([cls, label]) => {
+      <div style={{ marginTop: 52, display: 'flex', gap: 24, fontSize: 11, color: 'var(--muted)' }}>
+        {(['warrior', 'archer', 'mage', 'catapult'] as const).map(cls => {
+          const labels: Record<string, string> = { warrior: 'Воїни', archer: 'Лучники', mage: 'Маги', catapult: 'Катапульта' }
           const AvatarSVG = CLASS_SVG[cls]
           return (
-            <div key={label} style={{ textAlign: 'center' }}>
+            <div key={cls} style={{ textAlign: 'center' }}>
               <div style={{ marginBottom: 6, display: 'flex', justifyContent: 'center' }}>
                 <AvatarSVG color="#b07850" size={28} />
               </div>
-              {label}
+              {labels[cls]}
             </div>
           )
         })}
@@ -491,7 +537,7 @@ function Landing({ onNewGame }: { onNewGame: () => void }) {
 }
 
 // ── Battle component ───────────────────────────────────────────────────────────
-const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 2 }
+const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 3 }
 
 function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; playerUnits?: GameUnit[]; onRestart: () => void }) {
   const [state, dispatch] = useReducer(
@@ -545,10 +591,10 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
     if (state.pendingAIBonus) {
-      const t = setTimeout(() => dispatch({ type: 'AI_RUN_BONUS' }), 4800)
+      const t = setTimeout(() => dispatch({ type: 'AI_RUN_BONUS' }), 2400)
       return () => clearTimeout(t)
     }
-    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 4800)
+    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 2400)
     return () => clearTimeout(t)
   }, [state.phase, state.queueIdx, state.pendingAIBonus])
 
