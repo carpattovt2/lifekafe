@@ -244,12 +244,13 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
         onClick={handleClick}
         className={pulseClass}
         style={{
-          width: 76, minHeight: 86, padding: '6px 6px 4px',
-          background: alive ? '#ffffff' : 'rgba(0,0,0,0.04)',
+          width: 76, height: 90,
+          background: portraitSrc ? 'transparent' : (alive ? '#ffffff' : 'rgba(0,0,0,0.04)'),
           border: `2px solid ${borderColor}`,
           borderRadius: 8,
           cursor: alive ? 'pointer' : 'default',
           opacity: alive ? 1 : 0.35,
+          overflow: 'hidden',
           transform: isActive ? 'scale(1.06)' : isTargetable ? 'scale(1.03)' : 'scale(1)',
           boxShadow: isTargetable && !isActive ? `0 2px 8px ${color}44` : '0 1px 3px rgba(0,0,0,0.08)',
           transition: 'border-color 0.15s, transform 0.1s',
@@ -259,41 +260,110 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
         {floats.map(f => (
           <span key={f.id} className={`float-${f.type}`}>{f.text}</span>
         ))}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-          {portraitSrc
-            ? <img src={portraitSrc} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover', flexShrink: 0, opacity: alive ? 1 : 0.4 }} />
-            : <AvatarSVG color={alive ? color : '#aaa'} size={24} />
-          }
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
-            {isActive && <span style={{ fontSize: 8, color: '#b07850', fontWeight: 700 }}>ХОДА</span>}
-            {isTargetable && !isActive && <span style={{ fontSize: 9, color, fontWeight: 700 }}>➜</span>}
-            {unit.class === 'warrior' && unit.level && (
-              <span style={{ fontSize: 7, color: '#b07850', fontWeight: 700, lineHeight: 1 }}>Lv{unit.level}</span>
-            )}
-          </div>
-        </div>
-        <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {unit.name}
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
-          {unit.hp}/{unit.maxHp}
-        </div>
-        <HpBar hp={unit.hp} maxHp={unit.maxHp} />
-        {unit.class === 'warrior' && (unit.level ?? 1) < 4 && (
-          <div style={{ width: '100%', height: 2, background: 'rgba(176,120,80,0.15)', borderRadius: 1, marginTop: 2 }}>
-            <div style={{
-              width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
-              height: '100%', background: '#b07850', borderRadius: 1, transition: 'width 0.3s',
+
+        {portraitSrc ? (
+          <>
+            {/* Full-bleed portrait */}
+            <img src={portraitSrc} alt="" style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
             }} />
-          </div>
-        )}
-        {unit.buffs.length > 0 && (
-          <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
-            {unit.buffs.map(b => (
-              <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(0,0,0,0.07)', color: 'var(--muted)' }}>
-                {BUFF_ICON[b.type] ?? '✦'}{b.turnsLeft}
-              </span>
-            ))}
+            {/* Gradient overlay for text readability */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.22) 40%, rgba(0,0,0,0.72) 100%)',
+            }} />
+            {/* Content */}
+            <div style={{
+              position: 'relative', zIndex: 1, height: '100%',
+              display: 'flex', flexDirection: 'column', padding: '5px 5px 5px',
+            }}>
+              {/* Top row: ХОДА / ➜ + Lv badge */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  {unit.buffs.length > 0 && (
+                    <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                      {unit.buffs.map(b => (
+                        <span key={b.id} style={{ fontSize: 7, color: '#fff', background: 'rgba(0,0,0,0.45)', borderRadius: 2, padding: '1px 2px' }}>
+                          {BUFF_ICON[b.type] ?? '✦'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                  {isActive && (
+                    <span style={{ fontSize: 7, color: '#fff', fontWeight: 700, background: 'rgba(176,120,80,0.9)', borderRadius: 3, padding: '1px 4px' }}>
+                      ХОДА
+                    </span>
+                  )}
+                  {isTargetable && !isActive && (
+                    <span style={{ fontSize: 10, color: '#fff', fontWeight: 700, lineHeight: 1 }}>➜</span>
+                  )}
+                  {unit.level && (
+                    <span style={{ fontSize: 7, fontWeight: 700, background: 'rgba(255,255,255,0.88)', color: '#b07850', borderRadius: 3, padding: '1px 4px' }}>
+                      Lv{unit.level}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Spacer */}
+              <div style={{ flex: 1 }} />
+
+              {/* Bottom: name + HP */}
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#fff', lineHeight: 1.2, marginBottom: 2, textShadow: '0 1px 3px rgba(0,0,0,0.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {unit.name}
+                </div>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums', marginBottom: 3, textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}>
+                  {unit.hp}/{unit.maxHp}
+                </div>
+                {/* HP bar */}
+                <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 2 }}>
+                  <div style={{
+                    width: `${Math.max(0, unit.hp / unit.maxHp) * 100}%`, height: '100%', borderRadius: 2,
+                    background: unit.hp / unit.maxHp > 0.5 ? '#7aaa82' : unit.hp / unit.maxHp > 0.25 ? '#c4a040' : '#c07070',
+                    transition: 'width 0.3s',
+                  }} />
+                </div>
+                {/* XP bar */}
+                {(unit.level ?? 1) < 4 && (
+                  <div style={{ width: '100%', height: 2, background: 'rgba(176,120,80,0.35)', borderRadius: 1, marginTop: 2 }}>
+                    <div style={{
+                      width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
+                      height: '100%', background: '#b07850', borderRadius: 1, transition: 'width 0.3s',
+                    }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Normal card layout for non-warrior units */
+          <div style={{ padding: '6px 6px 4px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+              <AvatarSVG color={alive ? color : '#aaa'} size={24} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                {isActive && <span style={{ fontSize: 8, color: '#b07850', fontWeight: 700 }}>ХОДА</span>}
+                {isTargetable && !isActive && <span style={{ fontSize: 9, color, fontWeight: 700 }}>➜</span>}
+              </div>
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {unit.name}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+              {unit.hp}/{unit.maxHp}
+            </div>
+            <HpBar hp={unit.hp} maxHp={unit.maxHp} />
+            {unit.buffs.length > 0 && (
+              <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
+                {unit.buffs.map(b => (
+                  <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(0,0,0,0.07)', color: 'var(--muted)' }}>
+                    {BUFF_ICON[b.type] ?? '✦'}{b.turnsLeft}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
