@@ -554,6 +554,6 @@ h1, h2, h3 {
   font-weight: 700;
   font-size: 14px;
   font-family: 'Inter', sans-serif;
-  animation: float-up 3.5s ease-out forwards;
+  animation: float-up 6s ease-out forwards;
   z-index: 10;
 }

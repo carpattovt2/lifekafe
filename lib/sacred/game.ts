@@ -166,9 +166,16 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
   const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
 
   if (action === 'strike') {
+    // Find the front-most enemy row that has living units
     for (const r of [0, 1, 2] as Row[]) {
       const row = living(enemySide).filter(u => u.row === r)
-      if (row.length) return row.map(u => u.id)
+      if (!row.length) continue
+      // Restrict to slots adjacent to the attacker's slot (slot N-1, N, N+1)
+      const reachable = row.filter(u => Math.abs(u.slot - actor.slot) <= 1)
+      // If none in range (e.g. all opponents are far slots), allow nearest edge unit
+      if (reachable.length) return reachable.map(u => u.id)
+      const nearest = row.sort((a, b) => Math.abs(a.slot - actor.slot) - Math.abs(b.slot - actor.slot))[0]
+      return [nearest.id]
     }
     return []
   }
@@ -206,17 +213,6 @@ export function executeAction(
         const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
         update(updated)
         if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-        // Counter-attack (warriors only)
-        if (res.hit && !res.evaded && actor.class === 'warrior' && Math.random() < target.counter && target.hp > 0) {
-          const ctr = resolveAttack(updated, actor, units)
-          newLogs.push(log(`↩ Контратака!`, 'info'), ...ctr.logs)
-          newEvents.push(...ctr.events)
-          if (ctr.damage > 0) {
-            const actorUpdated = { ...getUnit(actor.id), hp: Math.max(0, actor.hp - ctr.damage) }
-            update(actorUpdated)
-            if (actorUpdated.hp === 0) newLogs.push(log(`☠ ${actor.name} гине!`, 'death'))
-          }
-        }
       }
       break
     }
@@ -276,51 +272,36 @@ export function executeAction(
   return { units, newLogs, newEvents }
 }
 
-// ── Auto-bonus after player action (warrior/archer/mage) ──────────────────────
-// Events are MERGED with state.events so main action floats aren't overwritten.
+// ── Auto-bonus after player action ────────────────────────────────────────────
+// Warrior / archer: pause for player to pick a target.
+// Mage: pause for player to pick debuff type + target.
+// Events merged with state.events so main-action floats persist.
 function handleAutoBonus(state: BattleState, actorId: string): BattleState {
-  let units = [...state.units]
-  const newLogs: LogEntry[] = []
-  const newEvents: BattleEvent[] = []
-
-  const actor = units.find(u => u.id === actorId)
+  const actor = state.units.find(u => u.id === actorId)
   if (!actor || actor.hp === 0) return state
 
   if (actor.class === 'warrior' && Math.random() < 0.33) {
-    const allies = units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
+    const allies = state.units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
     if (allies.length > 0) {
-      const target = allies[Math.floor(Math.random() * allies.length)]
-      units = units.map(u => u.id === target.id
-        ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
-        : u)
-      newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону)`, 'buff'))
-      newEvents.push(ev(target.id, '📯 +20%', 'buff'))
+      const msg = log(`📯 ${actor.name} — бойовий клич! Обери союзника для підбадьорення`, 'buff')
+      return { ...state, log: [...state.log, msg], pendingPlayerBonus: 'warrior-cry' }
     }
   }
 
   if (actor.class === 'archer' && Math.random() < 0.25) {
-    const freshActor = units.find(u => u.id === actorId)!
-    const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+    const enemies = state.units.filter(u => u.side !== actor.side && u.hp > 0)
     if (enemies.length > 0) {
-      const target = enemies[Math.floor(Math.random() * enemies.length)]
-      newLogs.push(log(`🏹 Додатковий постріл!`, 'info'))
-      const res = resolveAttack(freshActor, target, units)
-      newLogs.push(...res.logs)
-      newEvents.push(...res.events)
-      if (res.damage > 0) {
-        const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
-        units = units.map(u => u.id === target.id ? updated : u)
-        if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-      }
+      const msg = log(`🏹 ${actor.name} — додатковий постріл! Обери ціль`, 'info')
+      return { ...state, log: [...state.log, msg], pendingPlayerBonus: 'archer-shot' }
     }
   }
 
   if (actor.class === 'mage' && Math.random() < 0.20) {
-    newLogs.push(log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff'))
-    return { ...state, units, log: [...state.log, ...newLogs], events: [...state.events, ...newEvents], pendingDebuff: true }
+    const msg = log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff')
+    return { ...state, log: [...state.log, msg], events: [...state.events], pendingDebuff: true }
   }
 
-  return { ...state, units, log: [...state.log, ...newLogs], events: [...state.events, ...newEvents] }
+  return state
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
@@ -367,6 +348,15 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   debuff_weakness: { key: 'debuff_weakness', label: 'Слабкість',  desc: '-25% урону цілі (2 ходи)',                  needsTarget: true,  targetSide: 'ai'   },
 }
 
+export function getBonusTargets(
+  bonus: 'warrior-cry' | 'archer-shot',
+  actor: GameUnit,
+  units: GameUnit[],
+): string[] {
+  if (bonus === 'warrior-cry') return units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id).map(u => u.id)
+  return units.filter(u => u.side !== actor.side && u.hp > 0).map(u => u.id)
+}
+
 export function getMainActions(cls: UnitClass): ActionKey[] {
   if (cls === 'warrior') return ['strike', 'shield']
   if (cls === 'archer')  return ['shot',   'aim']
@@ -374,7 +364,12 @@ export function getMainActions(cls: UnitClass): ActionKey[] {
 }
 
 // ── Initial state ──────────────────────────────────────────────────────────────
-const TURN_RESET = { selectedAction: null as ActionKey | null, needsTarget: false, pendingDebuff: false }
+const TURN_RESET = {
+  selectedAction: null as ActionKey | null,
+  needsTarget: false,
+  pendingDebuff: false,
+  pendingPlayerBonus: null as 'warrior-cry' | 'archer-shot' | null,
+}
 
 export function createInitialState(counts?: ArmyCounts): BattleState {
   const playerUnits = counts
@@ -426,8 +421,46 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       return advanceQueue(handleAutoBonus(next, actor.id))
     }
 
+    case 'CONFIRM_BONUS_TARGET': {
+      const actorId = state.queue[state.queueIdx]
+      const actor = state.units.find(u => u.id === actorId)
+      if (!actor || !state.pendingPlayerBonus) return state
+
+      let units = [...state.units]
+      const newLogs: LogEntry[] = []
+      const newEvents: BattleEvent[] = []
+      const target = units.find(u => u.id === action.targetId)
+      if (!target) return state
+
+      if (state.pendingPlayerBonus === 'warrior-cry') {
+        units = units.map(u => u.id === target.id
+          ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
+          : u)
+        newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону)`, 'buff'))
+        newEvents.push(ev(target.id, '📯 +20%', 'buff'))
+      } else if (state.pendingPlayerBonus === 'archer-shot') {
+        newLogs.push(log(`🏹 Додатковий постріл по ${target.name}!`, 'info'))
+        const res = resolveAttack(actor, target, units)
+        newLogs.push(...res.logs)
+        newEvents.push(...res.events)
+        if (res.damage > 0) {
+          const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
+          units = units.map(u => u.id === target.id ? updated : u)
+          if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+        }
+      }
+
+      const next = {
+        ...state, units,
+        log: [...state.log, ...newLogs],
+        events: [...state.events, ...newEvents],
+        pendingPlayerBonus: null,
+      }
+      return advanceQueue(next)
+    }
+
     case 'CANCEL_ACTION':
-      return { ...state, selectedAction: null, needsTarget: false }
+      return { ...state, selectedAction: null, needsTarget: false, pendingPlayerBonus: null }
 
     case 'AI_TAKE_TURN': {
       const actorId = state.queue[state.queueIdx]

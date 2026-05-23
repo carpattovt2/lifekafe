@@ -1,8 +1,8 @@
 'use client'
 
-import { useReducer, useEffect, useRef, useState } from 'react'
+import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import {
-  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
+  createInitialState, battleReducer, getMainActions, getValidTargets, getBonusTargets, ACTIONS,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
@@ -137,15 +137,9 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
 
 // ── Turn queue ─────────────────────────────────────────────────────────────────
 function TurnQueue({ queue, units, currentIdx }: { queue: string[]; units: GameUnit[]; currentIdx: number }) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const el = scrollRef.current?.children[currentIdx] as HTMLElement
-    el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
-  }, [currentIdx])
-
   return (
     <div style={{ overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
-      <div ref={scrollRef} style={{ display: 'flex', gap: 5, padding: '0 4px', width: 'max-content' }}>
+      <div style={{ display: 'flex', gap: 5, padding: '0 4px', width: 'max-content' }}>
         {queue.map((id, i) => {
           const u = units.find(x => x.id === id)
           if (!u || u.hp === 0) return null
@@ -360,9 +354,11 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
   const mainActions = actor ? getMainActions(actor.class) : []
 
-  const targetIds = actor && state.selectedAction
-    ? getValidTargets(actor, state.selectedAction, state.units)
-    : []
+  const targetIds = state.pendingPlayerBonus && actor
+    ? getBonusTargets(state.pendingPlayerBonus, actor, state.units)
+    : actor && state.selectedAction
+      ? getValidTargets(actor, state.selectedAction, state.units)
+      : []
 
   // Accumulate floats — each batch stays until its own 3500ms timer fires
   useEffect(() => {
@@ -372,7 +368,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
     const ids = new Set(batch.map(e => e.id))
     const t = setTimeout(() => {
       setFloats(prev => prev.filter(f => !ids.has(f.id)))
-    }, 3500)
+    }, 6000)
     return () => clearTimeout(t)
   }, [state.events])
 
@@ -385,10 +381,10 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
     if (state.pendingAIBonus) {
-      const t = setTimeout(() => dispatch({ type: 'AI_RUN_BONUS' }), 1600)
+      const t = setTimeout(() => dispatch({ type: 'AI_RUN_BONUS' }), 4800)
       return () => clearTimeout(t)
     }
-    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1600)
+    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 4800)
     return () => clearTimeout(t)
   }, [state.phase, state.queueIdx, state.pendingAIBonus])
 
@@ -398,6 +394,10 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
   }
 
   function handleUnitClick(id: string) {
+    if (state.pendingPlayerBonus) {
+      dispatch({ type: 'CONFIRM_BONUS_TARGET', targetId: id })
+      return
+    }
     if (!state.needsTarget) return
     dispatch({ type: 'CONFIRM_TARGET', targetId: id })
   }
@@ -481,6 +481,24 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
             <button onClick={onRestart}
               style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
               Новий бій
+            </button>
+          </div>
+
+        ) : state.pendingPlayerBonus && actor ? (
+          /* Warrior / archer bonus target selection */
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8,
+              color: state.pendingPlayerBonus === 'warrior-cry' ? '#a891c4' : '#c4a040' }}>
+              {state.pendingPlayerBonus === 'warrior-cry'
+                ? `📯 ${actor.name} — оберіть союзника для бойового кличу`
+                : `🏹 ${actor.name} — оберіть ціль для додаткового пострілу`}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+              Натисніть на підсвіченого юніта на полі бою
+            </div>
+            <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
+              style={{ marginTop: 8, padding: '6px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+              Пропустити бонус
             </button>
           </div>
 
