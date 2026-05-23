@@ -74,6 +74,7 @@ export interface BattleEvent {
   unitId: string
   text: string
   type: 'damage' | 'crit' | 'miss' | 'evade' | 'heal' | 'buff' | 'debuff'
+  sourceId?: string  // attacker/caster unit ID — used to spawn projectile
 }
 
 export interface BattleState {

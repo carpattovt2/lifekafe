@@ -89,7 +89,7 @@ function frontLineBonus(def: GameUnit, units: GameUnit[]): number {
 let _logId = 0
 let _evId  = 0
 function log(text: string, type: LogEntry['type']): LogEntry { return { id: ++_logId, text, type } }
-function ev(unitId: string, text: string, type: BattleEvent['type']): BattleEvent { return { id: ++_evId, unitId, text, type } }
+function ev(unitId: string, text: string, type: BattleEvent['type'], sourceId?: string): BattleEvent { return { id: ++_evId, unitId, text, type, sourceId } }
 
 interface AttackResult {
   hit: boolean; evaded: boolean; crit: boolean; damage: number
@@ -123,7 +123,7 @@ function resolveAttack(
   // Evasion check
   if (Math.random() < def.evasion) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
-    events.push(ev(def.id, 'Ухил!', 'evade'))
+    events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
   }
 
@@ -151,10 +151,10 @@ function resolveAttack(
 
   if (isCrit) {
     logs.push(log(`💥 КРИТ! ${atk.name} → ${def.name}: ${dmg} урону`, 'crit'))
-    events.push(ev(def.id, `💥 ${dmg}`, 'crit'))
+    events.push(ev(def.id, `💥 ${dmg}`, 'crit', atk.id))
   } else {
     logs.push(log(`${atk.name} атакує ${def.name}: ${dmg} урону`, 'attack'))
-    events.push(ev(def.id, `${dmg}`, 'damage'))
+    events.push(ev(def.id, `${dmg}`, 'damage', atk.id))
   }
 
   return { hit: true, evaded: false, crit: isCrit, damage: dmg, logs, events }
@@ -240,7 +240,7 @@ export function executeAction(
       update({ ...target, hp: healed })
       const amt = healed - before
       newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+${amt} HP)`, 'heal'))
-      newEvents.push(ev(target.id, `+${amt}`, 'heal'))
+      newEvents.push(ev(target.id, `+${amt}`, 'heal', actor.id))
       break
     }
 
@@ -248,7 +248,7 @@ export function executeAction(
       if (!target) break
       update({ ...target, buffs: [...target.buffs, makeBuff('damage_taken_up', 0.30, 2)] })
       newLogs.push(log(`🩸 Розрив! ${target.name} отримуватиме +30% урону (2 ходи)`, 'debuff'))
-      newEvents.push(ev(target.id, '🩸 Розрив', 'debuff'))
+      newEvents.push(ev(target.id, '🩸 Розрив', 'debuff', actor.id))
       break
     }
 
@@ -256,7 +256,7 @@ export function executeAction(
       if (!target) break
       update({ ...target, buffs: [...target.buffs, makeBuff('exhausted', 1, 2)] })
       newLogs.push(log(`💤 Виснаження! ${target.name} ходитиме останнім`, 'debuff'))
-      newEvents.push(ev(target.id, '💤 Виснаження', 'debuff'))
+      newEvents.push(ev(target.id, '💤 Виснаження', 'debuff', actor.id))
       break
     }
 
@@ -264,7 +264,7 @@ export function executeAction(
       if (!target) break
       update({ ...target, buffs: [...target.buffs, makeBuff('weakness', 0.25, 2)] })
       newLogs.push(log(`🌑 Слабкість! ${target.name} завдаватиме -25% урону`, 'debuff'))
-      newEvents.push(ev(target.id, '🌑 Слабкість', 'debuff'))
+      newEvents.push(ev(target.id, '🌑 Слабкість', 'debuff', actor.id))
       break
     }
   }

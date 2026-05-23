@@ -557,3 +557,84 @@ h1, h2, h3 {
   animation: float-up 6s ease-out forwards;
   z-index: 10;
 }
+
+/* ── Seraphites: typed float variants ────────────────────────────────────── */
+@keyframes float-damage-up {
+  0%   { opacity: 1;   transform: translateX(-50%) translateY(0) scale(1.15); }
+  20%  { opacity: 1;   transform: translateX(-50%) translateY(-16px) scale(1); }
+  100% { opacity: 0;   transform: translateX(-50%) translateY(-60px) scale(0.85); }
+}
+@keyframes float-crit-up {
+  0%   { opacity: 1;   transform: translateX(-50%) translateY(0) scale(1.45); }
+  15%  { opacity: 1;   transform: translateX(-50%) translateY(-10px) scale(1.2); }
+  100% { opacity: 0;   transform: translateX(-50%) translateY(-68px) scale(0.9); }
+}
+@keyframes float-miss-up {
+  0%   { opacity: 0.7; transform: translateX(-50%) translateY(0) scale(0.9); }
+  100% { opacity: 0;   transform: translateX(-50%) translateY(-36px) scale(0.8); }
+}
+@keyframes float-evade-up {
+  0%   { opacity: 1;   transform: translateX(-50%) translateY(0) rotate(0deg); }
+  100% { opacity: 0;   transform: translateX(calc(-50% + 20px)) translateY(-42px) rotate(14deg); }
+}
+
+.float-damage, .float-crit, .float-miss, .float-evade,
+.float-heal, .float-buff, .float-debuff {
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  pointer-events: none;
+  white-space: nowrap;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  z-index: 10;
+}
+.float-damage { font-size: 18px; color: #c0392b; animation: float-damage-up 2.8s ease-out forwards; text-shadow: 0 1px 4px rgba(192,57,43,0.3); }
+.float-crit   { font-size: 22px; color: #b07850; animation: float-crit-up 3s ease-out forwards;    text-shadow: 0 0 12px rgba(176,120,80,0.5); }
+.float-miss   { font-size: 12px; color: #9b9289; animation: float-miss-up 2.5s ease-out forwards; }
+.float-evade  { font-size: 13px; color: #4a86a8; animation: float-evade-up 2.2s ease-out forwards; }
+.float-heal   { font-size: 15px; color: #5a9a6a; animation: float-up 3s ease-out forwards;         text-shadow: 0 1px 4px rgba(90,154,106,0.3); }
+.float-buff   { font-size: 12px; color: #8060a8; animation: float-up 3.5s ease-out forwards; }
+.float-debuff { font-size: 12px; color: #c07070; animation: float-up 3.5s ease-out forwards; }
+
+/* ── Seraphites: unit state animations ───────────────────────────────────── */
+@keyframes unit-shake {
+  0%, 100% { transform: translateX(0); }
+  15%  { transform: translateX(-6px); }
+  35%  { transform: translateX(6px); }
+  55%  { transform: translateX(-4px); }
+  75%  { transform: translateX(4px); }
+}
+.unit-shake { animation: unit-shake 0.42s ease-in-out; }
+
+@keyframes unit-die {
+  0%   { opacity: 1;    transform: scale(1);    filter: none; }
+  25%  { opacity: 0.9;  transform: scale(1.07); filter: brightness(1.4) saturate(0.5); }
+  65%  { opacity: 0.5;  transform: scale(0.95); filter: grayscale(0.6) brightness(0.9); }
+  100% { opacity: 0.35; transform: scale(1);    filter: grayscale(1); }
+}
+.unit-die { animation: unit-die 0.7s ease-out forwards; }
+
+@keyframes unit-pulse-player {
+  0%, 100% { box-shadow: 0 2px 10px rgba(111,166,122,0.45); }
+  50%       { box-shadow: 0 2px 22px rgba(111,166,122,0.85), 0 0 8px rgba(111,166,122,0.4); }
+}
+@keyframes unit-pulse-ai {
+  0%, 100% { box-shadow: 0 2px 10px rgba(192,112,112,0.45); }
+  50%       { box-shadow: 0 2px 22px rgba(192,112,112,0.85), 0 0 8px rgba(192,112,112,0.4); }
+}
+.unit-active-player { animation: unit-pulse-player 1.5s ease-in-out infinite; }
+.unit-active-ai     { animation: unit-pulse-ai 1.5s ease-in-out infinite; }
+
+/* ── Seraphites: projectile ──────────────────────────────────────────────── */
+@keyframes proj-fly {
+  from { opacity: 1;   transform: translate(-50%, -50%) translate(0, 0) scale(1.2); }
+  to   { opacity: 0.1; transform: translate(-50%, -50%) translate(var(--proj-dx), var(--proj-dy)) scale(0.3); }
+}
+
+/* ── Seraphites: turn banner ─────────────────────────────────────────────── */
+@keyframes sacred-banner-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.55); }
+  60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
