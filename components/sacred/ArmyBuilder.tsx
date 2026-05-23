@@ -78,77 +78,80 @@ export default function ArmyBuilder({ onStart }: Props) {
               background: count > 0 ? `${info.color}08` : 'rgba(255,255,255,0.02)',
               transition: 'border-color 0.2s, background 0.2s',
             }}>
-              {/* Top row: icon + labels + counter */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Top row: icon + label + count */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                 <div style={{
-                  width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-                  background: `${info.color}18`,
-                  border: `1px solid ${info.color}33`,
+                  width: 42, height: 42, borderRadius: 10, flexShrink: 0,
+                  background: count > 0 ? `${info.color}28` : `${info.color}10`,
+                  border: `1px solid ${count > 0 ? info.color + '66' : info.color + '22'}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 20,
+                  fontSize: 20, transition: 'all 0.2s',
                 }}>
                   {info.icon}
                 </div>
-
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: count > 0 ? info.color : 'var(--text)', marginBottom: 2 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: count > 0 ? info.color : 'var(--text)' }}>
                     {info.label}
                   </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{info.row} · max {info.max}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>{info.row} · max {info.max}</div>
                 </div>
-
-                {/* Counter */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                  <button
-                    onClick={() => change(info.key, -1)}
-                    disabled={count === 0}
-                    style={{
-                      width: 32, height: 32, borderRadius: 8,
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      background: count === 0 ? 'transparent' : 'rgba(255,255,255,0.06)',
-                      color: count === 0 ? 'rgba(255,255,255,0.2)' : 'var(--text)',
-                      fontSize: 18, cursor: count === 0 ? 'not-allowed' : 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    −
-                  </button>
-
-                  <div style={{
-                    width: 36, textAlign: 'center',
-                    fontSize: 20, fontWeight: 700,
-                    color: count > 0 ? info.color : 'rgba(255,255,255,0.2)',
-                    fontVariantNumeric: 'tabular-nums',
-                  }}>
-                    {count}
-                  </div>
-
-                  <button
-                    onClick={() => change(info.key, +1)}
-                    disabled={count >= info.max || total >= MAX_TOTAL}
-                    style={{
-                      width: 32, height: 32, borderRadius: 8,
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      background: count >= info.max ? 'transparent' : 'rgba(255,255,255,0.06)',
-                      color: count >= info.max ? 'rgba(255,255,255,0.2)' : 'var(--text)',
-                      fontSize: 18, cursor: count >= info.max ? 'not-allowed' : 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    +
-                  </button>
+                <div style={{ fontSize: 22, fontWeight: 800, color: count > 0 ? info.color : 'rgba(255,255,255,0.15)', fontVariantNumeric: 'tabular-nums', minWidth: 24, textAlign: 'right' }}>
+                  {count}
                 </div>
               </div>
 
-              {/* Slot dots */}
-              <div style={{ display: 'flex', gap: 5, marginTop: 12 }}>
-                {Array.from({ length: info.max }, (_, i) => (
-                  <div key={i} style={{
-                    height: 4, flex: 1, borderRadius: 2,
-                    background: i < count ? info.color : 'rgba(255,255,255,0.08)',
-                    transition: 'background 0.2s',
-                  }} />
-                ))}
+              {/* Slot icons row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => change(info.key, -1)}
+                  disabled={count === 0}
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                    border: `1px solid ${count > 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)'}`,
+                    background: count > 0 ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    color: count > 0 ? 'var(--text)' : 'rgba(255,255,255,0.15)',
+                    fontSize: 20, cursor: count === 0 ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >−</button>
+
+                <div style={{ display: 'flex', gap: 6, flex: 1, justifyContent: 'center' }}>
+                  {Array.from({ length: info.max }, (_, i) => {
+                    const filled = i < count
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => filled ? change(info.key, -(count - i)) : (total < MAX_TOTAL || count > i) && change(info.key, i + 1 - count)}
+                        style={{
+                          width: 42, height: 42, borderRadius: 10,
+                          border: `2px solid ${filled ? info.color : 'rgba(255,255,255,0.1)'}`,
+                          background: filled ? `${info.color}25` : 'rgba(255,255,255,0.02)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: filled ? 18 : 13,
+                          color: filled ? info.color : 'rgba(255,255,255,0.12)',
+                          transition: 'all 0.15s',
+                          cursor: 'pointer',
+                          boxShadow: filled ? `0 0 10px ${info.color}33` : 'none',
+                        }}
+                      >
+                        {filled ? info.icon : '·'}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <button
+                  onClick={() => change(info.key, +1)}
+                  disabled={count >= info.max || total >= MAX_TOTAL}
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                    border: `1px solid ${count < info.max && total < MAX_TOTAL ? info.color + '88' : 'rgba(255,255,255,0.07)'}`,
+                    background: count < info.max && total < MAX_TOTAL ? `${info.color}22` : 'transparent',
+                    color: count < info.max && total < MAX_TOTAL ? info.color : 'rgba(255,255,255,0.15)',
+                    fontSize: 20, cursor: count >= info.max || total >= MAX_TOTAL ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >+</button>
               </div>
 
               {/* Desc */}
