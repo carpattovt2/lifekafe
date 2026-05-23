@@ -240,7 +240,7 @@ const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 2 }
 
 function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => void }) {
   const [state, dispatch] = useReducer(battleReducer, counts, createInitialState)
-  const [floatsMap, setFloatsMap] = useState<Map<string, BattleEvent[]>>(new Map())
+  const [floats, setFloats] = useState<BattleEvent[]>([])
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
@@ -250,24 +250,27 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
     ? getValidTargets(actor, state.selectedAction, state.units)
     : []
 
-  // Show floating events then clear after animation
+  // Accumulate floats — each batch stays until its own 2200ms timer fires
   useEffect(() => {
     if (!state.events.length) return
-    const map = new Map<string, BattleEvent[]>()
-    for (const e of state.events) {
-      const arr = map.get(e.unitId) ?? []
-      arr.push(e)
-      map.set(e.unitId, arr)
-    }
-    setFloatsMap(map)
-    const t = setTimeout(() => setFloatsMap(new Map()), 1200)
+    const batch = state.events
+    setFloats(prev => [...prev, ...batch])
+    const ids = new Set(batch.map(e => e.id))
+    const t = setTimeout(() => {
+      setFloats(prev => prev.filter(f => !ids.has(f.id)))
+    }, 2200)
     return () => clearTimeout(t)
   }, [state.events])
+
+  const floatsMap = floats.reduce((m, e) => {
+    m.set(e.unitId, [...(m.get(e.unitId) ?? []), e])
+    return m
+  }, new Map<string, BattleEvent[]>())
 
   // AI turn trigger
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
-    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 800)
+    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1500)
     return () => clearTimeout(t)
   }, [state.phase, state.queueIdx])
 
