@@ -1,19 +1,12 @@
 import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
-  ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase, ActionCategory,
-  UnitDef, ArmySlot,
+  ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
+  ArmyCounts,
 } from './types'
 
-// ── Morale modifier ────────────────────────────────────────────────────────────
-// 100 → +10%, 50 → 0%, 1 → -10%
-function moraleBonus(morale: number): number {
-  return (morale - 50) / 500
-}
-
 // ── Unit templates ─────────────────────────────────────────────────────────────
-type Template = Omit<GameUnit, 'id'|'side'|'row'|'slot'|'name'|'buffs'|'hasActed'>
+type Template = Omit<GameUnit, 'id' | 'side' | 'row' | 'slot' | 'name' | 'buffs' | 'hasActed'>
 
-// ── Variant A stats ────────────────────────────────────────────────────────────
 const TEMPLATES: Record<UnitClass, Template> = {
   warrior: {
     class: 'warrior', hp: 75, maxHp: 75,
@@ -35,82 +28,41 @@ const TEMPLATES: Record<UnitClass, Template> = {
   },
 }
 
-const CLASS_NAMES: Record<UnitClass, string[]> = {
-  warrior: ['Брат Лю', 'Брат Анте', 'Брат Мар'],
-  archer:  ['Стрілець Дан', 'Стрілець Леон'],
-  mage:    ['Маг Серафіт'],
-}
+const CLASS_LABEL: Record<UnitClass, string> = { warrior: 'Воїн', archer: 'Лучник', mage: 'Маг' }
+const ROMAN = ['I', 'II', 'III', 'IV']
 
 let _uid = 0
 function uid() { return `u${++_uid}` }
 
-function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number, nameIdx = 0): GameUnit {
-  const t = TEMPLATES[cls]
-  return {
-    ...t, id: uid(), side, row, slot, hasActed: false, buffs: [],
-    name: CLASS_NAMES[cls][nameIdx] ?? `${cls} ${slot + 1}`,
-  }
+function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number): GameUnit {
+  const prefix = side === 'ai' ? 'Вор.' : ''
+  const name = `${prefix}${CLASS_LABEL[cls]} ${ROMAN[slot] ?? slot + 1}`
+  return { ...TEMPLATES[cls], id: uid(), side, row, slot, hasActed: false, buffs: [], name }
 }
 
-// ── Unit pool (player picks from these) ───────────────────────────────────────
-export const UNIT_POOL: UnitDef[] = [
-  // Warriors
-  { defId: 'w1', class: 'warrior', name: 'Брат Лю',     hp: 75,  maxHp: 75,  minDmg: 14, maxDmg: 18, accuracy: 0.75, defense: 0.10, initiative: 50, morale: 50, critChance: 0.10, critMult: 1.5, counter: 0.10, evasion: 0.05, desc: 'Збалансований воїн' },
-  { defId: 'w2', class: 'warrior', name: 'Брат Анте',   hp: 90,  maxHp: 90,  minDmg: 11, maxDmg: 14, accuracy: 0.75, defense: 0.15, initiative: 45, morale: 50, critChance: 0.08, critMult: 1.5, counter: 0.15, evasion: 0.03, desc: 'Захисник — більше HP та захисту' },
-  { defId: 'w3', class: 'warrior', name: 'Брат Мар',    hp: 60,  maxHp: 60,  minDmg: 18, maxDmg: 24, accuracy: 0.70, defense: 0.05, initiative: 55, morale: 60, critChance: 0.15, critMult: 1.8, counter: 0.08, evasion: 0.04, desc: 'Берсерк — висока шкода' },
-  { defId: 'w4', class: 'warrior', name: 'Брат Орест',  hp: 70,  maxHp: 70,  minDmg: 13, maxDmg: 17, accuracy: 0.78, defense: 0.10, initiative: 48, morale: 50, critChance: 0.10, critMult: 1.5, counter: 0.30, evasion: 0.04, desc: 'Контратакер — 30% відповідного удару' },
-  { defId: 'w5', class: 'warrior', name: 'Сестра Тайра',hp: 65,  maxHp: 65,  minDmg: 13, maxDmg: 17, accuracy: 0.80, defense: 0.08, initiative: 58, morale: 55, critChance: 0.12, critMult: 1.6, counter: 0.08, evasion: 0.20, desc: 'Легконога — висока ухилення' },
-  // Archers
-  { defId: 'a1', class: 'archer',  name: 'Стрілець Дан', hp: 55, maxHp: 55,  minDmg: 18, maxDmg: 24, accuracy: 0.60, defense: 0.05, initiative: 65, morale: 50, critChance: 0.05, critMult: 3.0, counter: 0, evasion: 0.15, desc: 'Збалансований лучник' },
-  { defId: 'a2', class: 'archer',  name: 'Стрілець Леон',hp: 50, maxHp: 50,  minDmg: 20, maxDmg: 30, accuracy: 0.48, defense: 0.04, initiative: 62, morale: 50, critChance: 0.15, critMult: 3.5, counter: 0, evasion: 0.18, desc: 'Снайпер — рідко влучає, але смертоносно' },
-  { defId: 'a3', class: 'archer',  name: 'Стрілець Мія', hp: 52, maxHp: 52,  minDmg: 15, maxDmg: 20, accuracy: 0.78, defense: 0.05, initiative: 67, morale: 55, critChance: 0.04, critMult: 2.5, counter: 0, evasion: 0.12, desc: 'Точна стрільба — надійна шкода' },
-  { defId: 'a4', class: 'archer',  name: 'Слідопит Рог', hp: 58, maxHp: 58,  minDmg: 16, maxDmg: 22, accuracy: 0.65, defense: 0.06, initiative: 60, morale: 50, critChance: 0.06, critMult: 2.8, counter: 0, evasion: 0.20, desc: 'Тактик — ефективний з укриття' },
-  // Mages
-  { defId: 'm1', class: 'mage',    name: 'Маг Серафіт',    hp: 50, maxHp: 50, minDmg: 10, maxDmg: 14, accuracy: 0.50, defense: 0, initiative: 40, morale: 50, critChance: 0.75, critMult: 2.0, counter: 0, evasion: 0.35, desc: 'Збалансований маг, висока ухилення' },
-  { defId: 'm2', class: 'mage',    name: 'Цілителька Ада',  hp: 45, maxHp: 45, minDmg: 7,  maxDmg: 10, accuracy: 0.45, defense: 0, initiative: 38, morale: 55, critChance: 0.60, critMult: 1.8, counter: 0, evasion: 0.40, desc: 'Зцілює +20 HP замість +10' },
-  { defId: 'm3', class: 'mage',    name: 'Заклинач Крон',   hp: 40, maxHp: 40, minDmg: 14, maxDmg: 20, accuracy: 0.42, defense: 0, initiative: 43, morale: 45, critChance: 0.85, critMult: 2.5, counter: 0, evasion: 0.25, desc: 'Крит-маг — смертоносний, але крихкий' },
-]
-
-export function defsToArmy(slots: ArmySlot[], side: Side): GameUnit[] {
-  const rowCounts: Record<number, number> = {}
-  return slots.map(({ def, row }) => {
-    const slot = rowCounts[row] ?? 0
-    rowCounts[row] = slot + 1
-    return {
-      id: uid(), side, row, slot, hasActed: false, buffs: [],
-      class: def.class, name: def.name,
-      hp: def.hp, maxHp: def.maxHp,
-      minDmg: def.minDmg, maxDmg: def.maxDmg,
-      accuracy: def.accuracy, defense: def.defense,
-      initiative: def.initiative, morale: def.morale,
-      critChance: def.critChance, critMult: def.critMult,
-      counter: def.counter, evasion: def.evasion,
-    }
-  })
+// ── Army builders ──────────────────────────────────────────────────────────────
+export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
+  const units: GameUnit[] = []
+  for (let i = 0; i < counts.warriors; i++) units.push(makeUnit('warrior', side, 0, i))
+  for (let i = 0; i < counts.archers;  i++) units.push(makeUnit('archer',  side, 1, i))
+  for (let i = 0; i < counts.mages;    i++) units.push(makeUnit('mage',    side, 2, i))
+  return units
 }
 
-// ── Initial army layout ────────────────────────────────────────────────────────
-function buildArmy(side: Side): GameUnit[] {
-  return [
-    makeUnit('warrior', side, 0, 0, 0),
-    makeUnit('warrior', side, 0, 1, 1),
-    makeUnit('warrior', side, 0, 2, 2),
-    makeUnit('archer',  side, 1, 0, 0),
-    makeUnit('archer',  side, 1, 1, 1),
-    makeUnit('mage',    side, 2, 0, 0),
-  ]
+function buildDefaultAIArmy(): GameUnit[] {
+  return buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'ai')
 }
 
 // ── Initiative queue ───────────────────────────────────────────────────────────
 function buildQueue(units: GameUnit[]): string[] {
   const alive = units.filter(u => u.hp > 0)
-  return [...alive]
-    .sort((a, b) => {
-      const ai = a.initiative + moraleBonus(a.morale) * 100 + Math.random() * 0.001
-      const bi = b.initiative + moraleBonus(b.morale) * 100 + Math.random() * 0.001
-      return bi - ai
-    })
-    .map(u => u.id)
+  const exhausted = alive.filter(u => u.buffs.some(b => b.type === 'exhausted'))
+  const normal    = alive.filter(u => !u.buffs.some(b => b.type === 'exhausted'))
+
+  const sort = (arr: GameUnit[]) =>
+    [...arr].sort((a, b) => b.initiative - a.initiative + (Math.random() - 0.5) * 0.1)
+
+  return [...sort(normal), ...sort(exhausted)].map(u => u.id)
 }
 
 // ── Buff helpers ───────────────────────────────────────────────────────────────
@@ -124,61 +76,59 @@ function getBuffValue(unit: GameUnit, type: BuffType): number {
 }
 
 function tickBuffs(unit: GameUnit): GameUnit {
-  const buffs = unit.buffs
-    .map(b => ({ ...b, turnsLeft: b.turnsLeft - 1 }))
-    .filter(b => b.turnsLeft > 0)
-  return { ...unit, buffs }
+  return { ...unit, buffs: unit.buffs.map(b => ({ ...b, turnsLeft: b.turnsLeft - 1 })).filter(b => b.turnsLeft > 0) }
 }
 
-// ── Combat calculation ─────────────────────────────────────────────────────────
-interface AttackResult {
-  hit: boolean
-  evaded: boolean
-  crit: boolean
-  damage: number
-  logs: LogEntry[]
-}
-
+// ── Combat ─────────────────────────────────────────────────────────────────────
 let _logId = 0
 function log(text: string, type: LogEntry['type']): LogEntry {
   return { id: ++_logId, text, type }
 }
 
-function resolveAttack(
-  atk: GameUnit,
-  def: GameUnit,
-  opts: { dmgMult?: number; accBonus?: number } = {}
-): AttackResult {
+interface AttackResult { hit: boolean; evaded: boolean; damage: number; logs: LogEntry[] }
+
+function resolveAttack(atk: GameUnit, def: GameUnit, opts: { dmgMult?: number; accBonus?: number } = {}): AttackResult {
+  let { dmgMult = 1, accBonus = 0 } = opts
   const logs: LogEntry[] = []
-  const { dmgMult = 1, accBonus = 0 } = opts
+
+  // Aimed buff: 20% chance to activate +20% acc / +35% dmg bonus
+  const aimedBuff = atk.buffs.find(b => b.type === 'aimed')
+  if (aimedBuff && Math.random() < 0.20) {
+    accBonus += 0.20
+    dmgMult  *= 1.35
+    logs.push(log(`🎯 Прицільний постріл активовано!`, 'buff'))
+  }
 
   // Hit check
-  const acc = atk.accuracy + moraleBonus(atk.morale) + getBuffValue(atk, 'accuracy_up') + accBonus
+  const acc = Math.min(0.97, atk.accuracy + accBonus)
   if (Math.random() > acc) {
     logs.push(log(`${atk.name} промахується!`, 'miss'))
-    return { hit: false, evaded: false, crit: false, damage: 0, logs }
+    return { hit: false, evaded: false, damage: 0, logs }
   }
 
   // Evasion check
-  const eva = def.evasion + getBuffValue(def, 'evasion_up')
-  if (Math.random() < eva) {
+  if (Math.random() < def.evasion) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
-    return { hit: true, evaded: true, crit: false, damage: 0, logs }
+    return { hit: true, evaded: true, damage: 0, logs }
   }
 
   // Base damage
   let dmg = (atk.minDmg + Math.random() * (atk.maxDmg - atk.minDmg)) * dmgMult
 
-  // Crit check
-  const critRate = atk.critChance + moraleBonus(atk.morale)
-  const isCrit = Math.random() < critRate
+  // damage_up buff (battle cry)
+  dmg *= (1 + getBuffValue(atk, 'damage_up'))
+
+  // weakness debuff on attacker
+  dmg *= (1 - getBuffValue(atk, 'weakness'))
+
+  // Crit
+  const isCrit = Math.random() < atk.critChance
   if (isCrit) dmg *= atk.critMult
 
-  // Defense reduction
-  const def_ = def.defense + getBuffValue(def, 'defense_up') - getBuffValue(def, 'damage_taken_down')
-  dmg *= (1 - Math.max(0, def_))
+  // Defense
+  dmg *= (1 - Math.max(0, def.defense + getBuffValue(def, 'defense_up')))
 
-  // Debuff increases damage taken
+  // Розрив debuff
   dmg *= (1 + getBuffValue(def, 'damage_taken_up'))
 
   dmg = Math.max(1, Math.round(dmg))
@@ -189,51 +139,47 @@ function resolveAttack(
     logs.push(log(`${atk.name} атакує ${def.name}: ${dmg} урону`, 'attack'))
   }
 
-  return { hit: true, evaded: false, crit: isCrit, damage: dmg, logs }
+  return { hit: true, evaded: false, damage: dmg, logs }
 }
 
 // ── Valid targets ──────────────────────────────────────────────────────────────
 export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameUnit[]): string[] {
   const living = (s: Side) => units.filter(u => u.hp > 0 && u.side === s)
+  const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
 
   if (action === 'strike') {
-    const enemySide = actor.side === 'player' ? 'ai' : 'player'
-    const row0 = living(enemySide).filter(u => u.row === 0)
-    if (row0.length) return row0.map(u => u.id)
-    // If row 0 empty, can attack nearest non-empty row
-    for (const r of [1, 2] as Row[]) {
-      const inRow = living(enemySide).filter(u => u.row === r)
-      if (inRow.length) return inRow.map(u => u.id)
+    // Must target front row first; fall back to nearest occupied row
+    for (const r of [0, 1, 2] as Row[]) {
+      const row = living(enemySide).filter(u => u.row === r)
+      if (row.length) return row.map(u => u.id)
     }
     return []
   }
 
-  if (action === 'shot' || action === 'cover_shot' || action === 'spell' || action === 'debuff') {
-    const enemySide = actor.side === 'player' ? 'ai' : 'player'
+  if (action === 'shot' || action === 'spell' || action === 'debuff_rupture' || action === 'debuff_exhaust' || action === 'debuff_weakness') {
     return living(enemySide).map(u => u.id)
   }
 
-  if (action === 'battle_cry' || action === 'ally_shield' || action === 'heal') {
-    return living(actor.side).filter(u => u.id !== actor.id).map(u => u.id)
+  if (action === 'heal') {
+    return living(actor.side).map(u => u.id)
   }
 
-  return [] // shield, aim → self
+  return [] // shield, aim → self (no target needed)
 }
 
-// ── Execute action on state ────────────────────────────────────────────────────
+// ── Execute one action ─────────────────────────────────────────────────────────
 export function executeAction(
   state: BattleState,
   actor: GameUnit,
   action: ActionKey,
-  targetId: string | null
+  targetId: string | null,
 ): { units: GameUnit[]; newLogs: LogEntry[] } {
   let units = state.units.map(u => ({ ...u }))
   const newLogs: LogEntry[] = []
 
   const getUnit = (id: string) => units.find(u => u.id === id)!
-  const updateUnit = (u: GameUnit) => { units = units.map(x => x.id === u.id ? u : x) }
-
-  const target = targetId ? getUnit(targetId) : null
+  const update  = (u: GameUnit) => { units = units.map(x => x.id === u.id ? u : x) }
+  const target  = targetId ? getUnit(targetId) : null
 
   switch (action) {
     case 'strike':
@@ -244,15 +190,15 @@ export function executeAction(
       newLogs.push(...res.logs)
       if (res.damage > 0) {
         const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
-        updateUnit(updated)
+        update(updated)
         if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-        // Counter-attack
+        // Counter-attack (warriors only)
         if (res.hit && !res.evaded && actor.class === 'warrior' && Math.random() < target.counter && target.hp > 0) {
           const ctr = resolveAttack(updated, actor)
           newLogs.push(log(`↩ Контратака!`, 'info'), ...ctr.logs)
           if (ctr.damage > 0) {
             const actorUpdated = { ...getUnit(actor.id), hp: Math.max(0, actor.hp - ctr.damage) }
-            updateUnit(actorUpdated)
+            update(actorUpdated)
             if (actorUpdated.hp === 0) newLogs.push(log(`☠ ${actor.name} гине!`, 'death'))
           }
         }
@@ -260,60 +206,46 @@ export function executeAction(
       break
     }
 
-    case 'cover_shot': {
-      if (!target) break
-      const res = resolveAttack(actor, target, { dmgMult: 0.5 })
-      newLogs.push(...res.logs)
-      if (res.damage > 0) {
-        updateUnit({ ...target, hp: Math.max(0, target.hp - res.damage) })
-      }
-      // Apply evasion buff to self
-      const actorWithBuff = { ...getUnit(actor.id), buffs: [...getUnit(actor.id).buffs, makeBuff('evasion_up', 0.60, 1)] }
-      updateUnit(actorWithBuff)
-      newLogs.push(log(`🛡 ${actor.name} в укритті (+60% ухилення)`, 'buff'))
-      break
-    }
-
     case 'shield': {
       const a = getUnit(actor.id)
-      updateUnit({ ...a, buffs: [...a.buffs, makeBuff('defense_up', 0.15, 1)] })
+      update({ ...a, buffs: [...a.buffs, makeBuff('defense_up', 0.15, 1)] })
       newLogs.push(log(`🛡 ${actor.name} піднімає щит (+15% захисту)`, 'buff'))
       break
     }
 
     case 'aim': {
       const a = getUnit(actor.id)
-      updateUnit({ ...a, buffs: [...a.buffs, makeBuff('accuracy_up', 0.20, 2)] })
-      newLogs.push(log(`🎯 ${actor.name} прицілюється (+20% точності)`, 'buff'))
-      break
-    }
-
-    case 'battle_cry': {
-      if (!target) break
-      updateUnit({ ...target, buffs: [...target.buffs, makeBuff('morale_up', 20, 2)], morale: Math.min(100, target.morale + 20) })
-      newLogs.push(log(`📯 Бойовий клич! ${target.name} +20 моралі`, 'buff'))
-      break
-    }
-
-    case 'ally_shield': {
-      if (!target) break
-      updateUnit({ ...target, buffs: [...target.buffs, makeBuff('damage_taken_down', 0.10, 2)] })
-      newLogs.push(log(`✨ ${actor.name} захищає ${target.name} (-10% урону)`, 'buff'))
-      break
-    }
-
-    case 'debuff': {
-      if (!target) break
-      updateUnit({ ...target, buffs: [...target.buffs, makeBuff('damage_taken_up', 0.10, 2)] })
-      newLogs.push(log(`🌑 ${actor.name} накладає дебафф на ${target.name} (+10% урону)`, 'debuff'))
+      update({ ...a, buffs: [...a.buffs, makeBuff('aimed', 0.20, 3)] })
+      newLogs.push(log(`🎯 ${actor.name} прицілюється (20% шанс бонусу на 3 постріли)`, 'buff'))
       break
     }
 
     case 'heal': {
       if (!target) break
-      const healAmt = actor.name === 'Цілителька Ада' ? 20 : 10
-      updateUnit({ ...target, hp: Math.min(target.maxHp, target.hp + healAmt) })
-      newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+${healAmt} HP)`, 'heal'))
+      const healed = Math.min(target.maxHp, target.hp + 10)
+      update({ ...target, hp: healed })
+      newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+${healed - target.hp} HP)`, 'heal'))
+      break
+    }
+
+    case 'debuff_rupture': {
+      if (!target) break
+      update({ ...target, buffs: [...target.buffs, makeBuff('damage_taken_up', 0.30, 2)] })
+      newLogs.push(log(`🩸 Розрив! ${target.name} отримуватиме +30% урону (2 ходи)`, 'debuff'))
+      break
+    }
+
+    case 'debuff_exhaust': {
+      if (!target) break
+      update({ ...target, buffs: [...target.buffs, makeBuff('exhausted', 1, 2)] })
+      newLogs.push(log(`💤 Виснаження! ${target.name} ходитиме останнім наступного раунду`, 'debuff'))
+      break
+    }
+
+    case 'debuff_weakness': {
+      if (!target) break
+      update({ ...target, buffs: [...target.buffs, makeBuff('weakness', 0.25, 2)] })
+      newLogs.push(log(`🌑 Слабкість! ${target.name} завдаватиме -25% урону (2 ходи)`, 'debuff'))
       break
     }
   }
@@ -321,35 +253,97 @@ export function executeAction(
   return { units, newLogs }
 }
 
-// ── AI decision ────────────────────────────────────────────────────────────────
-export function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; targetId: string | null } {
-  const playerUnits = state.units.filter(u => u.hp > 0 && u.side === 'player')
-  const aiAllies = state.units.filter(u => u.hp > 0 && u.side === 'ai' && u.id !== actor.id)
+// ── Auto-bonus after main action ───────────────────────────────────────────────
+// Returns updated state; if mage bonus triggers for AI, resolves automatically.
+// For player mage bonus, returns pendingDebuff=true (UI handles selection).
+function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): BattleState {
+  let units = [...state.units]
+  const newLogs: LogEntry[] = []
 
-  const weakestPlayer = [...playerUnits].sort((a, b) => a.hp - b.hp)[0]
-  const weakestAlly = [...aiAllies].sort((a, b) => a.hp - b.hp)[0]
+  const actor = units.find(u => u.id === actorId)
+  if (!actor || actor.hp === 0) return state
 
   if (actor.class === 'warrior') {
-    const row0Targets = playerUnits.filter(u => u.row === 0)
-    const attackTarget = row0Targets.length ? [...row0Targets].sort((a, b) => a.hp - b.hp)[0] : weakestPlayer
-    // 30% chance to shield after attacking (but since AI acts in one step, just randomly shield instead)
-    if (Math.random() < 0.25) {
-      return { action: 'shield', targetId: null }
+    if (Math.random() < 0.33) {
+      const allies = units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
+      if (allies.length > 0) {
+        const target = allies[Math.floor(Math.random() * allies.length)]
+        newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону на 2 ходи)`, 'buff'))
+        units = units.map(u => u.id === target.id
+          ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
+          : u)
+      }
     }
-    return { action: 'strike', targetId: attackTarget?.id ?? null }
   }
 
   if (actor.class === 'archer') {
-    if (!weakestPlayer) return { action: 'aim', targetId: null }
-    return { action: 'shot', targetId: weakestPlayer.id }
+    if (Math.random() < 0.25) {
+      const freshActor = units.find(u => u.id === actorId)!
+      const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+      if (enemies.length > 0) {
+        const target = enemies[Math.floor(Math.random() * enemies.length)]
+        const res = resolveAttack(freshActor, target)
+        newLogs.push(log(`🏹 Додатковий постріл!`, 'info'), ...res.logs)
+        if (res.damage > 0) {
+          const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
+          units = units.map(u => u.id === target.id ? updated : u)
+          if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+        }
+      }
+    }
   }
 
   if (actor.class === 'mage') {
-    // 40% debuff, 30% heal ally, 30% spell
-    const roll = Math.random()
-    if (roll < 0.40 && weakestPlayer) return { action: 'debuff', targetId: weakestPlayer.id }
-    if (roll < 0.70 && weakestAlly && weakestAlly.hp < weakestAlly.maxHp * 0.6) {
-      return { action: 'heal', targetId: weakestAlly.id }
+    if (Math.random() < 0.20) {
+      if (isAI) {
+        // AI auto-picks Розрив on weakest player
+        const freshActor = units.find(u => u.id === actorId)!
+        const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+        const target = [...enemies].sort((a, b) => a.hp - b.hp)[0]
+        if (target) {
+          const { units: u2, newLogs: l2 } = executeAction({ ...state, units }, freshActor, 'debuff_rupture', target.id)
+          return { ...state, units: u2, log: [...state.log, ...newLogs, ...l2] }
+        }
+      } else {
+        // Player chooses — signal UI
+        newLogs.push(log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff'))
+        return { ...state, units, log: [...state.log, ...newLogs], pendingDebuff: true }
+      }
+    }
+  }
+
+  return { ...state, units, log: [...state.log, ...newLogs] }
+}
+
+// ── AI decision ────────────────────────────────────────────────────────────────
+function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; targetId: string | null } {
+  const playerUnits = state.units.filter(u => u.hp > 0 && u.side === 'player')
+  const aiAllies    = state.units.filter(u => u.hp > 0 && u.side === 'ai' && u.id !== actor.id)
+
+  const weakestPlayer = [...playerUnits].sort((a, b) => a.hp - b.hp)[0]
+  const mostHurtAlly  = [...aiAllies].sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0]
+
+  if (actor.class === 'warrior') {
+    if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.5) {
+      return { action: 'shield', targetId: null }
+    }
+    // Strike front row first
+    const front = playerUnits.filter(u => u.row === 0)
+    const target = (front.length ? front : playerUnits).sort((a, b) => a.hp - b.hp)[0]
+    return { action: 'strike', targetId: target?.id ?? null }
+  }
+
+  if (actor.class === 'archer') {
+    const hasAimed = actor.buffs.some(b => b.type === 'aimed')
+    if (!hasAimed && playerUnits.length > 0 && Math.random() < 0.30) {
+      return { action: 'aim', targetId: null }
+    }
+    return { action: 'shot', targetId: weakestPlayer?.id ?? null }
+  }
+
+  if (actor.class === 'mage') {
+    if (mostHurtAlly && mostHurtAlly.hp < mostHurtAlly.maxHp * 0.5 && Math.random() < 0.40) {
+      return { action: 'heal', targetId: mostHurtAlly.id }
     }
     return { action: 'spell', targetId: weakestPlayer?.id ?? null }
   }
@@ -357,41 +351,33 @@ export function aiDecide(actor: GameUnit, state: BattleState): { action: ActionK
   return { action: 'strike', targetId: weakestPlayer?.id ?? null }
 }
 
-// ── Action definitions ─────────────────────────────────────────────────────────
-export const ACTION_CATEGORY: Record<ActionKey, ActionCategory> = {
-  strike: 'primary', shot: 'primary', cover_shot: 'primary', spell: 'primary',
-  shield: 'secondary', aim: 'secondary', ally_shield: 'secondary', debuff: 'secondary',
-  battle_cry: 'bonus', heal: 'bonus',
-}
-
+// ── Action definitions (for UI) ────────────────────────────────────────────────
 export const ACTIONS: Record<ActionKey, ActionDef> = {
-  strike:     { key: 'strike',     label: 'Удар',           desc: 'Атака ворога в ближньому бою',            targetSide: 'ai',   },
-  shield:     { key: 'shield',     label: 'Щит',            desc: '+15% захисту цей хід',                    targetSide: null,   },
-  battle_cry: { key: 'battle_cry', label: 'Бойовий клич',   desc: '+20 моралі союзнику на 2 ходи',           targetSide: 'ally', },
-  shot:       { key: 'shot',       label: 'Постріл',        desc: 'Атака будь-якого ворога',                 targetSide: 'ai',   },
-  cover_shot: { key: 'cover_shot', label: 'З укриття',      desc: '-50% урону, +60% ухилення цей хід',      targetSide: 'ai',   },
-  aim:        { key: 'aim',        label: 'Прицілитись',    desc: '+20% точності наступний хід',             targetSide: null,   },
-  spell:      { key: 'spell',      label: 'Заклинання',     desc: 'Магічна атака будь-якого ворога',         targetSide: 'ai',   },
-  ally_shield:{ key: 'ally_shield',label: 'Захист',         desc: '-10% урону союзнику на 2 ходи',          targetSide: 'ally', },
-  debuff:     { key: 'debuff',     label: 'Дебафф',         desc: '+10% урону по ворогу на 2 ходи',         targetSide: 'ai',   },
-  heal:       { key: 'heal',       label: 'Зцілення',       desc: '+10 HP союзнику',                         targetSide: 'ally', },
+  strike:          { key: 'strike',          label: 'Удар',       desc: 'Атака ворога в ближньому бою',             needsTarget: true,  targetSide: 'ai'   },
+  shield:          { key: 'shield',          label: 'Щит',        desc: '+15% захисту цей хід',                     needsTarget: false, targetSide: null   },
+  shot:            { key: 'shot',            label: 'Постріл',    desc: 'Атака будь-якого ворога',                  needsTarget: true,  targetSide: 'ai'   },
+  aim:             { key: 'aim',             label: 'Прицілення', desc: '20% шанс +20% точн./+35% урону на 3 ходи', needsTarget: false, targetSide: null   },
+  spell:           { key: 'spell',           label: 'Закляття',   desc: 'Магічна атака будь-якого ворога',          needsTarget: true,  targetSide: 'ai'   },
+  heal:            { key: 'heal',            label: 'Зцілення',   desc: '+10 HP союзнику',                          needsTarget: true,  targetSide: 'ally' },
+  debuff_rupture:  { key: 'debuff_rupture',  label: 'Розрив',     desc: '+30% урону по цілі (2 ходи)',              needsTarget: true,  targetSide: 'ai'   },
+  debuff_exhaust:  { key: 'debuff_exhaust',  label: 'Виснаження', desc: 'Ціль ходить останньою (2 ходи)',           needsTarget: true,  targetSide: 'ai'   },
+  debuff_weakness: { key: 'debuff_weakness', label: 'Слабкість',  desc: '-25% урону цілі (2 ходи)',                 needsTarget: true,  targetSide: 'ai'   },
 }
 
-export function getActorActions(cls: UnitClass): { primary: ActionKey[]; secondary: ActionKey[]; bonus: ActionKey[] } {
-  if (cls === 'warrior') return { primary: ['strike'], secondary: ['shield'], bonus: ['battle_cry'] }
-  if (cls === 'archer')  return { primary: ['shot', 'cover_shot'], secondary: ['aim'], bonus: [] }
-  return { primary: ['spell'], secondary: ['ally_shield', 'debuff'], bonus: ['heal'] }
+export function getMainActions(cls: UnitClass): ActionKey[] {
+  if (cls === 'warrior') return ['strike', 'shield']
+  if (cls === 'archer')  return ['shot',   'aim']
+  return ['spell', 'heal']
 }
 
 // ── Initial state ──────────────────────────────────────────────────────────────
-const TURN_RESET = { usedPrimary: false, usedSecondary: false, usedBonus: false, selectedAction: null, needsTarget: false }
+const TURN_RESET = { selectedAction: null, needsTarget: false, pendingDebuff: false }
 
-export function createInitialState(playerSlots?: ArmySlot[]): BattleState {
-  const playerUnits = playerSlots ? defsToArmy(playerSlots, 'player') : buildArmy('player')
-  const units = [...playerUnits, ...buildArmy('ai')]
+export function createInitialState(counts?: ArmyCounts): BattleState {
+  const playerUnits = counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'player')
+  const units = [...playerUnits, ...buildDefaultAIArmy()]
   const queue = buildQueue(units)
-  const firstId = queue[0]
-  const first = units.find(u => u.id === firstId)!
+  const first = units.find(u => u.id === queue[0])!
   return {
     units, queue, queueIdx: 0,
     phase: first.side === 'player' ? 'player-turn' : 'ai-thinking',
@@ -399,26 +385,6 @@ export function createInitialState(playerSlots?: ArmySlot[]): BattleState {
     log: [{ id: ++_logId, text: '⚔ Бій починається!', type: 'info' }],
     round: 1,
     ...TURN_RESET,
-  }
-}
-
-// Check if current actor still has actions available
-function hasRemainingActions(state: BattleState, actorClass: UnitClass): boolean {
-  const { primary, secondary, bonus } = getActorActions(actorClass)
-  if (primary.length > 0 && !state.usedPrimary) return true
-  if (secondary.length > 0 && !state.usedSecondary) return true
-  if (bonus.length > 0 && !state.usedBonus) return true
-  return false
-}
-
-// Mark the used category after executing an action
-function markUsed(state: BattleState, action: ActionKey): BattleState {
-  const cat = ACTION_CATEGORY[action]
-  return {
-    ...state,
-    usedPrimary:   cat === 'primary'   ? true : state.usedPrimary,
-    usedSecondary: cat === 'secondary' ? true : state.usedSecondary,
-    usedBonus:     cat === 'bonus'     ? true : state.usedBonus,
   }
 }
 
@@ -430,74 +396,50 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
 
     case 'SELECT_ACTION': {
       const a = action.action
-      const actor = state.units.find(u => u.id === state.queue[state.queueIdx])!
-      const targets = getValidTargets(actor, a, state.units)
-      const needsTarget = ACTIONS[a].targetSide !== null && targets.length > 0
+      const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
+      if (!actor || actor.hp === 0) return state
 
-      // Self-targeting: execute immediately
-      if (!needsTarget) {
+      const def = ACTIONS[a]
+      if (!def.needsTarget) {
+        // Execute immediately (shield, aim)
         const { units, newLogs } = executeAction(state, actor, a, null)
-        const next = markUsed({ ...state, units, log: [...state.log, ...newLogs], selectedAction: null, needsTarget: false }, a)
-        return hasRemainingActions(next, actor.class) ? next : advanceQueue(next)
+        const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET }
+        // Debuff selections don't trigger another bonus
+        if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
+        return advanceQueue(handleAutoBonus(next, actor.id, false))
       }
 
       return { ...state, selectedAction: a, needsTarget: true }
     }
 
-    case 'CANCEL_ACTION':
-      return { ...state, selectedAction: null, needsTarget: false }
-
     case 'CONFIRM_TARGET': {
-      const actor = state.units.find(u => u.id === state.queue[state.queueIdx])!
-      if (!state.selectedAction) return state
-      const a = state.selectedAction
-      const { units, newLogs } = executeAction(state, actor, a, action.targetId)
-      const next = markUsed({ ...state, units, log: [...state.log, ...newLogs], selectedAction: null, needsTarget: false }, a)
-      return hasRemainingActions(next, actor.class) ? next : advanceQueue(next)
+      const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
+      if (!actor || !state.selectedAction) return state
+
+      const { units, newLogs } = executeAction(state, actor, state.selectedAction, action.targetId)
+      const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET }
+
+      // If this confirm was for a debuff choice (mage bonus), advance queue
+      if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
+
+      // Otherwise run auto-bonus
+      return advanceQueue(handleAutoBonus(next, actor.id, false))
     }
 
-    case 'END_TURN':
-      return advanceQueue({ ...state, selectedAction: null, needsTarget: false })
+    case 'CANCEL_ACTION':
+      return { ...state, selectedAction: null, needsTarget: false }
 
     case 'AI_TAKE_TURN': {
       const actorId = state.queue[state.queueIdx]
       const actor = state.units.find(u => u.id === actorId)
       if (!actor || actor.hp === 0 || actor.side !== 'ai') return advanceQueue(state)
 
-      // AI uses all available actions in sequence
-      let cur: BattleState = { ...state }
-      const actorRef = actor
+      const { action: act, targetId } = aiDecide(actor, state)
+      if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
 
-      const tryAction = (actionKey: ActionKey, s: BattleState): BattleState => {
-        const freshActor = s.units.find(u => u.id === actorRef.id)
-        if (!freshActor || freshActor.hp === 0) return s
-        const { action: act, targetId } = aiDecide(freshActor, s)
-        // Use the requested action type if possible
-        const usedAction = actionKey === act ? act : actionKey
-        const targets = getValidTargets(freshActor, usedAction, s.units)
-        const tid = ACTIONS[usedAction].targetSide !== null ? (targets[0] ?? null) : null
-        if (ACTIONS[usedAction].targetSide !== null && !tid) return s
-        const { units, newLogs } = executeAction(s, freshActor, usedAction, tid)
-        return markUsed({ ...s, units, log: [...s.log, ...newLogs] }, usedAction)
-      }
-
-      const { primary, secondary, bonus } = getActorActions(actorRef.class)
-      // Pick best primary
-      const { action: bestPrimary } = aiDecide(actor, cur)
-      if (primary.length && !cur.usedPrimary) {
-        const act = primary.includes(bestPrimary) ? bestPrimary : primary[0]
-        cur = tryAction(act, cur)
-      }
-      if (secondary.length && !cur.usedSecondary) {
-        const { action: bestSec } = aiDecide(cur.units.find(u=>u.id===actorRef.id)??actor, cur)
-        const act = secondary.includes(bestSec) ? bestSec : secondary[0]
-        cur = tryAction(act, cur)
-      }
-      if (bonus.length && !cur.usedBonus) {
-        cur = tryAction(bonus[0], cur)
-      }
-
-      return advanceQueue(cur)
+      const { units, newLogs } = executeAction(state, actor, act, targetId)
+      const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET }
+      return advanceQueue(handleAutoBonus(next, actorId, true))
     }
 
     case 'ADVANCE_QUEUE':
@@ -509,36 +451,32 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
 }
 
 function advanceQueue(state: BattleState): BattleState {
-  // Check win condition
+  // Win check
   const playerAlive = state.units.filter(u => u.side === 'player' && u.hp > 0).length
-  const aiAlive = state.units.filter(u => u.side === 'ai' && u.hp > 0).length
+  const aiAlive     = state.units.filter(u => u.side === 'ai'     && u.hp > 0).length
   if (playerAlive === 0) return { ...state, phase: 'game-over', winner: 'ai' }
-  if (aiAlive === 0) return { ...state, phase: 'game-over', winner: 'player' }
+  if (aiAlive     === 0) return { ...state, phase: 'game-over', winner: 'player' }
 
-  // Find next unit in queue that's alive
-  let idx = state.queueIdx + 1
-  let round = state.round
-  let queue = state.queue
-
-  // Tick buffs on the unit that just acted
+  // Tick buffs on unit that just acted
   let units = state.units
-  const justActed = state.units.find(u => u.id === state.queue[state.queueIdx])
+  const justActed = units.find(u => u.id === state.queue[state.queueIdx])
   if (justActed) units = units.map(u => u.id === justActed.id ? tickBuffs(u) : u)
 
-  // Skip dead units in queue
-  while (idx < queue.length && (units.find(u => u.id === queue[idx])?.hp ?? 0) === 0) idx++
+  // Find next alive unit in queue
+  let idx = state.queueIdx + 1
+  while (idx < state.queue.length && (units.find(u => u.id === state.queue[idx])?.hp ?? 0) === 0) idx++
+
+  let queue = state.queue
+  let round = state.round
 
   if (idx >= queue.length) {
-    // New round: rebuild queue
     round++
     queue = buildQueue(units)
     idx = 0
-    const newRoundLog: LogEntry = { id: ++_logId, text: `── Раунд ${round} ──`, type: 'info' }
-    state = { ...state, log: [...state.log, newRoundLog] }
+    state = { ...state, log: [...state.log, { id: ++_logId, text: `── Раунд ${round} ──`, type: 'info' }] }
   }
 
-  const nextId = queue[idx]
-  const next = units.find(u => u.id === nextId)
+  const next = units.find(u => u.id === queue[idx])
   const phase: Phase = next?.side === 'player' ? 'player-turn' : 'ai-thinking'
 
   return { ...state, units, queue, queueIdx: idx, round, phase, ...TURN_RESET }
