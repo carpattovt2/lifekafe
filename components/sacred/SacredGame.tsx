@@ -1,10 +1,11 @@
 'use client'
 
-import { useReducer, useEffect, useRef } from 'react'
+import { useReducer, useEffect, useRef, useState } from 'react'
 import {
   createInitialState, battleReducer, getActorActions, getValidTargets, ACTIONS,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ActionCategory } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ActionCategory, ArmySlot } from '@/lib/sacred/types'
+import ArmyBuilder from './ArmyBuilder'
 
 // ── Colour palette ────────────────────────────────────────────────────────────
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
@@ -202,9 +203,69 @@ function ActionBtn({ actionKey, selected, used, onSelect }: {
   )
 }
 
+// ── Landing screen ────────────────────────────────────────────────────────────
+function Landing({ onNewGame }: { onNewGame: () => void }) {
+  return (
+    <div style={{
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh',
+      background: '#0e0d0b', color: 'var(--text)',
+      fontFamily: "'Inter', sans-serif",
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '40px 24px', textAlign: 'center',
+    }}>
+      <div style={{ fontSize: 48, marginBottom: 20, filter: 'drop-shadow(0 0 20px #ffd70055)' }}>✦</div>
+      <div style={{ fontSize: 28, fontWeight: 800, color: '#ffd700', letterSpacing: '-0.02em', marginBottom: 8 }}>
+        Серафити
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300, marginBottom: 40 }}>
+        Тактична покрокова битва. Обирай армію, розставляй бійців по рядах і веди їх до перемоги.
+      </div>
+
+      <button
+        onClick={onNewGame}
+        style={{
+          padding: '16px 40px', fontSize: 16, fontWeight: 700,
+          background: '#ffd700', color: '#0e0d0b',
+          border: 'none', borderRadius: 12, cursor: 'pointer',
+          letterSpacing: '-0.01em',
+          boxShadow: '0 0 24px #ffd70044',
+          transition: 'transform 0.1s, box-shadow 0.1s',
+        }}
+      >
+        ⚔ Нова гра
+      </button>
+
+      <div style={{ marginTop: 48, display: 'flex', gap: 28, fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>⚔</div>Воїни
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>🏹</div>Лучники
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>✨</div>Маги
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main game ─────────────────────────────────────────────────────────────────
 export default function SacredGame() {
-  const [state, dispatch] = useReducer(battleReducer, undefined, createInitialState)
+  const [screen, setScreen] = useState<'landing' | 'army-builder' | 'battle'>('landing')
+  const [armySlots, setArmySlots] = useState<ArmySlot[] | null>(null)
+
+  if (screen === 'landing') {
+    return <Landing onNewGame={() => setScreen('army-builder')} />
+  }
+  if (screen === 'army-builder') {
+    return <ArmyBuilder onStart={slots => { setArmySlots(slots); setScreen('battle') }} />
+  }
+  return <Battle armySlots={armySlots!} onRestart={() => setScreen('landing')} />
+}
+
+function Battle({ armySlots, onRestart }: { armySlots: ArmySlot[]; onRestart: () => void }) {
+  const [state, dispatch] = useReducer(battleReducer, armySlots, createInitialState)
 
   const actorId = state.queue[state.queueIdx]
   const actor = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
@@ -300,7 +361,7 @@ export default function SacredGame() {
             {state.winner === 'player' ? '🏆 Перемога!' : '💀 Поразка'}
           </div>
           <button
-            onClick={() => window.location.reload()}
+            onClick={onRestart}
             style={{ padding: '12px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
           >
             Новий бій

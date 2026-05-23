@@ -528,3 +528,12 @@ h1, h2, h3 {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ── Games hub cards ─────────────────────────────────────────────────────── */
+.game-hub-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+.game-hub-card:active {
+  transform: translateY(0);
+}

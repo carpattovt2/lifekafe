@@ -1,6 +1,7 @@
 import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
   ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase, ActionCategory,
+  UnitDef, ArmySlot,
 } from './types'
 
 // ── Morale modifier ────────────────────────────────────────────────────────────
@@ -49,6 +50,43 @@ function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number, nameIdx = 
     ...t, id: uid(), side, row, slot, hasActed: false, buffs: [],
     name: CLASS_NAMES[cls][nameIdx] ?? `${cls} ${slot + 1}`,
   }
+}
+
+// ── Unit pool (player picks from these) ───────────────────────────────────────
+export const UNIT_POOL: UnitDef[] = [
+  // Warriors
+  { defId: 'w1', class: 'warrior', name: 'Брат Лю',     hp: 75,  maxHp: 75,  minDmg: 14, maxDmg: 18, accuracy: 0.75, defense: 0.10, initiative: 50, morale: 50, critChance: 0.10, critMult: 1.5, counter: 0.10, evasion: 0.05, desc: 'Збалансований воїн' },
+  { defId: 'w2', class: 'warrior', name: 'Брат Анте',   hp: 90,  maxHp: 90,  minDmg: 11, maxDmg: 14, accuracy: 0.75, defense: 0.15, initiative: 45, morale: 50, critChance: 0.08, critMult: 1.5, counter: 0.15, evasion: 0.03, desc: 'Захисник — більше HP та захисту' },
+  { defId: 'w3', class: 'warrior', name: 'Брат Мар',    hp: 60,  maxHp: 60,  minDmg: 18, maxDmg: 24, accuracy: 0.70, defense: 0.05, initiative: 55, morale: 60, critChance: 0.15, critMult: 1.8, counter: 0.08, evasion: 0.04, desc: 'Берсерк — висока шкода' },
+  { defId: 'w4', class: 'warrior', name: 'Брат Орест',  hp: 70,  maxHp: 70,  minDmg: 13, maxDmg: 17, accuracy: 0.78, defense: 0.10, initiative: 48, morale: 50, critChance: 0.10, critMult: 1.5, counter: 0.30, evasion: 0.04, desc: 'Контратакер — 30% відповідного удару' },
+  { defId: 'w5', class: 'warrior', name: 'Сестра Тайра',hp: 65,  maxHp: 65,  minDmg: 13, maxDmg: 17, accuracy: 0.80, defense: 0.08, initiative: 58, morale: 55, critChance: 0.12, critMult: 1.6, counter: 0.08, evasion: 0.20, desc: 'Легконога — висока ухилення' },
+  // Archers
+  { defId: 'a1', class: 'archer',  name: 'Стрілець Дан', hp: 55, maxHp: 55,  minDmg: 18, maxDmg: 24, accuracy: 0.60, defense: 0.05, initiative: 65, morale: 50, critChance: 0.05, critMult: 3.0, counter: 0, evasion: 0.15, desc: 'Збалансований лучник' },
+  { defId: 'a2', class: 'archer',  name: 'Стрілець Леон',hp: 50, maxHp: 50,  minDmg: 20, maxDmg: 30, accuracy: 0.48, defense: 0.04, initiative: 62, morale: 50, critChance: 0.15, critMult: 3.5, counter: 0, evasion: 0.18, desc: 'Снайпер — рідко влучає, але смертоносно' },
+  { defId: 'a3', class: 'archer',  name: 'Стрілець Мія', hp: 52, maxHp: 52,  minDmg: 15, maxDmg: 20, accuracy: 0.78, defense: 0.05, initiative: 67, morale: 55, critChance: 0.04, critMult: 2.5, counter: 0, evasion: 0.12, desc: 'Точна стрільба — надійна шкода' },
+  { defId: 'a4', class: 'archer',  name: 'Слідопит Рог', hp: 58, maxHp: 58,  minDmg: 16, maxDmg: 22, accuracy: 0.65, defense: 0.06, initiative: 60, morale: 50, critChance: 0.06, critMult: 2.8, counter: 0, evasion: 0.20, desc: 'Тактик — ефективний з укриття' },
+  // Mages
+  { defId: 'm1', class: 'mage',    name: 'Маг Серафіт',    hp: 50, maxHp: 50, minDmg: 10, maxDmg: 14, accuracy: 0.50, defense: 0, initiative: 40, morale: 50, critChance: 0.75, critMult: 2.0, counter: 0, evasion: 0.35, desc: 'Збалансований маг, висока ухилення' },
+  { defId: 'm2', class: 'mage',    name: 'Цілителька Ада',  hp: 45, maxHp: 45, minDmg: 7,  maxDmg: 10, accuracy: 0.45, defense: 0, initiative: 38, morale: 55, critChance: 0.60, critMult: 1.8, counter: 0, evasion: 0.40, desc: 'Зцілює +20 HP замість +10' },
+  { defId: 'm3', class: 'mage',    name: 'Заклинач Крон',   hp: 40, maxHp: 40, minDmg: 14, maxDmg: 20, accuracy: 0.42, defense: 0, initiative: 43, morale: 45, critChance: 0.85, critMult: 2.5, counter: 0, evasion: 0.25, desc: 'Крит-маг — смертоносний, але крихкий' },
+]
+
+export function defsToArmy(slots: ArmySlot[], side: Side): GameUnit[] {
+  const rowCounts: Record<number, number> = {}
+  return slots.map(({ def, row }) => {
+    const slot = rowCounts[row] ?? 0
+    rowCounts[row] = slot + 1
+    return {
+      id: uid(), side, row, slot, hasActed: false, buffs: [],
+      class: def.class, name: def.name,
+      hp: def.hp, maxHp: def.maxHp,
+      minDmg: def.minDmg, maxDmg: def.maxDmg,
+      accuracy: def.accuracy, defense: def.defense,
+      initiative: def.initiative, morale: def.morale,
+      critChance: def.critChance, critMult: def.critMult,
+      counter: def.counter, evasion: def.evasion,
+    }
+  })
 }
 
 // ── Initial army layout ────────────────────────────────────────────────────────
@@ -273,8 +311,9 @@ export function executeAction(
 
     case 'heal': {
       if (!target) break
-      updateUnit({ ...target, hp: Math.min(target.maxHp, target.hp + 10) })
-      newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+10 HP)`, 'heal'))
+      const healAmt = actor.name === 'Цілителька Ада' ? 20 : 10
+      updateUnit({ ...target, hp: Math.min(target.maxHp, target.hp + healAmt) })
+      newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+${healAmt} HP)`, 'heal'))
       break
     }
   }
@@ -347,8 +386,9 @@ export function getActorActions(cls: UnitClass): { primary: ActionKey[]; seconda
 // ── Initial state ──────────────────────────────────────────────────────────────
 const TURN_RESET = { usedPrimary: false, usedSecondary: false, usedBonus: false, selectedAction: null, needsTarget: false }
 
-export function createInitialState(): BattleState {
-  const units = [...buildArmy('player'), ...buildArmy('ai')]
+export function createInitialState(playerSlots?: ArmySlot[]): BattleState {
+  const playerUnits = playerSlots ? defsToArmy(playerSlots, 'player') : buildArmy('player')
+  const units = [...playerUnits, ...buildArmy('ai')]
   const queue = buildQueue(units)
   const firstId = queue[0]
   const first = units.find(u => u.id === firstId)!

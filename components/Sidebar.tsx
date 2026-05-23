@@ -16,8 +16,7 @@ export default function Sidebar({ email }: { email: string }) {
     { href: '/weight',    label: t.nav.weight,    icon: '⚖' },
     { href: '/planner',   label: t.nav.planner,   icon: '◫' },
     { href: '/journal',   label: t.nav.journal,   icon: '📓' },
-    { href: '/game',      label: t.nav.game,       icon: '♦' },
-    { href: '/sacred',    label: t.nav.sacred,     icon: '✦' },
+    { href: '/games',     label: t.nav.games,      icon: '🎮' },
   ]
 
   async function logout() {
@@ -71,7 +70,7 @@ export default function Sidebar({ email }: { email: string }) {
         gap: '2px',
       }}>
         {NAV.map(({ href, label, icon }) => (
-          <Link key={href} href={href} className={`nav-link ${pathname === href ? 'active' : ''}`}>
+          <Link key={href} href={href} className={`nav-link ${pathname === href || (href === '/games' && (pathname.startsWith('/game') || pathname.startsWith('/sacred'))) ? 'active' : ''}`}>
             <span style={{ fontSize: '15px', flexShrink: 0 }}>{icon}</span>
             {label}
           </Link>

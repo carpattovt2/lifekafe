@@ -96,3 +96,21 @@ export type BattleAction =
   | { type: 'AI_TAKE_TURN' }
   | { type: 'END_TURN' }
   | { type: 'ADVANCE_QUEUE' }
+
+export interface UnitDef {
+  defId: string
+  class: UnitClass
+  name: string
+  hp: number; maxHp: number
+  minDmg: number; maxDmg: number
+  accuracy: number; defense: number
+  initiative: number; morale: number
+  critChance: number; critMult: number
+  counter: number; evasion: number
+  desc: string
+}
+
+export interface ArmySlot {
+  def: UnitDef
+  row: Row
+}
