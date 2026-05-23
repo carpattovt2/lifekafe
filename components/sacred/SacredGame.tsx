@@ -404,10 +404,62 @@ function ActionBtn({ actionKey, selected, onSelect }: {
 }
 
 // ── Unit info sheet ────────────────────────────────────────────────────────────
+const CLASS_ACTIONS_INFO: Record<string, {
+  actions: { key: ActionKey; extra?: string }[]
+  bonus: { icon: string; title: string; chance: string; desc: string; sub?: { label: string; desc: string }[] } | null
+}> = {
+  warrior: {
+    actions: [
+      { key: 'strike', extra: 'Тільки сусідні слоти в тому ж ряду' },
+      { key: 'shield' },
+    ],
+    bonus: {
+      icon: '📯', title: 'Бойовий клич', chance: '33% після удару',
+      desc: 'Обираєш союзника — він отримує +20% урону на 2 ходи.',
+    },
+  },
+  archer: {
+    actions: [
+      { key: 'shot', extra: 'Будь-який ворог на полі' },
+      { key: 'aim',  extra: '20% шанс бонусу спрацьовує щоразу при пострілі' },
+    ],
+    bonus: {
+      icon: '🏹', title: 'Додатковий постріл', chance: '25% після пострілу',
+      desc: 'Обираєш будь-якого ворога — безкоштовний додатковий постріл.',
+    },
+  },
+  mage: {
+    actions: [
+      { key: 'spell', extra: 'Ігнорує частину захисту' },
+      { key: 'heal',  extra: 'Будь-який живий союзник' },
+    ],
+    bonus: {
+      icon: '✨', title: 'Дебаф', chance: '20% після закляття',
+      desc: 'Обираєш один із трьох дебафів та ціль:',
+      sub: [
+        { label: 'Розрив',     desc: '+30% отримуваного урону — 2 ходи' },
+        { label: 'Виснаження', desc: 'Ціль ходить останньою — 2 ходи' },
+        { label: 'Слабкість',  desc: '-25% урону цілі — 2 ходи' },
+      ],
+    },
+  },
+  catapult: {
+    actions: [
+      { key: 'barrage', extra: 'Усі 8 сусідів (±ряд, ±слот) отримують 25–75% урону' },
+      { key: 'repair',  extra: 'Тільки на себе' },
+    ],
+    bonus: {
+      icon: '💥', title: 'Осколковий удар', chance: '25% після барражу',
+      desc: 'Випадковий живий ворог отримує автоматичний удар (гарантоване влучення).',
+    },
+  },
+}
+
 function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void }) {
   const color = SIDE_COLOR[unit.side]
   const alive = unit.hp > 0
   const AvatarSVG = CLASS_SVG[unit.class]
+  const classInfo = CLASS_ACTIONS_INFO[unit.class]
   const stats: [string, string][] = [
     ['⚔ Урон', `${unit.minDmg}–${unit.maxDmg}`],
     ['🎯 Точність', `${Math.round(unit.accuracy * 100)}%`],
@@ -416,74 +468,157 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
     ['👁 Ухилення', `${Math.round(unit.evasion * 100)}%`],
     ['💥 Крит', `${Math.round(unit.critChance * 100)}% ×${unit.critMult}`],
   ]
+
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 50 }} />
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 560,
+        width: '100%', maxWidth: 560, maxHeight: '88vh',
         background: '#faf8f5', borderRadius: '16px 16px 0 0',
         border: `1px solid ${color}55`, borderBottom: 'none',
-        zIndex: 51, padding: '14px 20px 36px',
+        zIndex: 51, display: 'flex', flexDirection: 'column',
         fontFamily: "'Inter', sans-serif",
       }}>
-        <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 14px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-            background: `${color}18`, border: `1.5px solid ${color}55`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <AvatarSVG color={color} size={26} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color }}>{unit.name}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
-              {unit.side === 'player' ? 'Твій юніт' : 'Ворожий юніт'} · {ROW_LABEL[unit.row]} ряд
+        {/* Drag handle + header — fixed */}
+        <div style={{ padding: '14px 20px 0', flexShrink: 0 }}>
+          <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 14px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+              background: `${color}18`, border: `1.5px solid ${color}55`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <AvatarSVG color={color} size={26} />
             </div>
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: alive ? '#7aaa82' : '#c07070', marginRight: 6 }}>
-            {alive ? '● Живий' : '● Загинув'}
-          </div>
-          <button onClick={onClose} style={{
-            width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-            background: 'rgba(0,0,0,0.05)', border: '1px solid rgba(0,0,0,0.1)',
-            color: 'var(--muted)', cursor: 'pointer', fontSize: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>✕</button>
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-            <span>HP</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{unit.hp} / {unit.maxHp}</span>
-          </div>
-          <HpBar hp={unit.hp} maxHp={unit.maxHp} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
-          {stats.map(([label, value]) => (
-            <div key={label} style={{ padding: '7px 10px', borderRadius: 8, background: '#fff', border: '1px solid rgba(0,0,0,0.08)' }}>
-              <div style={{ fontSize: 10, color: 'var(--muted)' }}>{label}</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginTop: 1 }}>{value}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color }}>{unit.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                {unit.side === 'player' ? 'Твій юніт' : 'Ворожий юніт'} · {ROW_LABEL[unit.row]} ряд
+              </div>
             </div>
-          ))}
+            <div style={{ fontSize: 11, fontWeight: 600, color: alive ? '#7aaa82' : '#c07070', marginRight: 6 }}>
+              {alive ? '● Живий' : '● Загинув'}
+            </div>
+            <button onClick={onClose} style={{
+              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              background: 'rgba(0,0,0,0.05)', border: '1px solid rgba(0,0,0,0.1)',
+              color: 'var(--muted)', cursor: 'pointer', fontSize: 14,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>✕</button>
+          </div>
         </div>
-        {unit.buffs.length > 0 && (
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>Активні ефекти</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {unit.buffs.map(b => (
-                <div key={b.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 10px', borderRadius: 8,
-                  background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
-                }}>
-                  <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{BUFF_LABEL[b.type] ?? b.type}</span>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.turnsLeft} хід.</span>
+
+        {/* Scrollable body */}
+        <div style={{ overflowY: 'auto', padding: '0 20px 36px', flex: 1 }}>
+
+          {/* HP */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+              <span>HP</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{unit.hp} / {unit.maxHp}</span>
+            </div>
+            <HpBar hp={unit.hp} maxHp={unit.maxHp} />
+          </div>
+
+          {/* Stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 14 }}>
+            {stats.map(([label, value]) => (
+              <div key={label} style={{ padding: '7px 10px', borderRadius: 8, background: '#fff', border: '1px solid rgba(0,0,0,0.08)' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginTop: 1 }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          {classInfo && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
+                Дії
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {classInfo.actions.map(({ key, extra }) => {
+                  const def = ACTIONS[key]
+                  return (
+                    <div key={key} style={{
+                      padding: '9px 12px', borderRadius: 9,
+                      background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: extra ? 3 : 0 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{def.label}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{def.desc}</span>
+                      </div>
+                      {extra && (
+                        <div style={{ fontSize: 10, color: color, opacity: 0.8 }}>{extra}</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Bonus */}
+          {classInfo?.bonus && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
+                Бонусна дія
+              </div>
+              <div style={{
+                padding: '10px 12px', borderRadius: 9,
+                background: `${color}08`, border: `1px solid ${color}33`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <span style={{ fontSize: 16 }}>{classInfo.bonus.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color }}>{classInfo.bonus.title}</span>
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, color, opacity: 0.75,
+                    background: `${color}18`, padding: '2px 6px', borderRadius: 20,
+                  }}>{classInfo.bonus.chance}</span>
                 </div>
-              ))}
+                <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5, marginBottom: classInfo.bonus.sub ? 8 : 0 }}>
+                  {classInfo.bonus.desc}
+                </div>
+                {classInfo.bonus.sub && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {classInfo.bonus.sub.map(s => (
+                      <div key={s.label} style={{
+                        display: 'flex', gap: 6, alignItems: 'baseline',
+                        padding: '5px 8px', borderRadius: 6,
+                        background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
+                      }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color, minWidth: 80 }}>{s.label}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{s.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Active buffs */}
+          {unit.buffs.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
+                Активні ефекти
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {unit.buffs.map(b => (
+                  <div key={b.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 10px', borderRadius: 8,
+                    background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+                  }}>
+                    <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{BUFF_LABEL[b.type] ?? b.type}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.turnsLeft} хід.</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </>
   )
