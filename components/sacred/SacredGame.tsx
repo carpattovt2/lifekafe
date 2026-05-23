@@ -5,6 +5,7 @@ import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 
@@ -13,10 +14,11 @@ const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Даль�
 const BUFF_ICON: Record<string, string> = {
   defense_up: '🛡',
   aimed: '🎯',
+  morale_up: '📯',
+  armor_break: '💔',
 }
 const BUFF_LABEL: Record<string, string> = {
   defense_up: '+50% броні цей хід',
-  aimed: 'Прицілення — +% точн., 35% крит ×2',
 }
 const FLOAT_COLOR: Record<BattleEvent['type'], string> = {
   damage: '#c0392b', crit: '#b07850', miss: '#9b9289',
@@ -218,6 +220,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const color  = SIDE_COLOR[unit.side]
   const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(0,0,0,0.12)'
   const AvatarSVG = CLASS_SVG[unit.class]
+  const portraitSrc = unit.class === 'warrior' && unit.level
+    ? `/sacred/warriors/level${unit.level}.jpg`
+    : null
 
   const pulseClass = isActive
     ? (unit.side === 'player' ? 'unit-active-player' : 'unit-active-ai')
@@ -255,9 +260,17 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           <span key={f.id} className={`float-${f.type}`}>{f.text}</span>
         ))}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-          <AvatarSVG color={alive ? color : '#aaa'} size={24} />
-          {isActive && <span style={{ fontSize: 8, color: '#b07850', fontWeight: 700 }}>ХОДА</span>}
-          {isTargetable && !isActive && <span style={{ fontSize: 9, color, fontWeight: 700 }}>➜</span>}
+          {portraitSrc
+            ? <img src={portraitSrc} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover', flexShrink: 0, opacity: alive ? 1 : 0.4 }} />
+            : <AvatarSVG color={alive ? color : '#aaa'} size={24} />
+          }
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
+            {isActive && <span style={{ fontSize: 8, color: '#b07850', fontWeight: 700 }}>ХОДА</span>}
+            {isTargetable && !isActive && <span style={{ fontSize: 9, color, fontWeight: 700 }}>➜</span>}
+            {unit.class === 'warrior' && unit.level && (
+              <span style={{ fontSize: 7, color: '#b07850', fontWeight: 700, lineHeight: 1 }}>Lv{unit.level}</span>
+            )}
+          </div>
         </div>
         <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {unit.name}
@@ -266,6 +279,14 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           {unit.hp}/{unit.maxHp}
         </div>
         <HpBar hp={unit.hp} maxHp={unit.maxHp} />
+        {unit.class === 'warrior' && (unit.level ?? 1) < 4 && (
+          <div style={{ width: '100%', height: 2, background: 'rgba(176,120,80,0.15)', borderRadius: 1, marginTop: 2 }}>
+            <div style={{
+              width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
+              height: '100%', background: '#b07850', borderRadius: 1, transition: 'width 0.3s',
+            }} />
+          </div>
+        )}
         {unit.buffs.length > 0 && (
           <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
             {unit.buffs.map(b => (
@@ -400,45 +421,42 @@ function ActionBtn({ actionKey, selected, onSelect }: {
 }
 
 // ── Unit info sheet ────────────────────────────────────────────────────────────
-const CLASS_ACTIONS_INFO: Record<string, {
-  actions: { key: ActionKey; extra?: string }[]
-  bonus: null
-}> = {
-  warrior: {
-    actions: [
-      { key: 'strike', extra: 'Лише сусідні слоти в тому ж ряду. Переходить у перший доступний ряд ворога.' },
-      { key: 'shield', extra: '+50% броні до кінця цього ходу.' },
-    ],
-    bonus: null,
-  },
-  archer: {
-    actions: [
-      { key: 'shot', extra: 'Атакує будь-якого ворога на полі.' },
-      { key: 'aim',  extra: 'Фіксує +25–40% точності та 35% шанс крит ×2 на наступні 2 ходи.' },
-    ],
-    bonus: null,
-  },
-  mage: {
-    actions: [
-      { key: 'chain_lightning', extra: 'Б\'є кожного живого ворога — повний урон кожному.' },
-      { key: 'fireball',        extra: 'Потрійний урон по одній цілі. Точність та ухилення застосовуються.' },
-    ],
-    bonus: null,
-  },
-  catapult: {
-    actions: [
-      { key: 'barrage',   extra: 'Усі 8 сусідів цілі (±ряд, ±слот) отримують 25–50% урону якщо влучив.' },
-      { key: 'grapeshot', extra: 'Б\'є всіх ворогів у тому ж ряду що й ціль. Урон -40% для кожного.' },
-    ],
-    bonus: null,
-  },
+const ACTION_EXTRA: Partial<Record<ActionKey, string>> = {
+  strike:         'Лише сусідні слоти в тому ж ряду. Переходить у перший доступний ряд ворога.',
+  shield:         '+50% броні до кінця цього ходу.',
+  battle_cry:     '+15 моралі всім союзникам на 2 ходи. +1% точн./ухил. на кожні 10 моралі.',
+  sacred_strike:  'Удар по сусідньому юніту + -10% броні цілі на 1 хід.',
+  consecration:   '+15 HP та знімає дебафи з союзника.',
+  shot:           'Атакує будь-якого ворога на полі.',
+  aim:            'Фіксує +25–40% точності та 35% шанс крит ×2 на наступні 2 ходи.',
+  chain_lightning: 'Б\'є кожного живого ворога — повний урон кожному.',
+  fireball:       'Потрійний урон по одній цілі. Точність та ухилення застосовуються.',
+  barrage:        'Усі 8 сусідів цілі (±ряд, ±слот) отримують 25–50% урону якщо влучив.',
+  grapeshot:      'Б\'є всіх ворогів у тому ж ряду що й ціль. Урон -40% для кожного.',
+}
+
+const CLASS_ACTIONS_INFO: Record<string, { key: ActionKey; extra?: string }[]> = {
+  archer:   [{ key: 'shot' }, { key: 'aim' }],
+  mage:     [{ key: 'chain_lightning' }, { key: 'fireball' }],
+  catapult: [{ key: 'barrage' }, { key: 'grapeshot' }],
+}
+
+function getActionsForSheet(unit: GameUnit): { key: ActionKey; extra?: string }[] {
+  if (unit.class === 'warrior') {
+    const lvlActions = WARRIOR_LEVELS[unit.level ?? 1]?.actions ?? ['strike', 'shield']
+    return lvlActions.map(key => ({ key, extra: ACTION_EXTRA[key] }))
+  }
+  return (CLASS_ACTIONS_INFO[unit.class] ?? []).map(a => ({ ...a, extra: ACTION_EXTRA[a.key] }))
 }
 
 function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void }) {
   const color = SIDE_COLOR[unit.side]
   const alive = unit.hp > 0
   const AvatarSVG = CLASS_SVG[unit.class]
-  const classInfo = CLASS_ACTIONS_INFO[unit.class]
+  const actionsForSheet = getActionsForSheet(unit)
+  const warriorPortrait = unit.class === 'warrior' && unit.level
+    ? `/sacred/warriors/level${unit.level}.jpg`
+    : null
   const stats: [string, string][] = [
     ['⚔ Урон', `${unit.minDmg}–${unit.maxDmg}`],
     ['🎯 Точність', `${Math.round(unit.accuracy * 100)}%`],
@@ -467,11 +485,22 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
               width: 44, height: 44, borderRadius: 10, flexShrink: 0,
               background: `${color}18`, border: `1.5px solid ${color}55`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden',
             }}>
-              <AvatarSVG color={color} size={26} />
+              {warriorPortrait
+                ? <img src={warriorPortrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <AvatarSVG color={color} size={26} />
+              }
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color }}>{unit.name}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color, display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                {unit.name}
+                {unit.class === 'warrior' && unit.level && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#b07850' }}>
+                    Lv.{unit.level} {WARRIOR_LEVELS[unit.level]?.name}
+                  </span>
+                )}
+              </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
                 {unit.side === 'player' ? 'Твій юніт' : 'Ворожий юніт'} · {ROW_LABEL[unit.row]} ряд
               </div>
@@ -499,6 +528,27 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
             <HpBar hp={unit.hp} maxHp={unit.maxHp} />
           </div>
 
+          {/* XP (warriors only) */}
+          {unit.class === 'warrior' && (unit.level ?? 1) < 4 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+                <span>XP → {WARRIOR_LEVELS[(unit.level ?? 1) + 1]?.name ?? '—'}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{unit.xp ?? 0} / {unit.xpToNext ?? '?'}</span>
+              </div>
+              <div style={{ width: '100%', height: 4, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
+                <div style={{
+                  width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
+                  height: '100%', background: '#b07850', borderRadius: 2, transition: 'width 0.3s',
+                }} />
+              </div>
+            </div>
+          )}
+          {unit.class === 'warrior' && (unit.level ?? 1) >= 4 && (
+            <div style={{ marginBottom: 14, fontSize: 11, color: '#b07850', fontWeight: 600 }}>
+              ⭐ Максимальний рівень
+            </div>
+          )}
+
           {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 14 }}>
             {stats.map(([label, value]) => (
@@ -510,13 +560,13 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           </div>
 
           {/* Actions */}
-          {classInfo && (
+          {actionsForSheet.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
                 Дії
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {classInfo.actions.map(({ key, extra }) => {
+                {actionsForSheet.map(({ key, extra }) => {
                   const def = ACTIONS[key]
                   return (
                     <div key={key} style={{
@@ -553,10 +603,14 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                   }}>
                     <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
                     <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>
-                    {b.type === 'aimed'
-                      ? `Прицілення +${Math.round(b.value * 100)}% точн., 35% крит ×2`
-                      : (BUFF_LABEL[b.type] ?? b.type)}
-                  </span>
+                      {b.type === 'aimed'
+                        ? `Прицілення +${Math.round(b.value * 100)}% точн., 35% крит ×2`
+                        : b.type === 'morale_up'
+                          ? `Бойовий клич: +${b.value} моралі → +${(b.value / 10).toFixed(1)}% точн./ухил.`
+                          : b.type === 'armor_break'
+                            ? `-${Math.round(b.value * 100)}% броні цілі`
+                            : (BUFF_LABEL[b.type] ?? b.type)}
+                    </span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.turnsLeft} хід.</span>
                   </div>
                 ))}
@@ -633,7 +687,7 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
-  const mainActions = actor ? getMainActions(actor.class) : []
+  const mainActions = actor ? getMainActions(actor.class, actor.level) : []
 
   const targetIds = actor && state.selectedAction
     ? getValidTargets(actor, state.selectedAction, state.units)
