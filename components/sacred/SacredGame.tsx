@@ -250,7 +250,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
     ? getValidTargets(actor, state.selectedAction, state.units)
     : []
 
-  // Accumulate floats — each batch stays until its own 2200ms timer fires
+  // Accumulate floats — each batch stays until its own 3500ms timer fires
   useEffect(() => {
     if (!state.events.length) return
     const batch = state.events
@@ -258,7 +258,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
     const ids = new Set(batch.map(e => e.id))
     const t = setTimeout(() => {
       setFloats(prev => prev.filter(f => !ids.has(f.id)))
-    }, 2200)
+    }, 3500)
     return () => clearTimeout(t)
   }, [state.events])
 
@@ -267,12 +267,16 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
     return m
   }, new Map<string, BattleEvent[]>())
 
-  // AI turn trigger
+  // AI turn trigger — main action first, then bonus (if any) after another delay
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
-    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1500)
+    if (state.pendingAIBonus) {
+      const t = setTimeout(() => dispatch({ type: 'AI_RUN_BONUS' }), 1600)
+      return () => clearTimeout(t)
+    }
+    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1600)
     return () => clearTimeout(t)
-  }, [state.phase, state.queueIdx])
+  }, [state.phase, state.queueIdx, state.pendingAIBonus])
 
   function handleSelectAction(a: ActionKey) {
     if (state.selectedAction === a) { dispatch({ type: 'CANCEL_ACTION' }); return }

@@ -276,8 +276,9 @@ export function executeAction(
   return { units, newLogs, newEvents }
 }
 
-// ── Auto-bonus after main action ───────────────────────────────────────────────
-function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): BattleState {
+// ── Auto-bonus after player action (warrior/archer/mage) ──────────────────────
+// Events are MERGED with state.events so main action floats aren't overwritten.
+function handleAutoBonus(state: BattleState, actorId: string): BattleState {
   let units = [...state.units]
   const newLogs: LogEntry[] = []
   const newEvents: BattleEvent[] = []
@@ -285,56 +286,41 @@ function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): Ba
   const actor = units.find(u => u.id === actorId)
   if (!actor || actor.hp === 0) return state
 
-  if (actor.class === 'warrior') {
-    if (Math.random() < 0.33) {
-      const allies = units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
-      if (allies.length > 0) {
-        const target = allies[Math.floor(Math.random() * allies.length)]
-        units = units.map(u => u.id === target.id
-          ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
-          : u)
-        newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону)`, 'buff'))
-        newEvents.push(ev(target.id, '📯 +20% урон', 'buff'))
+  if (actor.class === 'warrior' && Math.random() < 0.33) {
+    const allies = units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
+    if (allies.length > 0) {
+      const target = allies[Math.floor(Math.random() * allies.length)]
+      units = units.map(u => u.id === target.id
+        ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
+        : u)
+      newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону)`, 'buff'))
+      newEvents.push(ev(target.id, '📯 +20%', 'buff'))
+    }
+  }
+
+  if (actor.class === 'archer' && Math.random() < 0.25) {
+    const freshActor = units.find(u => u.id === actorId)!
+    const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+    if (enemies.length > 0) {
+      const target = enemies[Math.floor(Math.random() * enemies.length)]
+      newLogs.push(log(`🏹 Додатковий постріл!`, 'info'))
+      const res = resolveAttack(freshActor, target, units)
+      newLogs.push(...res.logs)
+      newEvents.push(...res.events)
+      if (res.damage > 0) {
+        const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
+        units = units.map(u => u.id === target.id ? updated : u)
+        if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
     }
   }
 
-  if (actor.class === 'archer') {
-    if (Math.random() < 0.25) {
-      const freshActor = units.find(u => u.id === actorId)!
-      const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
-      if (enemies.length > 0) {
-        const target = enemies[Math.floor(Math.random() * enemies.length)]
-        const res = resolveAttack(freshActor, target, units)
-        newLogs.push(log(`🏹 Додатковий постріл!`, 'info'), ...res.logs)
-        newEvents.push(...res.events)
-        if (res.damage > 0) {
-          const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
-          units = units.map(u => u.id === target.id ? updated : u)
-          if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-        }
-      }
-    }
+  if (actor.class === 'mage' && Math.random() < 0.20) {
+    newLogs.push(log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff'))
+    return { ...state, units, log: [...state.log, ...newLogs], events: [...state.events, ...newEvents], pendingDebuff: true }
   }
 
-  if (actor.class === 'mage') {
-    if (Math.random() < 0.20) {
-      if (isAI) {
-        const freshActor = units.find(u => u.id === actorId)!
-        const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
-        const target = [...enemies].sort((a, b) => a.hp - b.hp)[0]
-        if (target) {
-          const { units: u2, newLogs: l2, newEvents: e2 } = executeAction({ ...state, units }, freshActor, 'debuff_rupture', target.id)
-          return { ...state, units: u2, log: [...state.log, ...newLogs, ...l2], events: [...newEvents, ...e2] }
-        }
-      } else {
-        newLogs.push(log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff'))
-        return { ...state, units, log: [...state.log, ...newLogs], events: newEvents, pendingDebuff: true }
-      }
-    }
-  }
-
-  return { ...state, units, log: [...state.log, ...newLogs], events: newEvents }
+  return { ...state, units, log: [...state.log, ...newLogs], events: [...state.events, ...newEvents] }
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
@@ -404,6 +390,7 @@ export function createInitialState(counts?: ArmyCounts): BattleState {
     log: [{ id: ++_logId, text: '⚔ Бій починається!', type: 'info' }],
     round: 1,
     events: [],
+    pendingAIBonus: null,
     ...TURN_RESET,
   }
 }
@@ -424,7 +411,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
         const { units, newLogs, newEvents } = executeAction(state, actor, a, null)
         const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
         if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
-        return advanceQueue(handleAutoBonus(next, actor.id, false))
+        return advanceQueue(handleAutoBonus(next, actor.id))
       }
       return { ...state, selectedAction: a, needsTarget: true, events: [] }
     }
@@ -436,7 +423,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const { units, newLogs, newEvents } = executeAction(state, actor, state.selectedAction, action.targetId)
       const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
       if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
-      return advanceQueue(handleAutoBonus(next, actor.id, false))
+      return advanceQueue(handleAutoBonus(next, actor.id))
     }
 
     case 'CANCEL_ACTION':
@@ -452,7 +439,64 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
 
       const { units, newLogs, newEvents } = executeAction(state, actor, act, targetId)
       const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
-      return advanceQueue(handleAutoBonus(next, actorId, true))
+
+      // Roll for bonus — if triggered, defer to AI_RUN_BONUS so the UI shows main action first
+      const bonusChance = actor.class === 'warrior' ? 0.33 : actor.class === 'archer' ? 0.25 : actor.class === 'mage' ? 0.20 : 0
+      if (bonusChance > 0 && Math.random() < bonusChance) {
+        return { ...next, pendingAIBonus: actorId }
+      }
+      return advanceQueue(next)
+    }
+
+    case 'AI_RUN_BONUS': {
+      const actorId = state.pendingAIBonus
+      if (!actorId) return advanceQueue(state)
+
+      const actor = state.units.find(u => u.id === actorId)
+      if (!actor || actor.hp === 0) return advanceQueue({ ...state, pendingAIBonus: null })
+
+      let units = [...state.units]
+      const newLogs: LogEntry[] = []
+      const newEvents: BattleEvent[] = []
+
+      if (actor.class === 'warrior') {
+        const allies = units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
+        if (allies.length > 0) {
+          const target = allies[Math.floor(Math.random() * allies.length)]
+          units = units.map(u => u.id === target.id
+            ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
+            : u)
+          newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону)`, 'buff'))
+          newEvents.push(ev(target.id, '📯 +20%', 'buff'))
+        }
+      } else if (actor.class === 'archer') {
+        const freshActor = units.find(u => u.id === actorId)!
+        const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+        if (enemies.length > 0) {
+          const target = enemies[Math.floor(Math.random() * enemies.length)]
+          newLogs.push(log(`🏹 Додатковий постріл!`, 'info'))
+          const res = resolveAttack(freshActor, target, units)
+          newLogs.push(...res.logs)
+          newEvents.push(...res.events)
+          if (res.damage > 0) {
+            const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
+            units = units.map(u => u.id === target.id ? updated : u)
+            if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+          }
+        }
+      } else if (actor.class === 'mage') {
+        const freshActor = units.find(u => u.id === actorId)!
+        const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
+        const target = [...enemies].sort((a, b) => a.hp - b.hp)[0]
+        if (target) {
+          const result = executeAction({ ...state, units }, freshActor, 'debuff_rupture', target.id)
+          units = result.units
+          newLogs.push(...result.newLogs)
+          newEvents.push(...result.newEvents)
+        }
+      }
+
+      return advanceQueue({ ...state, units, log: [...state.log, ...newLogs], pendingAIBonus: null, events: newEvents })
     }
 
     case 'ADVANCE_QUEUE':

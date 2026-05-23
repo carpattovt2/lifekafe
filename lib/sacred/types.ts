@@ -88,6 +88,7 @@ export interface BattleState {
   selectedAction: ActionKey | null
   needsTarget: boolean
   pendingDebuff: boolean  // mage bonus triggered — waiting for player to pick debuff + target
+  pendingAIBonus: string | null  // actorId when AI bonus triggered, deferred for visual delay
   events: BattleEvent[]  // cleared each turn, consumed by UI for floating numbers
 }
 
@@ -96,6 +97,7 @@ export type BattleAction =
   | { type: 'CONFIRM_TARGET'; targetId: string }
   | { type: 'CANCEL_ACTION' }
   | { type: 'AI_TAKE_TURN' }
+  | { type: 'AI_RUN_BONUS' }
   | { type: 'ADVANCE_QUEUE' }
 
 export interface ArmyCounts {
