@@ -40,14 +40,17 @@ interface Props {
 export default function ArmyBuilder({ onStart }: Props) {
   const [counts, setCounts] = useState<ArmyCounts>({ warriors: 2, archers: 2, mages: 1 })
 
+  const MAX_TOTAL = 6
   const total = counts.warriors + counts.archers + counts.mages
 
   function change(key: keyof ArmyCounts, delta: number) {
     const info = CLASS_INFO.find(c => c.key === key)!
-    setCounts(prev => ({
-      ...prev,
-      [key]: Math.max(0, Math.min(info.max, prev[key] + delta)),
-    }))
+    setCounts(prev => {
+      const next = Math.max(0, Math.min(info.max, prev[key] + delta))
+      const newTotal = total - prev[key] + next
+      if (delta > 0 && newTotal > MAX_TOTAL) return prev
+      return { ...prev, [key]: next }
+    })
   }
 
   return (
@@ -122,7 +125,7 @@ export default function ArmyBuilder({ onStart }: Props) {
 
                   <button
                     onClick={() => change(info.key, +1)}
-                    disabled={count >= info.max}
+                    disabled={count >= info.max || total >= MAX_TOTAL}
                     style={{
                       width: 32, height: 32, borderRadius: 8,
                       border: '1px solid rgba(255,255,255,0.15)',
@@ -167,8 +170,8 @@ export default function ArmyBuilder({ onStart }: Props) {
           border: '1px solid rgba(255,255,255,0.06)',
         }}>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>Загалом бійців</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: total > 0 ? '#ffd700' : 'rgba(255,255,255,0.2)' }}>
-            {total} / 9
+          <div style={{ fontSize: 18, fontWeight: 700, color: total === MAX_TOTAL ? '#7aaa82' : total > 0 ? '#ffd700' : 'rgba(255,255,255,0.2)' }}>
+            {total} / {MAX_TOTAL}
           </div>
         </div>
       </div>
