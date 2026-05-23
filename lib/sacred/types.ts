@@ -69,6 +69,13 @@ export interface LogEntry {
 
 export type Phase = 'player-turn' | 'ai-thinking' | 'game-over'
 
+export interface BattleEvent {
+  id: number
+  unitId: string
+  text: string
+  type: 'damage' | 'crit' | 'miss' | 'evade' | 'heal' | 'buff' | 'debuff'
+}
+
 export interface BattleState {
   units: GameUnit[]
   queue: string[]
@@ -81,6 +88,7 @@ export interface BattleState {
   selectedAction: ActionKey | null
   needsTarget: boolean
   pendingDebuff: boolean  // mage bonus triggered — waiting for player to pick debuff + target
+  events: BattleEvent[]  // cleared each turn, consumed by UI for floating numbers
 }
 
 export type BattleAction =

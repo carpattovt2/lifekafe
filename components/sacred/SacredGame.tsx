@@ -4,7 +4,7 @@ import { useReducer, useEffect, useRef, useState } from 'react'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
@@ -26,9 +26,20 @@ function HpBar({ hp, maxHp }: { hp: number; maxHp: number }) {
   )
 }
 
+const FLOAT_COLOR: Record<BattleEvent['type'], string> = {
+  damage: '#ef4444',
+  crit:   '#ffd700',
+  miss:   '#888888',
+  evade:  '#7ea8c4',
+  heal:   '#7aaa82',
+  buff:   '#a891c4',
+  debuff: '#c07070',
+}
+
 // ── Unit card ──────────────────────────────────────────────────────────────────
-function UnitCard({ unit, isActive, isTargetable, onSelect }: {
+function UnitCard({ unit, isActive, isTargetable, onSelect, floats }: {
   unit: GameUnit; isActive: boolean; isTargetable: boolean; onSelect?: () => void
+  floats: BattleEvent[]
 }) {
   const alive = unit.hp > 0
   const color = SIDE_COLOR[unit.side]
@@ -47,9 +58,15 @@ function UnitCard({ unit, isActive, isTargetable, onSelect }: {
         transform: isActive ? 'scale(1.06)' : isTargetable ? 'scale(1.03)' : 'scale(1)',
         boxShadow: isActive ? `0 0 14px ${color}88` : isTargetable ? `0 0 8px ${color}55` : 'none',
         transition: 'border-color 0.15s, transform 0.1s',
-        flexShrink: 0,
+        flexShrink: 0, position: 'relative',
       }}
     >
+      {/* Floating combat numbers */}
+      {floats.map(f => (
+        <span key={f.id} className="float-text" style={{ color: FLOAT_COLOR[f.type] }}>
+          {f.text}
+        </span>
+      ))}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
         <span style={{ fontSize: 13 }}>{CLASS_ICON[unit.class]}</span>
         {isActive && <span style={{ fontSize: 8, color: '#ffd700', fontWeight: 700 }}>ХОДА</span>}
@@ -76,9 +93,10 @@ function UnitCard({ unit, isActive, isTargetable, onSelect }: {
 }
 
 // ── Unit row ───────────────────────────────────────────────────────────────────
-function UnitRow({ units, side, row, activeId, targetIds, maxSlots, onSelectUnit }: {
+function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, onSelectUnit }: {
   units: GameUnit[]; side: Side; row: Row; activeId: string | null
-  targetIds: string[]; maxSlots: number; onSelectUnit: (id: string) => void
+  targetIds: string[]; maxSlots: number; floatsMap: Map<string, BattleEvent[]>
+  onSelectUnit: (id: string) => void
 }) {
   const rowUnits = units.filter(u => u.side === side && u.row === row)
   return (
@@ -92,6 +110,7 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, onSelectUnit
           <UnitCard key={unit.id} unit={unit}
             isActive={unit.id === activeId}
             isTargetable={targetIds.includes(unit.id)}
+            floats={floatsMap.get(unit.id) ?? []}
             onSelect={() => onSelectUnit(unit.id)}
           />
         )
@@ -221,6 +240,7 @@ const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 2 }
 
 function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => void }) {
   const [state, dispatch] = useReducer(battleReducer, counts, createInitialState)
+  const [floatsMap, setFloatsMap] = useState<Map<string, BattleEvent[]>>(new Map())
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
@@ -229,6 +249,20 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
   const targetIds = actor && state.selectedAction
     ? getValidTargets(actor, state.selectedAction, state.units)
     : []
+
+  // Show floating events then clear after animation
+  useEffect(() => {
+    if (!state.events.length) return
+    const map = new Map<string, BattleEvent[]>()
+    for (const e of state.events) {
+      const arr = map.get(e.unitId) ?? []
+      arr.push(e)
+      map.set(e.unitId, arr)
+    }
+    setFloatsMap(map)
+    const t = setTimeout(() => setFloatsMap(new Map()), 1200)
+    return () => clearTimeout(t)
+  }, [state.events])
 
   // AI turn trigger
   useEffect(() => {
@@ -279,7 +313,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
               units={state.units} side="ai" row={row}
               activeId={actor?.side === 'ai' ? actorId : null}
               targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-              onSelectUnit={handleUnitClick}
+              floatsMap={floatsMap} onSelectUnit={handleUnitClick}
             />
           </div>
         ))}
@@ -299,7 +333,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
               units={state.units} side="player" row={row}
               activeId={actor?.side === 'player' ? actorId : null}
               targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-              onSelectUnit={handleUnitClick}
+              floatsMap={floatsMap} onSelectUnit={handleUnitClick}
             />
           </div>
         ))}

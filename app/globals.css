@@ -537,3 +537,23 @@ h1, h2, h3 {
 .game-hub-card:active {
   transform: translateY(0);
 }
+
+/* ── Seraphites floating combat numbers ──────────────────────────────────── */
+@keyframes float-up {
+  0%   { opacity: 1;   transform: translateX(-50%) translateY(0px);   }
+  60%  { opacity: 1;   transform: translateX(-50%) translateY(-18px);  }
+  100% { opacity: 0;   transform: translateX(-50%) translateY(-34px);  }
+}
+.float-text {
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  animation: float-up 1.1s ease-out forwards;
+  z-index: 10;
+}

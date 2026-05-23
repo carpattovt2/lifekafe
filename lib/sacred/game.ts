@@ -1,7 +1,7 @@
 import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
   ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
-  ArmyCounts,
+  ArmyCounts, BattleEvent,
 } from './types'
 
 // ── Unit templates ─────────────────────────────────────────────────────────────
@@ -58,10 +58,8 @@ function buildQueue(units: GameUnit[]): string[] {
   const alive = units.filter(u => u.hp > 0)
   const exhausted = alive.filter(u => u.buffs.some(b => b.type === 'exhausted'))
   const normal    = alive.filter(u => !u.buffs.some(b => b.type === 'exhausted'))
-
   const sort = (arr: GameUnit[]) =>
     [...arr].sort((a, b) => b.initiative - a.initiative + (Math.random() - 0.5) * 0.1)
-
   return [...sort(normal), ...sort(exhausted)].map(u => u.id)
 }
 
@@ -79,19 +77,34 @@ function tickBuffs(unit: GameUnit): GameUnit {
   return { ...unit, buffs: unit.buffs.map(b => ({ ...b, turnsLeft: b.turnsLeft - 1 })).filter(b => b.turnsLeft > 0) }
 }
 
-// ── Combat ─────────────────────────────────────────────────────────────────────
-let _logId = 0
-function log(text: string, type: LogEntry['type']): LogEntry {
-  return { id: ++_logId, text, type }
+// ── Front-line shield bonus ────────────────────────────────────────────────────
+// If the defender's side has living units in row 0, rows 1 and 2 get +20% defense.
+function frontLineBonus(def: GameUnit, units: GameUnit[]): number {
+  if (def.row === 0) return 0
+  const frontAlive = units.some(u => u.side === def.side && u.hp > 0 && u.row === 0)
+  return frontAlive ? 0.20 : 0
 }
 
-interface AttackResult { hit: boolean; evaded: boolean; damage: number; logs: LogEntry[] }
+// ── Combat ─────────────────────────────────────────────────────────────────────
+let _logId = 0
+let _evId  = 0
+function log(text: string, type: LogEntry['type']): LogEntry { return { id: ++_logId, text, type } }
+function ev(unitId: string, text: string, type: BattleEvent['type']): BattleEvent { return { id: ++_evId, unitId, text, type } }
 
-function resolveAttack(atk: GameUnit, def: GameUnit, opts: { dmgMult?: number; accBonus?: number } = {}): AttackResult {
+interface AttackResult {
+  hit: boolean; evaded: boolean; crit: boolean; damage: number
+  logs: LogEntry[]; events: BattleEvent[]
+}
+
+function resolveAttack(
+  atk: GameUnit, def: GameUnit, units: GameUnit[],
+  opts: { dmgMult?: number; accBonus?: number } = {},
+): AttackResult {
   let { dmgMult = 1, accBonus = 0 } = opts
   const logs: LogEntry[] = []
+  const events: BattleEvent[] = []
 
-  // Aimed buff: 20% chance to activate +20% acc / +35% dmg bonus
+  // Aimed buff: 20% chance to activate +20% acc / +35% dmg
   const aimedBuff = atk.buffs.find(b => b.type === 'aimed')
   if (aimedBuff && Math.random() < 0.20) {
     accBonus += 0.20
@@ -103,13 +116,15 @@ function resolveAttack(atk: GameUnit, def: GameUnit, opts: { dmgMult?: number; a
   const acc = Math.min(0.97, atk.accuracy + accBonus)
   if (Math.random() > acc) {
     logs.push(log(`${atk.name} промахується!`, 'miss'))
-    return { hit: false, evaded: false, damage: 0, logs }
+    events.push(ev(atk.id, 'Промах!', 'miss'))
+    return { hit: false, evaded: false, crit: false, damage: 0, logs, events }
   }
 
   // Evasion check
   if (Math.random() < def.evasion) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
-    return { hit: true, evaded: true, damage: 0, logs }
+    events.push(ev(def.id, 'Ухил!', 'evade'))
+    return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
   }
 
   // Base damage
@@ -125,8 +140,9 @@ function resolveAttack(atk: GameUnit, def: GameUnit, opts: { dmgMult?: number; a
   const isCrit = Math.random() < atk.critChance
   if (isCrit) dmg *= atk.critMult
 
-  // Defense
-  dmg *= (1 - Math.max(0, def.defense + getBuffValue(def, 'defense_up')))
+  // Defense: base + shield buff + front-line bonus
+  const defTotal = def.defense + getBuffValue(def, 'defense_up') + frontLineBonus(def, units)
+  dmg *= (1 - Math.max(0, defTotal))
 
   // Розрив debuff
   dmg *= (1 + getBuffValue(def, 'damage_taken_up'))
@@ -135,11 +151,13 @@ function resolveAttack(atk: GameUnit, def: GameUnit, opts: { dmgMult?: number; a
 
   if (isCrit) {
     logs.push(log(`💥 КРИТ! ${atk.name} → ${def.name}: ${dmg} урону`, 'crit'))
+    events.push(ev(def.id, `💥 ${dmg}`, 'crit'))
   } else {
     logs.push(log(`${atk.name} атакує ${def.name}: ${dmg} урону`, 'attack'))
+    events.push(ev(def.id, `${dmg}`, 'damage'))
   }
 
-  return { hit: true, evaded: false, damage: dmg, logs }
+  return { hit: true, evaded: false, crit: isCrit, damage: dmg, logs, events }
 }
 
 // ── Valid targets ──────────────────────────────────────────────────────────────
@@ -148,7 +166,6 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
   const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
 
   if (action === 'strike') {
-    // Must target front row first; fall back to nearest occupied row
     for (const r of [0, 1, 2] as Row[]) {
       const row = living(enemySide).filter(u => u.row === r)
       if (row.length) return row.map(u => u.id)
@@ -156,26 +173,22 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (action === 'shot' || action === 'spell' || action === 'debuff_rupture' || action === 'debuff_exhaust' || action === 'debuff_weakness') {
+  if (['shot', 'spell', 'debuff_rupture', 'debuff_exhaust', 'debuff_weakness'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 
-  if (action === 'heal') {
-    return living(actor.side).map(u => u.id)
-  }
+  if (action === 'heal') return living(actor.side).map(u => u.id)
 
-  return [] // shield, aim → self (no target needed)
+  return []
 }
 
 // ── Execute one action ─────────────────────────────────────────────────────────
 export function executeAction(
-  state: BattleState,
-  actor: GameUnit,
-  action: ActionKey,
-  targetId: string | null,
-): { units: GameUnit[]; newLogs: LogEntry[] } {
+  state: BattleState, actor: GameUnit, action: ActionKey, targetId: string | null,
+): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[] } {
   let units = state.units.map(u => ({ ...u }))
   const newLogs: LogEntry[] = []
+  const newEvents: BattleEvent[] = []
 
   const getUnit = (id: string) => units.find(u => u.id === id)!
   const update  = (u: GameUnit) => { units = units.map(x => x.id === u.id ? u : x) }
@@ -186,16 +199,18 @@ export function executeAction(
     case 'shot':
     case 'spell': {
       if (!target) break
-      const res = resolveAttack(actor, target)
+      const res = resolveAttack(actor, target, units)
       newLogs.push(...res.logs)
+      newEvents.push(...res.events)
       if (res.damage > 0) {
         const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
         update(updated)
         if (updated.hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
         // Counter-attack (warriors only)
         if (res.hit && !res.evaded && actor.class === 'warrior' && Math.random() < target.counter && target.hp > 0) {
-          const ctr = resolveAttack(updated, actor)
+          const ctr = resolveAttack(updated, actor, units)
           newLogs.push(log(`↩ Контратака!`, 'info'), ...ctr.logs)
+          newEvents.push(...ctr.events)
           if (ctr.damage > 0) {
             const actorUpdated = { ...getUnit(actor.id), hp: Math.max(0, actor.hp - ctr.damage) }
             update(actorUpdated)
@@ -208,8 +223,9 @@ export function executeAction(
 
     case 'shield': {
       const a = getUnit(actor.id)
-      update({ ...a, buffs: [...a.buffs, makeBuff('defense_up', 0.15, 1)] })
-      newLogs.push(log(`🛡 ${actor.name} піднімає щит (+15% захисту)`, 'buff'))
+      update({ ...a, buffs: [...a.buffs, makeBuff('defense_up', 0.50, 1)] })
+      newLogs.push(log(`🛡 ${actor.name} піднімає щит (+50% захисту)`, 'buff'))
+      newEvents.push(ev(actor.id, '🛡 +50%', 'buff'))
       break
     }
 
@@ -217,14 +233,18 @@ export function executeAction(
       const a = getUnit(actor.id)
       update({ ...a, buffs: [...a.buffs, makeBuff('aimed', 0.20, 3)] })
       newLogs.push(log(`🎯 ${actor.name} прицілюється (20% шанс бонусу на 3 постріли)`, 'buff'))
+      newEvents.push(ev(actor.id, '🎯 Прицілення', 'buff'))
       break
     }
 
     case 'heal': {
       if (!target) break
+      const before = target.hp
       const healed = Math.min(target.maxHp, target.hp + 10)
       update({ ...target, hp: healed })
-      newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+${healed - target.hp} HP)`, 'heal'))
+      const amt = healed - before
+      newLogs.push(log(`💚 ${actor.name} зцілює ${target.name} (+${amt} HP)`, 'heal'))
+      newEvents.push(ev(target.id, `+${amt}`, 'heal'))
       break
     }
 
@@ -232,33 +252,35 @@ export function executeAction(
       if (!target) break
       update({ ...target, buffs: [...target.buffs, makeBuff('damage_taken_up', 0.30, 2)] })
       newLogs.push(log(`🩸 Розрив! ${target.name} отримуватиме +30% урону (2 ходи)`, 'debuff'))
+      newEvents.push(ev(target.id, '🩸 Розрив', 'debuff'))
       break
     }
 
     case 'debuff_exhaust': {
       if (!target) break
       update({ ...target, buffs: [...target.buffs, makeBuff('exhausted', 1, 2)] })
-      newLogs.push(log(`💤 Виснаження! ${target.name} ходитиме останнім наступного раунду`, 'debuff'))
+      newLogs.push(log(`💤 Виснаження! ${target.name} ходитиме останнім`, 'debuff'))
+      newEvents.push(ev(target.id, '💤 Виснаження', 'debuff'))
       break
     }
 
     case 'debuff_weakness': {
       if (!target) break
       update({ ...target, buffs: [...target.buffs, makeBuff('weakness', 0.25, 2)] })
-      newLogs.push(log(`🌑 Слабкість! ${target.name} завдаватиме -25% урону (2 ходи)`, 'debuff'))
+      newLogs.push(log(`🌑 Слабкість! ${target.name} завдаватиме -25% урону`, 'debuff'))
+      newEvents.push(ev(target.id, '🌑 Слабкість', 'debuff'))
       break
     }
   }
 
-  return { units, newLogs }
+  return { units, newLogs, newEvents }
 }
 
 // ── Auto-bonus after main action ───────────────────────────────────────────────
-// Returns updated state; if mage bonus triggers for AI, resolves automatically.
-// For player mage bonus, returns pendingDebuff=true (UI handles selection).
 function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): BattleState {
   let units = [...state.units]
   const newLogs: LogEntry[] = []
+  const newEvents: BattleEvent[] = []
 
   const actor = units.find(u => u.id === actorId)
   if (!actor || actor.hp === 0) return state
@@ -268,10 +290,11 @@ function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): Ba
       const allies = units.filter(u => u.side === actor.side && u.hp > 0 && u.id !== actor.id)
       if (allies.length > 0) {
         const target = allies[Math.floor(Math.random() * allies.length)]
-        newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону на 2 ходи)`, 'buff'))
         units = units.map(u => u.id === target.id
           ? { ...u, buffs: [...u.buffs, makeBuff('damage_up', 0.20, 2)] }
           : u)
+        newLogs.push(log(`📯 Бойовий клич! ${actor.name} підбадьорює ${target.name} (+20% урону)`, 'buff'))
+        newEvents.push(ev(target.id, '📯 +20% урон', 'buff'))
       }
     }
   }
@@ -282,8 +305,9 @@ function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): Ba
       const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
       if (enemies.length > 0) {
         const target = enemies[Math.floor(Math.random() * enemies.length)]
-        const res = resolveAttack(freshActor, target)
+        const res = resolveAttack(freshActor, target, units)
         newLogs.push(log(`🏹 Додатковий постріл!`, 'info'), ...res.logs)
+        newEvents.push(...res.events)
         if (res.damage > 0) {
           const updated = { ...target, hp: Math.max(0, target.hp - res.damage) }
           units = units.map(u => u.id === target.id ? updated : u)
@@ -296,23 +320,21 @@ function handleAutoBonus(state: BattleState, actorId: string, isAI: boolean): Ba
   if (actor.class === 'mage') {
     if (Math.random() < 0.20) {
       if (isAI) {
-        // AI auto-picks Розрив on weakest player
         const freshActor = units.find(u => u.id === actorId)!
         const enemies = units.filter(u => u.side !== actor.side && u.hp > 0)
         const target = [...enemies].sort((a, b) => a.hp - b.hp)[0]
         if (target) {
-          const { units: u2, newLogs: l2 } = executeAction({ ...state, units }, freshActor, 'debuff_rupture', target.id)
-          return { ...state, units: u2, log: [...state.log, ...newLogs, ...l2] }
+          const { units: u2, newLogs: l2, newEvents: e2 } = executeAction({ ...state, units }, freshActor, 'debuff_rupture', target.id)
+          return { ...state, units: u2, log: [...state.log, ...newLogs, ...l2], events: [...newEvents, ...e2] }
         }
       } else {
-        // Player chooses — signal UI
         newLogs.push(log(`✨ ${actor.name} відчуває приплив темної сили — оберіть дебаф!`, 'buff'))
-        return { ...state, units, log: [...state.log, ...newLogs], pendingDebuff: true }
+        return { ...state, units, log: [...state.log, ...newLogs], events: newEvents, pendingDebuff: true }
       }
     }
   }
 
-  return { ...state, units, log: [...state.log, ...newLogs] }
+  return { ...state, units, log: [...state.log, ...newLogs], events: newEvents }
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
@@ -324,10 +346,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
   const mostHurtAlly  = [...aiAllies].sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0]
 
   if (actor.class === 'warrior') {
-    if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.5) {
-      return { action: 'shield', targetId: null }
-    }
-    // Strike front row first
+    if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.5) return { action: 'shield', targetId: null }
     const front = playerUnits.filter(u => u.row === 0)
     const target = (front.length ? front : playerUnits).sort((a, b) => a.hp - b.hp)[0]
     return { action: 'strike', targetId: target?.id ?? null }
@@ -335,9 +354,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
 
   if (actor.class === 'archer') {
     const hasAimed = actor.buffs.some(b => b.type === 'aimed')
-    if (!hasAimed && playerUnits.length > 0 && Math.random() < 0.30) {
-      return { action: 'aim', targetId: null }
-    }
+    if (!hasAimed && playerUnits.length > 0 && Math.random() < 0.30) return { action: 'aim', targetId: null }
     return { action: 'shot', targetId: weakestPlayer?.id ?? null }
   }
 
@@ -351,17 +368,17 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
   return { action: 'strike', targetId: weakestPlayer?.id ?? null }
 }
 
-// ── Action definitions (for UI) ────────────────────────────────────────────────
+// ── Action definitions ─────────────────────────────────────────────────────────
 export const ACTIONS: Record<ActionKey, ActionDef> = {
-  strike:          { key: 'strike',          label: 'Удар',       desc: 'Атака ворога в ближньому бою',             needsTarget: true,  targetSide: 'ai'   },
-  shield:          { key: 'shield',          label: 'Щит',        desc: '+15% захисту цей хід',                     needsTarget: false, targetSide: null   },
-  shot:            { key: 'shot',            label: 'Постріл',    desc: 'Атака будь-якого ворога',                  needsTarget: true,  targetSide: 'ai'   },
-  aim:             { key: 'aim',             label: 'Прицілення', desc: '20% шанс +20% точн./+35% урону на 3 ходи', needsTarget: false, targetSide: null   },
-  spell:           { key: 'spell',           label: 'Закляття',   desc: 'Магічна атака будь-якого ворога',          needsTarget: true,  targetSide: 'ai'   },
-  heal:            { key: 'heal',            label: 'Зцілення',   desc: '+10 HP союзнику',                          needsTarget: true,  targetSide: 'ally' },
-  debuff_rupture:  { key: 'debuff_rupture',  label: 'Розрив',     desc: '+30% урону по цілі (2 ходи)',              needsTarget: true,  targetSide: 'ai'   },
-  debuff_exhaust:  { key: 'debuff_exhaust',  label: 'Виснаження', desc: 'Ціль ходить останньою (2 ходи)',           needsTarget: true,  targetSide: 'ai'   },
-  debuff_weakness: { key: 'debuff_weakness', label: 'Слабкість',  desc: '-25% урону цілі (2 ходи)',                 needsTarget: true,  targetSide: 'ai'   },
+  strike:          { key: 'strike',          label: 'Удар',       desc: 'Атака ворога в ближньому бою',              needsTarget: true,  targetSide: 'ai'   },
+  shield:          { key: 'shield',          label: 'Щит',        desc: '+50% захисту цей хід',                      needsTarget: false, targetSide: null   },
+  shot:            { key: 'shot',            label: 'Постріл',    desc: 'Атака будь-якого ворога',                   needsTarget: true,  targetSide: 'ai'   },
+  aim:             { key: 'aim',             label: 'Прицілення', desc: '20% шанс +20% точн./+35% урону на 3 ходи',  needsTarget: false, targetSide: null   },
+  spell:           { key: 'spell',           label: 'Закляття',   desc: 'Магічна атака будь-якого ворога',           needsTarget: true,  targetSide: 'ai'   },
+  heal:            { key: 'heal',            label: 'Зцілення',   desc: '+10 HP союзнику',                           needsTarget: true,  targetSide: 'ally' },
+  debuff_rupture:  { key: 'debuff_rupture',  label: 'Розрив',     desc: '+30% урону по цілі (2 ходи)',               needsTarget: true,  targetSide: 'ai'   },
+  debuff_exhaust:  { key: 'debuff_exhaust',  label: 'Виснаження', desc: 'Ціль ходить останньою (2 ходи)',            needsTarget: true,  targetSide: 'ai'   },
+  debuff_weakness: { key: 'debuff_weakness', label: 'Слабкість',  desc: '-25% урону цілі (2 ходи)',                  needsTarget: true,  targetSide: 'ai'   },
 }
 
 export function getMainActions(cls: UnitClass): ActionKey[] {
@@ -371,10 +388,12 @@ export function getMainActions(cls: UnitClass): ActionKey[] {
 }
 
 // ── Initial state ──────────────────────────────────────────────────────────────
-const TURN_RESET = { selectedAction: null, needsTarget: false, pendingDebuff: false }
+const TURN_RESET = { selectedAction: null as ActionKey | null, needsTarget: false, pendingDebuff: false }
 
 export function createInitialState(counts?: ArmyCounts): BattleState {
-  const playerUnits = counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'player')
+  const playerUnits = counts
+    ? buildCustomArmy(counts, 'player')
+    : buildCustomArmy({ warriors: 3, archers: 2, mages: 1 }, 'player')
   const units = [...playerUnits, ...buildDefaultAIArmy()]
   const queue = buildQueue(units)
   const first = units.find(u => u.id === queue[0])!
@@ -384,6 +403,7 @@ export function createInitialState(counts?: ArmyCounts): BattleState {
     winner: null,
     log: [{ id: ++_logId, text: '⚔ Бій починається!', type: 'info' }],
     round: 1,
+    events: [],
     ...TURN_RESET,
   }
 }
@@ -401,28 +421,21 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
 
       const def = ACTIONS[a]
       if (!def.needsTarget) {
-        // Execute immediately (shield, aim)
-        const { units, newLogs } = executeAction(state, actor, a, null)
-        const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET }
-        // Debuff selections don't trigger another bonus
+        const { units, newLogs, newEvents } = executeAction(state, actor, a, null)
+        const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
         if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
         return advanceQueue(handleAutoBonus(next, actor.id, false))
       }
-
-      return { ...state, selectedAction: a, needsTarget: true }
+      return { ...state, selectedAction: a, needsTarget: true, events: [] }
     }
 
     case 'CONFIRM_TARGET': {
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || !state.selectedAction) return state
 
-      const { units, newLogs } = executeAction(state, actor, state.selectedAction, action.targetId)
-      const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET }
-
-      // If this confirm was for a debuff choice (mage bonus), advance queue
+      const { units, newLogs, newEvents } = executeAction(state, actor, state.selectedAction, action.targetId)
+      const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
       if (state.pendingDebuff) return advanceQueue({ ...next, pendingDebuff: false })
-
-      // Otherwise run auto-bonus
       return advanceQueue(handleAutoBonus(next, actor.id, false))
     }
 
@@ -437,8 +450,8 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const { action: act, targetId } = aiDecide(actor, state)
       if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
 
-      const { units, newLogs } = executeAction(state, actor, act, targetId)
-      const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET }
+      const { units, newLogs, newEvents } = executeAction(state, actor, act, targetId)
+      const next = { ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents }
       return advanceQueue(handleAutoBonus(next, actorId, true))
     }
 
@@ -451,18 +464,15 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
 }
 
 function advanceQueue(state: BattleState): BattleState {
-  // Win check
   const playerAlive = state.units.filter(u => u.side === 'player' && u.hp > 0).length
   const aiAlive     = state.units.filter(u => u.side === 'ai'     && u.hp > 0).length
   if (playerAlive === 0) return { ...state, phase: 'game-over', winner: 'ai' }
   if (aiAlive     === 0) return { ...state, phase: 'game-over', winner: 'player' }
 
-  // Tick buffs on unit that just acted
   let units = state.units
   const justActed = units.find(u => u.id === state.queue[state.queueIdx])
   if (justActed) units = units.map(u => u.id === justActed.id ? tickBuffs(u) : u)
 
-  // Find next alive unit in queue
   let idx = state.queueIdx + 1
   while (idx < state.queue.length && (units.find(u => u.id === state.queue[idx])?.hp ?? 0) === 0) idx++
 
