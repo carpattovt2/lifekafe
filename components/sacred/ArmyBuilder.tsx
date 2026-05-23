@@ -56,13 +56,13 @@ export default function ArmyBuilder({ onStart }: Props) {
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', minHeight: '100vh',
-      background: '#0e0d0b', color: 'var(--text)',
+      background: '#faf8f5', color: 'var(--text)',
       fontFamily: "'Inter', sans-serif",
       display: 'flex', flexDirection: 'column',
     }}>
       {/* Header */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.5)' }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: '#ffd700', marginBottom: 2 }}>✦ Серафити — Склад армії</div>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>✦ Серафити — Склад армії</div>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>Обери кількість бійців кожного класу</div>
       </div>
 
@@ -74,8 +74,8 @@ export default function ArmyBuilder({ onStart }: Props) {
             <div key={info.key} style={{
               padding: '16px 18px',
               borderRadius: 12,
-              border: `1px solid ${count > 0 ? info.color + '44' : 'rgba(255,255,255,0.08)'}`,
-              background: count > 0 ? `${info.color}08` : 'rgba(255,255,255,0.02)',
+              border: `1px solid ${count > 0 ? info.color + '66' : 'rgba(0,0,0,0.08)'}`,
+              background: count > 0 ? `${info.color}0f` : '#fff',
               transition: 'border-color 0.2s, background 0.2s',
             }}>
               {/* Top row: icon + label + count */}
@@ -93,9 +93,9 @@ export default function ArmyBuilder({ onStart }: Props) {
                   <div style={{ fontSize: 15, fontWeight: 700, color: count > 0 ? info.color : 'var(--text)' }}>
                     {info.label}
                   </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>{info.row} · max {info.max}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{info.row} · max {info.max}</div>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: count > 0 ? info.color : 'rgba(255,255,255,0.15)', fontVariantNumeric: 'tabular-nums', minWidth: 24, textAlign: 'right' }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: count > 0 ? info.color : 'rgba(0,0,0,0.15)', fontVariantNumeric: 'tabular-nums', minWidth: 24, textAlign: 'right' }}>
                   {count}
                 </div>
               </div>
@@ -107,9 +107,9 @@ export default function ArmyBuilder({ onStart }: Props) {
                   disabled={count === 0}
                   style={{
                     width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                    border: `1px solid ${count > 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)'}`,
-                    background: count > 0 ? 'rgba(255,255,255,0.08)' : 'transparent',
-                    color: count > 0 ? 'var(--text)' : 'rgba(255,255,255,0.15)',
+                    border: `1px solid ${count > 0 ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.08)'}`,
+                    background: count > 0 ? 'rgba(0,0,0,0.06)' : 'transparent',
+                    color: count > 0 ? 'var(--text)' : 'rgba(0,0,0,0.2)',
                     fontSize: 20, cursor: count === 0 ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
@@ -124,11 +124,11 @@ export default function ArmyBuilder({ onStart }: Props) {
                         onClick={() => filled ? change(info.key, -(count - i)) : (total < MAX_TOTAL || count > i) && change(info.key, i + 1 - count)}
                         style={{
                           width: 42, height: 42, borderRadius: 10,
-                          border: `2px solid ${filled ? info.color : 'rgba(255,255,255,0.1)'}`,
-                          background: filled ? `${info.color}25` : 'rgba(255,255,255,0.02)',
+                          border: `2px solid ${filled ? info.color : 'rgba(0,0,0,0.1)'}`,
+                          background: filled ? `${info.color}20` : 'rgba(0,0,0,0.02)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: filled ? 18 : 13,
-                          color: filled ? info.color : 'rgba(255,255,255,0.12)',
+                          color: filled ? info.color : 'rgba(0,0,0,0.15)',
                           transition: 'all 0.15s',
                           cursor: 'pointer',
                           boxShadow: filled ? `0 0 10px ${info.color}33` : 'none',
@@ -145,9 +145,9 @@ export default function ArmyBuilder({ onStart }: Props) {
                   disabled={count >= info.max || total >= MAX_TOTAL}
                   style={{
                     width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                    border: `1px solid ${count < info.max && total < MAX_TOTAL ? info.color + '88' : 'rgba(255,255,255,0.07)'}`,
-                    background: count < info.max && total < MAX_TOTAL ? `${info.color}22` : 'transparent',
-                    color: count < info.max && total < MAX_TOTAL ? info.color : 'rgba(255,255,255,0.15)',
+                    border: `1px solid ${count < info.max && total < MAX_TOTAL ? info.color : 'rgba(0,0,0,0.1)'}`,
+                    background: count < info.max && total < MAX_TOTAL ? `${info.color}18` : 'transparent',
+                    color: count < info.max && total < MAX_TOTAL ? info.color : 'rgba(0,0,0,0.2)',
                     fontSize: 20, cursor: count >= info.max || total >= MAX_TOTAL ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
@@ -156,7 +156,7 @@ export default function ArmyBuilder({ onStart }: Props) {
 
               {/* Desc */}
               {count > 0 && (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 8, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.5 }}>
                   {info.desc}
                 </div>
               )}
@@ -169,25 +169,25 @@ export default function ArmyBuilder({ onStart }: Props) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '12px 16px',
           borderRadius: 10,
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(255,255,255,0.06)',
+          background: 'rgba(0,0,0,0.03)',
+          border: '1px solid rgba(0,0,0,0.07)',
         }}>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>Загалом бійців</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: total === MAX_TOTAL ? '#7aaa82' : total > 0 ? '#ffd700' : 'rgba(255,255,255,0.2)' }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: total === MAX_TOTAL ? '#5a9a6a' : total > 0 ? '#b07850' : 'rgba(0,0,0,0.2)' }}>
             {total} / {MAX_TOTAL}
           </div>
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.6)' }}>
+      <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', background: '#fff' }}>
         <button
           onClick={() => total > 0 && onStart(counts)}
           style={{
             width: '100%', padding: '14px', borderRadius: 10,
-            background: total > 0 ? '#7aaa82' : 'rgba(255,255,255,0.05)',
+            background: total > 0 ? '#6fa67a' : 'rgba(0,0,0,0.04)',
             border: 'none',
-            color: total > 0 ? '#fff' : 'rgba(255,255,255,0.2)',
+            color: total > 0 ? '#fff' : 'rgba(0,0,0,0.2)',
             fontSize: 15, fontWeight: 700,
             cursor: total > 0 ? 'pointer' : 'not-allowed',
             transition: 'background 0.2s',

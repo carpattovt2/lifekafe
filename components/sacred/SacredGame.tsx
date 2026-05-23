@@ -28,19 +28,19 @@ function HpBar({ hp, maxHp }: { hp: number; maxHp: number }) {
   const pct = Math.max(0, hp / maxHp)
   const color = pct > 0.5 ? '#7aaa82' : pct > 0.25 ? '#c4a040' : '#c07070'
   return (
-    <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, marginTop: 4 }}>
+    <div style={{ width: '100%', height: 4, background: 'rgba(0,0,0,0.1)', borderRadius: 2, marginTop: 4 }}>
       <div style={{ width: `${pct * 100}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.3s' }} />
     </div>
   )
 }
 
 const FLOAT_COLOR: Record<BattleEvent['type'], string> = {
-  damage: '#ef4444',
-  crit:   '#ffd700',
-  miss:   '#888888',
-  evade:  '#7ea8c4',
-  heal:   '#7aaa82',
-  buff:   '#a891c4',
+  damage: '#c0392b',
+  crit:   '#b07850',
+  miss:   '#9b9289',
+  evade:  '#4a86a8',
+  heal:   '#5a9a6a',
+  buff:   '#8060a8',
   debuff: '#c07070',
 }
 
@@ -52,7 +52,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
 }) {
   const alive = unit.hp > 0
   const color = SIDE_COLOR[unit.side]
-  const borderColor = isActive ? '#ffd700' : isTargetable ? color : 'rgba(255,255,255,0.1)'
+  const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(0,0,0,0.12)'
 
   function handleClick() {
     if (!alive) return
@@ -65,13 +65,13 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
       onClick={handleClick}
       style={{
         width: 76, minHeight: 86, padding: '6px 6px 4px',
-        background: alive ? 'rgba(20,18,16,0.85)' : 'rgba(20,18,16,0.3)',
+        background: alive ? '#ffffff' : 'rgba(0,0,0,0.04)',
         border: `2px solid ${borderColor}`,
         borderRadius: 8,
         cursor: alive ? 'pointer' : 'default',
         opacity: alive ? 1 : 0.3,
         transform: isActive ? 'scale(1.06)' : isTargetable ? 'scale(1.03)' : 'scale(1)',
-        boxShadow: isActive ? `0 0 14px ${color}88` : isTargetable ? `0 0 8px ${color}55` : 'none',
+        boxShadow: isActive ? `0 2px 12px ${color}66` : isTargetable ? `0 2px 8px ${color}44` : '0 1px 3px rgba(0,0,0,0.08)',
         transition: 'border-color 0.15s, transform 0.1s',
         flexShrink: 0, position: 'relative',
       }}
@@ -84,7 +84,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
       ))}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
         <span style={{ fontSize: 13 }}>{CLASS_ICON[unit.class]}</span>
-        {isActive && <span style={{ fontSize: 8, color: '#ffd700', fontWeight: 700 }}>ХОДА</span>}
+        {isActive && <span style={{ fontSize: 8, color: '#b07850', fontWeight: 700 }}>ХОДА</span>}
         {isTargetable && !isActive && <span style={{ fontSize: 9, color, fontWeight: 700 }}>➜</span>}
       </div>
       <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -97,7 +97,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
       {unit.buffs.length > 0 && (
         <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
           {unit.buffs.map(b => (
-            <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(255,255,255,0.1)', color: 'var(--muted)' }}>
+            <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(0,0,0,0.07)', color: 'var(--muted)' }}>
               {BUFF_ICON[b.type] ?? '✦'}{b.turnsLeft}
             </span>
           ))}
@@ -119,7 +119,7 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
       {Array.from({ length: maxSlots }, (_, i) => {
         const unit = rowUnits.find(u => u.slot === i)
         if (!unit) return (
-          <div key={i} style={{ width: 76, height: 86, border: '1px dashed rgba(255,255,255,0.07)', borderRadius: 8, flexShrink: 0 }} />
+          <div key={i} style={{ width: 76, height: 86, border: '1px dashed rgba(0,0,0,0.12)', borderRadius: 8, flexShrink: 0 }} />
         )
         return (
           <UnitCard key={unit.id} unit={unit}
@@ -147,8 +147,8 @@ function TurnQueue({ queue, units, currentIdx }: { queue: string[]; units: GameU
           return (
             <div key={`${id}-${i}`} style={{
               width: 32, height: 32, borderRadius: 6, flexShrink: 0,
-              background: isCurrent ? '#ffd700' : 'rgba(255,255,255,0.06)',
-              border: `1px solid ${isCurrent ? '#ffd700' : SIDE_COLOR[u.side] + '44'}`,
+              background: isCurrent ? '#b07850' : 'rgba(0,0,0,0.06)',
+              border: `1px solid ${isCurrent ? '#b07850' : SIDE_COLOR[u.side] + '88'}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 14, opacity: isCurrent ? 1 : 0.55,
               transform: isCurrent ? 'scale(1.18)' : 'scale(1)',
@@ -169,12 +169,12 @@ function BattleLog({ entries }: { entries: LogEntry[] }) {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [entries.length])
 
   const typeColor: Record<LogEntry['type'], string> = {
-    attack: 'var(--text)', miss: 'var(--muted)', evade: '#7ea8c4', crit: '#ffd700',
-    heal: '#7aaa82', buff: '#a891c4', debuff: '#c07070', death: '#ef4444', info: 'rgba(255,255,255,0.3)',
+    attack: 'var(--text)', miss: 'var(--muted)', evade: '#4a86a8', crit: '#b07850',
+    heal: '#5a9a6a', buff: '#8060a8', debuff: '#c07070', death: '#c0392b', info: 'rgba(0,0,0,0.3)',
   }
 
   return (
-    <div style={{ height: 130, overflowY: 'auto', padding: '8px 14px', background: 'rgba(0,0,0,0.4)', borderTop: '1px solid var(--border)' }}>
+    <div style={{ height: 130, overflowY: 'auto', padding: '8px 14px', background: '#f2efe9', borderTop: '1px solid var(--border)' }}>
       {entries.slice(-40).map(e => (
         <div key={e.id} style={{ fontSize: 12, color: typeColor[e.type], lineHeight: 1.6, marginBottom: 1 }}>
           {e.text}
@@ -195,8 +195,8 @@ function ActionBtn({ actionKey, selected, onSelect }: {
       onClick={onSelect}
       style={{
         flex: '1 1 0', padding: '10px 12px', borderRadius: 8, textAlign: 'left',
-        background: selected ? 'rgba(255,215,0,0.15)' : 'rgba(255,255,255,0.05)',
-        border: `1px solid ${selected ? '#ffd700' : 'rgba(255,255,255,0.12)'}`,
+        background: selected ? 'rgba(176,120,80,0.12)' : '#fff',
+        border: `1px solid ${selected ? '#b07850' : 'rgba(0,0,0,0.1)'}`,
         color: 'var(--text)', cursor: 'pointer', transition: 'all 0.12s',
       }}
     >
@@ -225,12 +225,12 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 560,
-        background: '#1c1a18', borderRadius: '16px 16px 0 0',
-        border: `1px solid ${color}44`, borderBottom: 'none',
+        background: '#faf8f5', borderRadius: '16px 16px 0 0',
+        border: `1px solid ${color}55`, borderBottom: 'none',
         zIndex: 51, padding: '14px 20px 36px',
         fontFamily: "'Inter', sans-serif",
       }}>
-        <div style={{ width: 36, height: 3, background: 'rgba(255,255,255,0.12)', borderRadius: 2, margin: '0 auto 14px' }} />
+        <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 14px' }} />
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -243,7 +243,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color }}>{unit.name}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
               {unit.side === 'player' ? 'Твій юніт' : 'Ворожий юніт'} · {ROW_LABEL[unit.row]} ряд
             </div>
           </div>
@@ -252,8 +252,8 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           </div>
           <button onClick={onClose} style={{
             width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 14,
+            background: 'rgba(0,0,0,0.05)', border: '1px solid rgba(0,0,0,0.1)',
+            color: 'var(--muted)', cursor: 'pointer', fontSize: 14,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>✕</button>
         </div>
@@ -271,9 +271,9 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           {stats.map(([label, value]) => (
             <div key={label} style={{
               padding: '7px 10px', borderRadius: 8,
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+              background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
             }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{label}</div>
+              <div style={{ fontSize: 10, color: 'var(--muted)' }}>{label}</div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginTop: 1 }}>{value}</div>
             </div>
           ))}
@@ -282,13 +282,13 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
         {/* Active buffs */}
         {unit.buffs.length > 0 && (
           <div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>Активні ефекти</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>Активні ефекти</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {unit.buffs.map(b => (
                 <div key={b.id} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '6px 10px', borderRadius: 8,
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+                  background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
                 }}>
                   <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
                   <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{BUFF_LABEL[b.type] ?? b.type}</span>
@@ -307,13 +307,13 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
 function Landing({ onNewGame }: { onNewGame: () => void }) {
   return (
     <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0e0d0b',
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
       color: 'var(--text)', fontFamily: "'Inter', sans-serif",
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       padding: '40px 24px', textAlign: 'center',
     }}>
       <div style={{ fontSize: 52, marginBottom: 18, filter: 'drop-shadow(0 0 24px #ffd70055)' }}>✦</div>
-      <div style={{ fontSize: 30, fontWeight: 800, color: '#ffd700', letterSpacing: '-0.02em', marginBottom: 10 }}>
+      <div style={{ fontSize: 30, fontWeight: 800, color: '#b07850', letterSpacing: '-0.02em', marginBottom: 10 }}>
         Серафити
       </div>
       <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300, marginBottom: 44 }}>
@@ -323,14 +323,14 @@ function Landing({ onNewGame }: { onNewGame: () => void }) {
         onClick={onNewGame}
         style={{
           padding: '16px 44px', fontSize: 16, fontWeight: 700,
-          background: '#ffd700', color: '#0e0d0b',
+          background: '#b07850', color: '#fff',
           border: 'none', borderRadius: 12, cursor: 'pointer',
-          boxShadow: '0 0 28px #ffd70044',
+          boxShadow: '0 2px 12px rgba(176,120,80,0.3)',
         }}
       >
         ⚔ Нова гра
       </button>
-      <div style={{ marginTop: 52, display: 'flex', gap: 32, fontSize: 11, color: 'rgba(255,255,255,0.18)' }}>
+      <div style={{ marginTop: 52, display: 'flex', gap: 32, fontSize: 11, color: 'var(--muted)' }}>
         {[['⚔', 'Воїни'], ['🏹', 'Лучники'], ['✨', 'Маги']].map(([icon, label]) => (
           <div key={label} style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 22, marginBottom: 4 }}>{icon}</div>{label}
@@ -412,14 +412,14 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column',
-      minHeight: '100vh', background: '#0e0d0b', color: 'var(--text)',
+      minHeight: '100vh', background: '#faf8f5', color: 'var(--text)',
       fontFamily: "'Inter', sans-serif",
     }}>
 
       {/* Header */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.5)' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#ffd700' }}>✦ Серафити</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850' }}>✦ Серафити</div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>Раунд {state.round}</div>
         </div>
         <TurnQueue queue={state.queue} units={state.units} currentIdx={state.queueIdx} />
@@ -434,7 +434,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
         </div>
         {([2, 1, 0] as Row[]).map(row => (
           <div key={row}>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginBottom: 2 }}>{ROW_LABEL[row]}</div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 2 }}>{ROW_LABEL[row]}</div>
             <UnitRow
               units={state.units} side="ai" row={row}
               activeId={actor?.side === 'ai' ? actorId : null}
@@ -445,8 +445,8 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
         ))}
 
         {/* Divider */}
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 16, background: '#0e0d0b', padding: '0 8px', color: 'rgba(255,255,255,0.3)' }}>
+        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0', position: 'relative' }}>
+          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 16, background: '#faf8f5', padding: '0 8px', color: 'var(--muted)' }}>
             ⚔
           </div>
         </div>
@@ -454,7 +454,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
         {/* Player side: rows 0→1→2 */}
         {([0, 1, 2] as Row[]).map(row => (
           <div key={row}>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginBottom: 2 }}>{ROW_LABEL[row]}</div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 2 }}>{ROW_LABEL[row]}</div>
             <UnitRow
               units={state.units} side="player" row={row}
               activeId={actor?.side === 'player' ? actorId : null}
@@ -471,7 +471,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
       {/* Action panel — fixed height so battlefield never jumps between turns */}
       <div style={{
         minHeight: 128, display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        borderTop: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.7)',
+        borderTop: '1px solid var(--border)', background: '#fff',
       }}>
         {state.phase === 'game-over' ? (
           <div style={{ padding: '16px 20px', textAlign: 'center' }}>
@@ -497,7 +497,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
               Натисніть на підсвіченого юніта на полі бою
             </div>
             <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
-              style={{ marginTop: 8, padding: '6px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+              style={{ marginTop: 8, padding: '6px 14px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
               Пропустити бонус
             </button>
           </div>
@@ -517,9 +517,9 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 13, color: '#ffd700' }}>Обери ворога →</div>
+                <div style={{ fontSize: 13, color: '#b07850' }}>Обери ворога →</div>
                 <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
-                  style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+                  style={{ padding: '8px 16px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
                   Скасувати
                 </button>
               </div>
@@ -536,7 +536,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>HP {actor.hp}/{actor.maxHp}</div>
               </div>
               {state.needsTarget && (
-                <div style={{ marginLeft: 'auto', fontSize: 12, color: '#ffd700', fontWeight: 500 }}>
+                <div style={{ marginLeft: 'auto', fontSize: 12, color: '#b07850', fontWeight: 500 }}>
                   Обери ціль →
                 </div>
               )}
@@ -550,7 +550,7 @@ function Battle({ counts, onRestart }: { counts: ArmyCounts; onRestart: () => vo
               </div>
             ) : (
               <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
-                style={{ padding: '10px 20px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>
+                style={{ padding: '10px 20px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>
                 Скасувати
               </button>
             )}
