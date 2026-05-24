@@ -1,9 +1,9 @@
 import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
   ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
-  ArmyCounts, BattleEvent, WarriorLevelData,
+  ArmyCounts, BattleEvent, WarriorLevelData, ArcherLevelData,
 } from './types'
-import { WARRIOR_LEVELS } from './types'
+import { WARRIOR_LEVELS, ARCHER_LEVELS } from './types'
 
 // ── Unit templates ─────────────────────────────────────────────────────────────
 type Template = Omit<GameUnit, 'id' | 'side' | 'row' | 'slot' | 'name' | 'buffs' | 'hasActed' | 'level' | 'xp' | 'xpToNext'>
@@ -51,6 +51,9 @@ function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number): GameUnit 
   if (cls === 'warrior') {
     return { ...base, level: 1, xp: 0, xpToNext: WARRIOR_LEVELS[1].xpToNext }
   }
+  if (cls === 'archer') {
+    return { ...base, level: 1, xp: 0, xpToNext: ARCHER_LEVELS[1].xpToNext }
+  }
   return base
 }
 
@@ -90,6 +93,42 @@ function grantWarriorXp(
   return { ...unit, xp: newXp }
 }
 
+// ── Archer level-up helper ─────────────────────────────────────────────────────
+function applyArcherLevel(unit: GameUnit, newLevel: number): GameUnit {
+  const data: ArcherLevelData = ARCHER_LEVELS[newLevel]
+  if (!data) return unit
+  const hpPct = unit.hp / unit.maxHp
+  return {
+    ...unit,
+    level: newLevel, xp: 0,
+    xpToNext: data.xpToNext === Infinity ? Infinity : data.xpToNext,
+    maxHp: data.hp, hp: Math.max(1, Math.round(hpPct * data.hp)),
+    minDmg: data.minDmg, maxDmg: data.maxDmg,
+    accuracy: data.accuracy, defense: data.defense,
+    evasion: data.evasion, initiative: data.initiative,
+    critChance: data.critChance, critMult: data.critMult,
+    morale: data.morale,
+  }
+}
+
+function grantArcherXp(
+  unit: GameUnit, amount: number,
+  newLogs: LogEntry[], newEvents: BattleEvent[],
+): GameUnit {
+  if (unit.class !== 'archer' || amount <= 0) return unit
+  const curLevel = unit.level ?? 1
+  if (curLevel >= 3) return unit  // maxed
+  const newXp = (unit.xp ?? 0) + amount
+  if (newXp >= (unit.xpToNext ?? Infinity)) {
+    const nextLevel = curLevel + 1
+    const leveled = applyArcherLevel({ ...unit, xp: newXp }, nextLevel)
+    newLogs.push(log(`⭐ ${unit.name} — рівень ${nextLevel} (${ARCHER_LEVELS[nextLevel].name})!`, 'buff'))
+    newEvents.push(ev(unit.id, `⭐ Рівень ${nextLevel}!`, 'buff'))
+    return leveled
+  }
+  return { ...unit, xp: newXp }
+}
+
 // ── Army builders ──────────────────────────────────────────────────────────────
 export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
   const units: GameUnit[] = []
@@ -122,7 +161,13 @@ function getBuffValue(unit: GameUnit, type: BuffType): number {
 }
 
 function tickBuffs(unit: GameUnit): GameUnit {
-  return { ...unit, buffs: unit.buffs.map(b => ({ ...b, turnsLeft: b.turnsLeft - 1 })).filter(b => b.turnsLeft > 0) }
+  // poison ticks at START of the poisoned unit's turn (handled in advanceQueue), not here
+  return {
+    ...unit,
+    buffs: unit.buffs
+      .map(b => b.type === 'poison' ? b : { ...b, turnsLeft: b.turnsLeft - 1 })
+      .filter(b => b.turnsLeft > 0),
+  }
 }
 
 // ── Front-line protection ──────────────────────────────────────────────────────
@@ -166,12 +211,13 @@ function resolveAttack(
   let effectiveCritChance = atk.critChance
   let effectiveCritMult   = atk.critMult
 
-  // Aimed buff: fixed accuracy bonus + crit enable
+  // Aimed buff: fixed accuracy bonus + crit enable (crit% scales with archer level)
   const aimedBuff = atk.buffs.find(b => b.type === 'aimed')
   if (aimedBuff) {
     accBonus += aimedBuff.value
-    effectiveCritChance = 0.35
-    effectiveCritMult   = 2.0
+    const archerData = atk.class === 'archer' ? ARCHER_LEVELS[atk.level ?? 1] : null
+    effectiveCritChance = archerData?.aimCritChance ?? 0.35
+    effectiveCritMult   = archerData?.aimCritMult   ?? 2.0
   }
 
   // Morale buff: +1% acc/eva per 10 morale points
@@ -185,7 +231,14 @@ function resolveAttack(
     return { hit: false, evaded: false, crit: false, damage: 0, logs, events }
   }
 
-  if (Math.random() < def.evasion + moraleEvaBonus) {
+  // Ranger passive: +10% evasion if sole survivor in row 1
+  let rangerEvaBonus = 0
+  if (def.class === 'archer' && (def.level ?? 1) >= 3 && def.row === 1) {
+    const aloneInRow = units.filter(u => u.side === def.side && u.hp > 0 && u.row === 1).length === 1
+    if (aloneInRow) rangerEvaBonus = 0.10
+  }
+
+  if (Math.random() < def.evasion + moraleEvaBonus + rangerEvaBonus) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
     events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
@@ -229,7 +282,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'fireball', 'barrage', 'grapeshot'].includes(action)) {
+  if (['shot', 'poison_shot', 'double_shot', 'fireball', 'barrage', 'grapeshot'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 
@@ -342,6 +395,61 @@ export function executeAction(
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
+      if (res.hit && !res.evaded) hitLanded = true
+      break
+    }
+
+    case 'poison_shot': {
+      if (!target) break
+      const alreadyPoisoned = target.buffs.some(b => b.type === 'poison')
+      newLogs.push(log(`🧪 ${actor.name} — Отруєна стріла!`, 'attack'))
+      const res = resolveAttack(actor, target, units)
+      newLogs.push(...res.logs)
+      newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...getUnit(target.id), hp: Math.max(0, getUnit(target.id).hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        hitLanded = true
+        if (!alreadyPoisoned) {
+          const tgt = getUnit(target.id)
+          if (tgt.hp > 0) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('poison', 4, 3)] })
+            newLogs.push(log(`🧪 ${target.name} отруєний! 4 урону/хід на 3 ходи`, 'debuff'))
+            newEvents.push(ev(target.id, '🧪 Отрута!', 'debuff', actor.id))
+          }
+        } else {
+          newLogs.push(log(`${target.name} вже отруєний — ефект не стакується`, 'info'))
+        }
+      }
+      break
+    }
+
+    case 'double_shot': {
+      if (!target) break
+      newLogs.push(log(`🏹🏹 ${actor.name} — Подвійний постріл!`, 'attack'))
+      // First arrow — normal
+      const res1 = resolveAttack(actor, target, units)
+      newLogs.push(...res1.logs)
+      newEvents.push(...res1.events)
+      if (res1.damage > 0) {
+        update({ ...getUnit(target.id), hp: Math.max(0, getUnit(target.id).hp - res1.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res1.hit && !res1.evaded) hitLanded = true
+      // Second arrow — -15% accuracy, only if target still alive
+      const tgt2 = getUnit(target.id)
+      if (tgt2.hp > 0) {
+        const res2 = resolveAttack(actor, tgt2, units, { accBonus: -0.15 })
+        newLogs.push(...res2.logs)
+        newEvents.push(...res2.events)
+        if (res2.damage > 0) {
+          update({ ...tgt2, hp: Math.max(0, tgt2.hp - res2.damage) })
+          if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+        }
+        if (res2.hit && !res2.evaded) hitLanded = true
+      }
       break
     }
 
@@ -423,8 +531,8 @@ export function executeAction(
     }
   }
 
-  // ── Warrior XP: per kill (+50) and per hit (+10) ───────────────────────────
-  if (actor.class === 'warrior') {
+  // ── XP: per kill (+50) and per hit (+10) for warriors and archers ─────────
+  if (actor.class === 'warrior' || actor.class === 'archer') {
     const kills = units.filter(u => {
       const prev = prevUnitMap.get(u.id)
       return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
@@ -432,7 +540,8 @@ export function executeAction(
     const xpGain = kills * 50 + (hitLanded ? 10 : 0)
     if (xpGain > 0) {
       const fresh = getUnit(actor.id)
-      update(grantWarriorXp(fresh, xpGain, newLogs, newEvents))
+      if (actor.class === 'warrior') update(grantWarriorXp(fresh, xpGain, newLogs, newEvents))
+      else                           update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
     }
   }
 
@@ -471,7 +580,19 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
   }
 
   if (actor.class === 'archer') {
+    const lvl = actor.level ?? 1
     const hasAimed = actor.buffs.some(b => b.type === 'aimed')
+
+    if (lvl >= 3 && playerUnits.length > 0 && Math.random() < 0.40) {
+      return { action: 'double_shot', targetId: weakest?.id ?? null }
+    }
+    if (lvl >= 2) {
+      const unpoisoned = playerUnits.filter(u => !u.buffs.some(b => b.type === 'poison'))
+      if (unpoisoned.length > 0 && Math.random() < 0.35) {
+        const bigTarget = unpoisoned.sort((a, b) => b.hp - a.hp)[0]
+        return { action: 'poison_shot', targetId: bigTarget.id }
+      }
+    }
     if (!hasAimed && playerUnits.length > 0 && Math.random() < 0.30) return { action: 'aim', targetId: null }
     return { action: 'shot', targetId: weakest?.id ?? null }
   }
@@ -511,7 +632,9 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: 'Удар + -10% броні цілі на 1 хід',          needsTarget: true,  targetSide: 'ai'   },
   consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+15 HP та знімає дебафи з союзника',        needsTarget: true,  targetSide: 'ally' },
   shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога',                  needsTarget: true,  targetSide: 'ai'   },
-  aim:             { key: 'aim',             label: 'Прицілення',        desc: '+25–40% точн. та 35% крит ×2 (2 ходи)',    needsTarget: false, targetSide: null   },
+  aim:             { key: 'aim',             label: 'Прицілення',        desc: '+25–40% точн. та крит ×(2–ходи)',           needsTarget: false, targetSide: null   },
+  poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },
+  double_shot:     { key: 'double_shot',     label: 'Подвійний постріл', desc: '2 стріли, 2-га -15% точн.',                needsTarget: true,  targetSide: 'ai'   },
   chain_lightning: { key: 'chain_lightning', label: 'Ланцюгова молнія',  desc: 'Б\'є всіх ворогів одночасно',              needsTarget: false, targetSide: null   },
   fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: '×3 урону по одній цілі',                   needsTarget: true,  targetSide: 'ai'   },
   barrage:         { key: 'barrage',         label: 'Удар по площі',     desc: 'Ціль + сусіди отримують 25–50% урону',     needsTarget: true,  targetSide: 'ai'   },
@@ -523,7 +646,10 @@ export function getMainActions(cls: UnitClass, level?: number): ActionKey[] {
     const lvl = level ?? 1
     return WARRIOR_LEVELS[lvl]?.actions ?? ['strike', 'shield']
   }
-  if (cls === 'archer')   return ['shot', 'aim']
+  if (cls === 'archer') {
+    const lvl = level ?? 1
+    return ARCHER_LEVELS[lvl]?.actions ?? ['shot', 'aim']
+  }
   if (cls === 'catapult') return ['barrage', 'grapeshot']
   return ['chain_lightning', 'fireball']
 }
@@ -612,12 +738,14 @@ function advanceQueue(state: BattleState): BattleState {
 
   if (idx >= queue.length) {
     round++
-    // Award round-survival XP to all living warriors
+    // Award round-survival XP to all living warriors and archers
     const roundLogs: LogEntry[] = []
     const roundEvents: BattleEvent[] = []
-    for (const w of units.filter(u => u.class === 'warrior' && u.hp > 0)) {
-      const updated = grantWarriorXp(w, 15, roundLogs, roundEvents)
-      units = units.map(u => u.id === updated.id ? updated : u)
+    for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer') && x.hp > 0)) {
+      const updated = u.class === 'warrior'
+        ? grantWarriorXp(u, 15, roundLogs, roundEvents)
+        : grantArcherXp(u, 15, roundLogs, roundEvents)
+      units = units.map(x => x.id === updated.id ? updated : x)
     }
     state = {
       ...state, units,
@@ -629,6 +757,30 @@ function advanceQueue(state: BattleState): BattleState {
     }
     queue = buildQueue(units)
     idx = 0
+  }
+
+  // Apply poison damage at start of next unit's turn
+  const nextId = queue[idx]
+  const nextUnit = units.find(u => u.id === nextId)
+  if (nextUnit && nextUnit.hp > 0 && nextUnit.buffs.some(b => b.type === 'poison')) {
+    const poisonDmg = nextUnit.buffs.filter(b => b.type === 'poison').reduce((s, b) => s + b.value, 0)
+    const newHp = Math.max(0, nextUnit.hp - poisonDmg)
+    units = units.map(u => u.id === nextId ? {
+      ...u,
+      hp: newHp,
+      buffs: u.buffs
+        .map(b => b.type === 'poison' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b)
+        .filter(b => b.turnsLeft > 0),
+    } : u)
+    const poisonLog: LogEntry = { id: ++_logId, text: `🧪 ${nextUnit.name} отруєний: -${poisonDmg} HP`, type: 'debuff' }
+    state = { ...state, log: [...state.log, poisonLog] }
+    if (newHp === 0) {
+      state = { ...state, log: [...state.log, { id: ++_logId, text: `☠ ${nextUnit.name} гине від отрути!`, type: 'death' }] }
+      const playerAlive2 = units.filter(u => u.side === 'player' && u.hp > 0).length
+      const aiAlive2     = units.filter(u => u.side === 'ai'     && u.hp > 0).length
+      if (playerAlive2 === 0) return { ...state, units, phase: 'game-over', winner: 'ai' }
+      if (aiAlive2     === 0) return { ...state, units, phase: 'game-over', winner: 'player' }
+    }
   }
 
   const next = units.find(u => u.id === queue[idx])

@@ -4,9 +4,10 @@ export type Row = 0 | 1 | 2
 
 export type BuffType =
   | 'defense_up'   // warrior shield: +50% damage reduction this turn
-  | 'aimed'        // archer aim: fixed acc bonus + 35% crit for 2 turns
+  | 'aimed'        // archer aim: fixed acc bonus + crit for 2 turns
   | 'morale_up'    // knight battle cry: +N morale → +1% acc/eva per 10 morale
   | 'armor_break'  // paladin sacred strike: -10% target armor for 1 turn
+  | 'poison'       // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
 
 export interface Buff {
   id: string
@@ -52,7 +53,9 @@ export type ActionKey =
   | 'sacred_strike'   // paladin (lv4): strike + -10% armor on target 1 turn
   | 'consecration'    // paladin (lv4): remove debuffs + heal ally 15 HP
   | 'shot'            // archer: ranged attack any enemy
-  | 'aim'             // archer: +25–40% acc + 35% crit ×2 for 2 turns
+  | 'aim'             // archer: +25–40% acc + crit for 2 turns (crit% scales with level)
+  | 'poison_shot'     // hunter (lv2): shot + poison 4dmg/turn for 3 turns, no stack
+  | 'double_shot'     // ranger (lv3): two shots, second -15% acc
   | 'chain_lightning' // mage: hits all enemies, full damage each
   | 'fireball'        // mage: ×3 damage to single target
   | 'barrage'         // catapult: area strike, adjacents get 25–50% damage
@@ -108,6 +111,45 @@ export interface ArmyCounts {
   archers: number    // 0–2, row 1 (max 2 when catapult present)
   mages: number      // 0–2, row 2
   catapults: number  // 0–1, row 1 slot 2 + row 2 slot 2 base; counts as 2 units
+}
+
+// ── Archer level data ──────────────────────────────────────────────────────────
+export interface ArcherLevelData {
+  name: string
+  hp: number; minDmg: number; maxDmg: number
+  accuracy: number; defense: number; evasion: number
+  initiative: number; critChance: number; critMult: number; morale: number
+  actions: ActionKey[]
+  aimCritChance: number
+  aimCritMult: number
+  xpToNext: number
+}
+
+export const ARCHER_LEVELS: Record<number, ArcherLevelData> = {
+  1: {
+    name: 'Scout',
+    hp: 65, minDmg: 12, maxDmg: 18, accuracy: 0.85, defense: 0,    evasion: 0.15,
+    initiative: 60, critChance: 0,    critMult: 2.0, morale: 50,
+    actions: ['shot', 'aim'],
+    aimCritChance: 0.35, aimCritMult: 2.0,
+    xpToNext: 100,
+  },
+  2: {
+    name: 'Hunter',
+    hp: 90, minDmg: 16, maxDmg: 24, accuracy: 0.88, defense: 0.05, evasion: 0.18,
+    initiative: 63, critChance: 0.08, critMult: 2.0, morale: 55,
+    actions: ['shot', 'aim', 'poison_shot'],
+    aimCritChance: 0.35, aimCritMult: 2.0,
+    xpToNext: 200,
+  },
+  3: {
+    name: 'Ranger',
+    hp: 120, minDmg: 22, maxDmg: 32, accuracy: 0.92, defense: 0.10, evasion: 0.22,
+    initiative: 68, critChance: 0.18, critMult: 2.5, morale: 65,
+    actions: ['shot', 'aim', 'double_shot'],
+    aimCritChance: 0.45, aimCritMult: 2.5,
+    xpToNext: Infinity,
+  },
 }
 
 // ── Warrior level data ─────────────────────────────────────────────────────────
