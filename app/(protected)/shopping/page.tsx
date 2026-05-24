@@ -18,22 +18,19 @@ async function getOrCreateGroup(
 
   if (membership) return membership.group_id
 
-  const { data: newGroup } = await supabase
-    .from('shopping_groups')
-    .insert({ created_by: userId })
-    .select('id')
-    .single()
+  const { randomUUID } = await import('crypto')
+  const newGroupId = randomUUID()
 
-  if (!newGroup) throw new Error('Failed to create group')
+  await supabase.from('shopping_groups').insert({ id: newGroupId, created_by: userId })
 
   await supabase.from('shopping_group_members').insert({
-    group_id: newGroup.id,
+    group_id: newGroupId,
     user_id: userId,
     email: userEmail.toLowerCase(),
     status: 'active',
   })
 
-  return newGroup.id
+  return newGroupId
 }
 
 export default async function ShoppingPage() {
