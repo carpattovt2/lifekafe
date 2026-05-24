@@ -9,14 +9,14 @@ async function getOrCreateGroup(
   userId: string,
   userEmail: string,
 ): Promise<string> {
-  const { data: membership } = await supabase
+  const { data: memberships } = await supabase
     .from('shopping_group_members')
     .select('group_id')
     .eq('user_id', userId)
     .eq('status', 'active')
-    .single()
+    .limit(1)
 
-  if (membership) return membership.group_id
+  if (memberships && memberships.length > 0) return memberships[0].group_id
 
   const { randomUUID } = await import('crypto')
   const newGroupId = randomUUID()

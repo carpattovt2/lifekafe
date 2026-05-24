@@ -2,6 +2,17 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { randomUUID } from 'crypto'
+
+async function getActiveGroup(supabase: ReturnType<typeof createClient>, userId: string) {
+  const { data } = await supabase
+    .from('shopping_group_members')
+    .select('group_id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .limit(1)
+  return data?.[0] ?? null
+}
 
 export async function sendInvite(inviteeEmail: string): Promise<{ error?: string }> {
   const supabase = createClient()
@@ -11,12 +22,7 @@ export async function sendInvite(inviteeEmail: string): Promise<{ error?: string
   const email = inviteeEmail.trim().toLowerCase()
   if (email === user.email?.toLowerCase()) return { error: 'Не можна запросити себе' }
 
-  const { data: membership } = await supabase
-    .from('shopping_group_members')
-    .select('group_id')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .single()
+  const membership = await getActiveGroup(supabase, user.id)
   if (!membership) return { error: 'Групу не знайдено' }
 
   const { error } = await supabase
@@ -35,13 +41,7 @@ export async function acceptInvite(inviteGroupId: string): Promise<{ error?: str
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Get user's current group
-  const { data: current } = await supabase
-    .from('shopping_group_members')
-    .select('group_id')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .single()
+  const current = await getActiveGroup(supabase, user.id)
 
   if (current) {
     // Move unchecked items to the new group
@@ -51,12 +51,12 @@ export async function acceptInvite(inviteGroupId: string): Promise<{ error?: str
       .eq('group_id', current.group_id)
       .eq('checked', false)
 
-    // Leave old group
+    // Leave all current active memberships
     await supabase
       .from('shopping_group_members')
       .delete()
-      .eq('group_id', current.group_id)
       .eq('user_id', user.id)
+      .eq('status', 'active')
 
     // Delete old group if now empty
     const { count } = await supabase
@@ -102,33 +102,24 @@ export async function unlinkFromGroup(): Promise<{ error?: string }> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: current } = await supabase
-    .from('shopping_group_members')
-    .select('group_id')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .single()
+  const current = await getActiveGroup(supabase, user.id)
   if (!current) return { error: 'Групу не знайдено' }
 
-  // Create a new personal group
-  const { data: newGroup } = await supabase
-    .from('shopping_groups')
-    .insert({ created_by: user.id })
-    .select('id')
-    .single()
-  if (!newGroup) return { error: 'Помилка створення групи' }
+  const newGroupId = randomUUID()
 
+  await supabase.from('shopping_groups').insert({ id: newGroupId, created_by: user.id })
   await supabase.from('shopping_group_members').insert({
-    group_id: newGroup.id, user_id: user.id,
+    group_id: newGroupId, user_id: user.id,
     email: user.email!.toLowerCase(), status: 'active',
   })
 
-  // Remove from old group
+  // Remove all old active memberships
   await supabase
     .from('shopping_group_members')
     .delete()
-    .eq('group_id', current.group_id)
     .eq('user_id', user.id)
+    .eq('status', 'active')
+    .neq('group_id', newGroupId)
 
   revalidatePath('/shopping')
   return {}
