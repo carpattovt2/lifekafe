@@ -20,8 +20,8 @@ export default function MobileNav({ email }: { email: string }) {
     { href: '/weight',    label: t.nav.weight,    icon: '⚖' },
     { href: '/planner',   label: t.nav.planner,   icon: '◫' },
     { href: '/journal',   label: t.nav.journal,   icon: '📓' },
-    { href: '/games',     label: t.nav.games,      icon: '🎮' },
     { href: '/shopping',  label: t.nav.shopping,   icon: '🛒' },
+    { href: '/games',     label: t.nav.games,      icon: '🎮' },
   ]
 
   function close() { setIsOpen(false) }
