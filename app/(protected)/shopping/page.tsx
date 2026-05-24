@@ -1,22 +1,74 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import ShoppingList from '@/components/ShoppingList'
 
 export const dynamic = 'force-dynamic'
 
+async function getOrCreateGroup(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  userEmail: string,
+): Promise<string> {
+  const { data: membership } = await supabase
+    .from('shopping_group_members')
+    .select('group_id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .single()
+
+  if (membership) return membership.group_id
+
+  const { data: newGroup } = await supabase
+    .from('shopping_groups')
+    .insert({ created_by: userId })
+    .select('id')
+    .single()
+
+  if (!newGroup) throw new Error('Failed to create group')
+
+  await supabase.from('shopping_group_members').insert({
+    group_id: newGroup.id,
+    user_id: userId,
+    email: userEmail.toLowerCase(),
+    status: 'active',
+  })
+
+  return newGroup.id
+}
+
 export default async function ShoppingPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-  const { data: items } = await supabase
-    .from('shopping_list')
-    .select('*')
-    .order('created_at', { ascending: false })
+  const groupId = await getOrCreateGroup(supabase, user.id, user.email!)
+
+  const [itemsRes, membersRes, invitesRes] = await Promise.all([
+    supabase
+      .from('shopping_list')
+      .select('id, text, checked, created_at, created_by_email')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('shopping_group_members')
+      .select('id, email, status, invited_by_email')
+      .eq('group_id', groupId)
+      .eq('status', 'active'),
+    supabase
+      .from('shopping_group_members')
+      .select('group_id, invited_by_email')
+      .eq('email', user.email!.toLowerCase())
+      .eq('status', 'pending'),
+  ])
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <ShoppingList
-        initialItems={items ?? []}
-        userEmail={user?.email ?? ''}
+        initialItems={itemsRes.data ?? []}
+        userEmail={user.email!}
+        groupId={groupId}
+        groupMembers={(membersRes.data ?? []).filter(m => m.email !== user.email!.toLowerCase())}
+        pendingInvites={invitesRes.data ?? []}
       />
     </div>
   )

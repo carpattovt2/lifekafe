@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { sendInvite, acceptInvite, declineInvite, unlinkFromGroup } from '@/app/(protected)/shopping/actions'
 
 interface ShoppingItem {
   id: string
@@ -11,12 +12,27 @@ interface ShoppingItem {
   created_by_email: string | null
 }
 
+interface GroupMember {
+  id: string
+  email: string
+  status: string
+  invited_by_email: string | null
+}
+
+interface PendingInvite {
+  group_id: string
+  invited_by_email: string | null
+}
+
 interface Props {
   initialItems: ShoppingItem[]
   userEmail: string
+  groupId: string
+  groupMembers: GroupMember[]
+  pendingInvites: PendingInvite[]
 }
 
-export default function ShoppingList({ initialItems, userEmail }: Props) {
+export default function ShoppingList({ initialItems, userEmail, groupId, groupMembers, pendingInvites }: Props) {
   const supabase = createClient()
   const [items, setItems] = useState<ShoppingItem[]>(initialItems)
   const [newText, setNewText] = useState('')
@@ -24,16 +40,22 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
   const [fadingOut, setFadingOut] = useState<Set<string>>(new Set())
   const [slidingIn, setSlidingIn] = useState<Set<string>>(new Set())
   const [onlineUsers, setOnlineUsers] = useState<string[]>([])
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteStatus, setInviteStatus] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [inviteSending, setInviteSending] = useState(false)
+  const [inviteAction, setInviteAction] = useState<string | null>(null)
+  const [showLinkSection, setShowLinkSection] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const displayName = (email: string) => email.split('@')[0]
+  const partners = groupMembers.filter(m => m.email !== userEmail.toLowerCase())
 
   useEffect(() => {
     const channel = supabase
       .channel('shopping-realtime', { config: { presence: { key: userEmail } } })
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'shopping_list' },
+        { event: '*', schema: 'public', table: 'shopping_list', filter: `group_id=eq.${groupId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const item = payload.new as ShoppingItem
@@ -65,7 +87,7 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
       })
 
     return () => { supabase.removeChannel(channel) }
-  }, [supabase, userEmail])
+  }, [supabase, userEmail, groupId])
 
   const addItem = useCallback(async () => {
     const text = newText.trim()
@@ -75,7 +97,7 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
 
     const { data, error } = await supabase
       .from('shopping_list')
-      .insert({ text, created_by_email: userEmail })
+      .insert({ text, group_id: groupId, created_by_email: userEmail })
       .select()
       .single()
 
@@ -89,7 +111,7 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
     }
     setAdding(false)
     inputRef.current?.focus()
-  }, [newText, adding, supabase, userEmail])
+  }, [newText, adding, supabase, userEmail, groupId])
 
   async function handleTap(item: ShoppingItem) {
     if (!item.checked) {
@@ -105,6 +127,37 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
     }
   }
 
+  async function handleSendInvite() {
+    if (!inviteEmail.trim() || inviteSending) return
+    setInviteSending(true)
+    setInviteStatus(null)
+    const result = await sendInvite(inviteEmail.trim())
+    if (result.error) {
+      setInviteStatus({ msg: result.error, ok: false })
+    } else {
+      setInviteStatus({ msg: 'Запрошення надіслано!', ok: true })
+      setInviteEmail('')
+    }
+    setInviteSending(false)
+  }
+
+  async function handleAccept(invite: PendingInvite) {
+    setInviteAction(invite.group_id)
+    await acceptInvite(invite.group_id)
+    setInviteAction(null)
+  }
+
+  async function handleDecline(invite: PendingInvite) {
+    setInviteAction(invite.group_id)
+    await declineInvite(invite.group_id)
+    setInviteAction(null)
+  }
+
+  async function handleUnlink() {
+    if (!confirm('Від\'єднатись від спільного списку? У тебе буде особистий порожній список.')) return
+    await unlinkFromGroup()
+  }
+
   const sorted = [...items].sort((a, b) => {
     if (a.checked !== b.checked) return a.checked ? 1 : -1
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -116,6 +169,55 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: '24px 16px 40px' }}>
+
+      {/* Pending invite banners */}
+      {pendingInvites.map(invite => (
+        <div key={invite.group_id} style={{
+          background: 'var(--bg2)',
+          border: '1.5px solid var(--accent)',
+          borderRadius: 12,
+          padding: '14px 16px',
+          marginBottom: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}>
+          <div style={{ fontSize: 14, color: 'var(--text)', fontWeight: 600 }}>
+            Запрошення до спільного списку
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {invite.invited_by_email
+              ? `від ${displayName(invite.invited_by_email)} (${invite.invited_by_email})`
+              : 'від невідомого'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => handleAccept(invite)}
+              disabled={inviteAction === invite.group_id}
+              style={{
+                flex: 1, padding: '9px 0', borderRadius: 8, border: 'none',
+                background: 'var(--accent)', color: '#fff',
+                fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                opacity: inviteAction === invite.group_id ? 0.6 : 1,
+              }}
+            >
+              Прийняти
+            </button>
+            <button
+              onClick={() => handleDecline(invite)}
+              disabled={inviteAction === invite.group_id}
+              style={{
+                flex: 1, padding: '9px 0', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'transparent',
+                color: 'var(--muted)', fontWeight: 500, fontSize: 13, cursor: 'pointer',
+                opacity: inviteAction === invite.group_id ? 0.6 : 1,
+              }}
+            >
+              Відхилити
+            </button>
+          </div>
+        </div>
+      ))}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -186,7 +288,7 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
         </div>
       )}
 
-      {/* Divider when both sections visible */}
+      {/* Divider */}
       {unchecked.length > 0 && checked.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', margin: '16px 0', position: 'relative' }}>
           <span style={{
@@ -221,11 +323,115 @@ export default function ShoppingList({ initialItems, userEmail }: Props) {
           {checked.length > 0 && ` · Куплено: ${checked.length}`}
         </div>
       )}
+
+      {/* Group / Link section */}
+      <div style={{ marginTop: 36 }}>
+        <button
+          onClick={() => setShowLinkSection(s => !s)}
+          style={{
+            width: '100%', padding: '11px 16px', borderRadius: 10,
+            border: '1px solid var(--border)', background: 'var(--bg2)',
+            color: 'var(--muted)', fontSize: 13, fontWeight: 500,
+            cursor: 'pointer', display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', gap: 8,
+          }}
+        >
+          <span>👥 Спільний список</span>
+          <span style={{ fontSize: 11 }}>{showLinkSection ? '▲' : '▼'}</span>
+        </button>
+
+        {showLinkSection && (
+          <div style={{
+            marginTop: 8, padding: '16px', borderRadius: 10,
+            border: '1px solid var(--border)', background: 'var(--bg2)',
+            display: 'flex', flexDirection: 'column', gap: 14,
+          }}>
+            {/* Current partners */}
+            {partners.length > 0 ? (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                  Спільний список з:
+                </div>
+                {partners.map(m => (
+                  <div key={m.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 0', borderBottom: '1px solid var(--border)',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{displayName(m.email)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{m.email}</div>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600 }}>● онлайн</span>
+                  </div>
+                ))}
+                <button
+                  onClick={handleUnlink}
+                  style={{
+                    marginTop: 12, width: '100%', padding: '9px 0', borderRadius: 8,
+                    border: '1px solid var(--border)', background: 'transparent',
+                    color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
+                  }}
+                >
+                  Від'єднатись
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                У тебе особистий список. Запроси когось, щоб ділитись.
+              </div>
+            )}
+
+            {/* Invite form */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Запросити за email
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={inviteEmail}
+                  onChange={e => { setInviteEmail(e.target.value); setInviteStatus(null) }}
+                  onKeyDown={e => e.key === 'Enter' && handleSendInvite()}
+                  placeholder="email@..."
+                  type="email"
+                  autoComplete="off"
+                  style={{
+                    flex: 1, padding: '10px 12px', borderRadius: 8,
+                    border: '1px solid var(--border)', background: 'var(--bg)',
+                    color: 'var(--text)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+                  }}
+                />
+                <button
+                  onClick={handleSendInvite}
+                  disabled={inviteSending || !inviteEmail.trim()}
+                  style={{
+                    padding: '10px 16px', borderRadius: 8, border: 'none',
+                    background: inviteEmail.trim() ? 'var(--accent)' : 'var(--border)',
+                    color: '#fff', fontSize: 13, fontWeight: 600,
+                    cursor: inviteEmail.trim() ? 'pointer' : 'default',
+                    opacity: inviteSending ? 0.6 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  {inviteSending ? '...' : 'Запросити'}
+                </button>
+              </div>
+              {inviteStatus && (
+                <div style={{
+                  marginTop: 8, fontSize: 13,
+                  color: inviteStatus.ok ? 'var(--green)' : 'var(--red, #e55)',
+                }}>
+                  {inviteStatus.msg}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ── Sub-components ──────────────────────────────────────────────────────────
 
 function OnlineDot({ label, active }: { label: string; active: boolean }) {
   return (
@@ -251,7 +457,7 @@ function ItemRow({ item, sliding, fading, onTap }: {
       style={{
         padding: '14px 16px', borderRadius: 12,
         background: 'var(--bg2)',
-        border: `1.5px solid ${item.checked ? 'var(--border)' : 'var(--border)'}`,
+        border: '1.5px solid var(--border)',
         cursor: 'pointer',
         display: 'flex', alignItems: 'center', gap: 12,
         opacity: fading ? 0 : 1,
@@ -261,7 +467,6 @@ function ItemRow({ item, sliding, fading, onTap }: {
         WebkitTapHighlightColor: 'transparent',
       }}
     >
-      {/* Checkbox */}
       <div style={{
         width: 24, height: 24, borderRadius: 7, flexShrink: 0,
         border: `2px solid ${item.checked ? 'var(--green)' : 'var(--border)'}`,
@@ -272,8 +477,6 @@ function ItemRow({ item, sliding, fading, onTap }: {
       }}>
         {item.checked && '✓'}
       </div>
-
-      {/* Text */}
       <span style={{
         flex: 1, fontSize: 16,
         color: item.checked ? 'var(--muted)' : 'var(--text)',
@@ -283,8 +486,6 @@ function ItemRow({ item, sliding, fading, onTap }: {
       }}>
         {item.text}
       </span>
-
-      {/* Hint on checked */}
       {item.checked && (
         <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0, opacity: 0.6 }}>
           ✕
