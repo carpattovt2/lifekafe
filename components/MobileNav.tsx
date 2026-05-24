@@ -21,6 +21,7 @@ export default function MobileNav({ email }: { email: string }) {
     { href: '/planner',   label: t.nav.planner,   icon: '◫' },
     { href: '/journal',   label: t.nav.journal,   icon: '📓' },
     { href: '/games',     label: t.nav.games,      icon: '🎮' },
+    { href: '/shopping',  label: t.nav.shopping,   icon: '🛒' },
   ]
 
   function close() { setIsOpen(false) }
