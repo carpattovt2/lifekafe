@@ -967,6 +967,10 @@ function ItemRow({
     onShowContextMenu(item, e.clientX, e.clientY)
   }
 
+  const catColor = item.checked
+    ? undefined
+    : (CATEGORIES.find(c => c.id === (item.category ?? 'other'))?.color ?? '#78909C')
+
   if (isEditing) {
     return (
       <div style={{ padding: 8, borderRadius: 12, background: 'var(--bg2)', border: '1.5px solid var(--accent)' }}>
@@ -998,7 +1002,9 @@ function ItemRow({
         onContextMenu={handleContextMenu}
         style={{
           padding: '14px 16px',
-          background: 'var(--bg2)', border: '1.5px solid var(--border)', borderRadius: 12,
+          background: catColor ? catColor + '12' : 'var(--bg2)',
+          border: `1.5px solid ${catColor ? catColor + '55' : 'var(--border)'}`,
+          borderRadius: 12,
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 10,
           userSelect: 'none', WebkitTapHighlightColor: 'transparent',
