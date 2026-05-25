@@ -646,3 +646,14 @@ h1, h2, h3 {
 }
 .shopping-slide-in { animation: shopping-slide-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 .shopping-fade-out { opacity: 0 !important; transform: translateY(-10px) !important; transition: opacity 0.32s ease, transform 0.32s ease !important; pointer-events: none; }
+
+@keyframes onboarding-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes onboarding-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.onboarding-sheet  { animation: onboarding-slide-up 0.38s cubic-bezier(0.32,0.72,0,1); }
+.onboarding-backdrop { animation: onboarding-fade-in 0.22s ease; }

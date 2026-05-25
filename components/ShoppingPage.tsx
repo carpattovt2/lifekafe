@@ -7,6 +7,7 @@ import {
   createList, deleteList, renameList, sendInvite, acceptInvite, declineInvite, leaveList,
   reorderLists, archiveList, restoreList, moveItem, reorderItems,
 } from '@/app/(protected)/shopping/actions'
+import OnboardingSheet from '@/components/OnboardingSheet'
 
 interface ShoppingItem {
   id: string; text: string; checked: boolean
@@ -82,6 +83,7 @@ export default function ShoppingPage({
   const [isCreating, setIsCreating] = useState(false)
   const [inviteAction, setInviteAction] = useState<string | null>(null)
   const [archivingList, setArchivingList] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [renamingListId, setRenamingListId] = useState<string | null>(null)
@@ -546,6 +548,7 @@ export default function ShoppingPage({
   // ── Empty state ───────────────────────────────────────────────────────────
   if (localLists.length === 0) {
     return (
+      <>
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 60px' }}>
         {pendingBanners}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '55vh', gap: 14, textAlign: 'center' }}>
@@ -597,7 +600,9 @@ export default function ShoppingPage({
           )}
         </div>
       </div>
-    )
+      <OnboardingSheet forceOpen={showHelp} onClose={() => setShowHelp(false)} />
+    </>
+  )
   }
 
   const sorted = [...items].sort((a, b) => {
@@ -875,6 +880,10 @@ export default function ShoppingPage({
                 {archivingList ? '...' : 'Архівувати список'}
               </button>
             </div>
+            <button onClick={() => setShowHelp(true)}
+              style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
+              ? Показати підказки
+            </button>
           </div>
         )}
       </div>
@@ -899,6 +908,8 @@ export default function ShoppingPage({
           onClose={() => { setContextItem(null); setContextPos(null) }}
         />
       )}
+
+      <OnboardingSheet forceOpen={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   )
 }
