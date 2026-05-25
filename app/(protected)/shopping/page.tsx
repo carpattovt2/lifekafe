@@ -14,13 +14,17 @@ export default async function Page({ searchParams }: { searchParams?: { list?: s
 
   const { data: memberships } = await admin
     .from('shopping_list_members')
-    .select('list_id, shopping_lists(id, name, created_by)')
+    .select('list_id, sort_order, shopping_lists(id, name, created_by, archived)')
     .eq('user_id', user.id)
     .eq('status', 'active')
+    .order('sort_order', { ascending: true })
 
-  const lists = (memberships ?? [])
+  const allMemberLists = (memberships ?? [])
     .map((m: any) => m.shopping_lists)
-    .filter(Boolean) as { id: string; name: string; created_by: string | null }[]
+    .filter(Boolean) as { id: string; name: string; created_by: string | null; archived: boolean }[]
+
+  const lists = allMemberLists.filter(l => !l.archived) as { id: string; name: string; created_by: string | null }[]
+  const archivedLists = allMemberLists.filter(l => l.archived) as { id: string; name: string; created_by: string | null }[]
 
   const pendingRes = await admin
     .from('shopping_list_members')
@@ -33,6 +37,7 @@ export default async function Page({ searchParams }: { searchParams?: { list?: s
       <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
         <ShoppingPage
           lists={[]}
+          archivedLists={archivedLists}
           selectedListId=""
           initialItems={[]}
           members={[]}
@@ -53,8 +58,8 @@ export default async function Page({ searchParams }: { searchParams?: { list?: s
   const listIds = lists.map(l => l.id)
 
   const [itemsRes, membersRes, allMembersRes, uncheckedRes] = await Promise.all([
-    admin.from('shopping_items').select('id, text, checked, created_at, created_by_email')
-      .eq('list_id', selectedListId).order('created_at', { ascending: false }),
+    admin.from('shopping_items').select('id, text, checked, created_at, created_by_email, sort_order')
+      .eq('list_id', selectedListId).order('sort_order', { ascending: true }).order('created_at', { ascending: false }),
     admin.from('shopping_list_members').select('id, email, user_id, status, invited_by_email')
       .eq('list_id', selectedListId).eq('status', 'active'),
     admin.from('shopping_list_members').select('list_id, email')
@@ -79,6 +84,7 @@ export default async function Page({ searchParams }: { searchParams?: { list?: s
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <ShoppingPage
         lists={lists}
+        archivedLists={archivedLists}
         selectedListId={selectedListId}
         initialItems={itemsRes.data ?? []}
         members={membersRes.data ?? []}

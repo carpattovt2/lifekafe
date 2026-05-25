@@ -165,3 +165,103 @@ export async function leaveList(listId: string): Promise<{ error?: string }> {
   revalidatePath('/shopping')
   return {}
 }
+
+export async function reorderLists(orderedIds: string[]): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+  await Promise.all(
+    orderedIds.map((listId, idx) =>
+      admin.from('shopping_list_members')
+        .update({ sort_order: idx })
+        .eq('list_id', listId)
+        .eq('user_id', user.id)
+    )
+  )
+  return {}
+}
+
+export async function archiveList(listId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+  const { data: membership } = await admin
+    .from('shopping_list_members')
+    .select('id')
+    .eq('list_id', listId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .single()
+  if (!membership) return { error: 'Немає доступу' }
+
+  const { error } = await admin.from('shopping_lists').update({ archived: true }).eq('id', listId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/shopping')
+  return {}
+}
+
+export async function restoreList(listId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+  const { data: membership } = await admin
+    .from('shopping_list_members')
+    .select('id')
+    .eq('list_id', listId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .single()
+  if (!membership) return { error: 'Немає доступу' }
+
+  const { error } = await admin.from('shopping_lists').update({ archived: false }).eq('id', listId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/shopping')
+  return {}
+}
+
+export async function reorderItems(orderedIds: string[]): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+  const admin = createAdminClient()
+  await Promise.all(
+    orderedIds.map((id, idx) =>
+      admin.from('shopping_items').update({ sort_order: idx }).eq('id', id)
+    )
+  )
+  return {}
+}
+
+export async function moveItem(itemId: string, toListId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+
+  const { data: item } = await admin.from('shopping_items').select('*').eq('id', itemId).single()
+  if (!item) return { error: 'Товар не знайдено' }
+
+  const { data: membership } = await admin
+    .from('shopping_list_members')
+    .select('id')
+    .eq('list_id', toListId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .single()
+  if (!membership) return { error: 'Немає доступу до цього списку' }
+
+  // Delete + re-insert so Realtime fires DELETE on old list and INSERT on new list
+  await admin.from('shopping_items').delete().eq('id', itemId)
+  await admin.from('shopping_items').insert({
+    text: item.text,
+    list_id: toListId,
+    checked: false,
+    created_by_email: item.created_by_email,
+  })
+
+  return {}
+}

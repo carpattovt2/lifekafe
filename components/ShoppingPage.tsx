@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   createList, deleteList, renameList, sendInvite, acceptInvite, declineInvite, leaveList,
+  reorderLists, archiveList, restoreList, moveItem, reorderItems,
 } from '@/app/(protected)/shopping/actions'
 
 interface ShoppingItem {
   id: string; text: string; checked: boolean
-  created_at: string; created_by_email: string | null
+  created_at: string; created_by_email: string | null; sort_order?: number
 }
 interface ListMeta { id: string; name: string; created_by: string | null }
 interface Member { id: string; email: string; user_id: string | null; status: string }
@@ -20,6 +21,7 @@ interface PendingInvite {
 
 interface Props {
   lists: ListMeta[]
+  archivedLists: ListMeta[]
   selectedListId: string
   initialItems: ShoppingItem[]
   members: Member[]
@@ -32,6 +34,7 @@ interface Props {
 
 export default function ShoppingPage({
   lists: propLists,
+  archivedLists: propArchivedLists,
   selectedListId,
   initialItems,
   members,
@@ -46,7 +49,11 @@ export default function ShoppingPage({
 
   const [localLists, setLocalLists] = useState(propLists)
   const listsKey = propLists.map(l => `${l.id}:${l.name}`).join(',')
-  useEffect(() => { setLocalLists(propLists) }, [listsKey])
+  useEffect(() => { setLocalLists(propLists) }, [listsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [localArchivedLists, setLocalArchivedLists] = useState(propArchivedLists)
+  const archivedKey = propArchivedLists.map(l => `${l.id}:${l.name}`).join(',')
+  useEffect(() => { setLocalArchivedLists(propArchivedLists) }, [archivedKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [activeListId, setActiveListId] = useState(selectedListId || '')
   const [items, setItems] = useState<ShoppingItem[]>(initialItems)
@@ -74,22 +81,36 @@ export default function ShoppingPage({
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [inviteAction, setInviteAction] = useState<string | null>(null)
-  const [deletingList, setDeletingList] = useState(false)
+  const [archivingList, setArchivingList] = useState(false)
 
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [renamingListId, setRenamingListId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [showArchiveSection, setShowArchiveSection] = useState(false)
+  const [dragListIdx, setDragListIdx] = useState<number | null>(null)
+  const [dragListOverIdx, setDragListOverIdx] = useState<number | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Wave 2: undo delete
+  // Undo delete
   const pendingDeleteRef = useRef<{ items: ShoppingItem[]; timer: ReturnType<typeof setTimeout> } | null>(null)
   const [showUndo, setShowUndo] = useState(false)
   const [undoLabel, setUndoLabel] = useState('')
 
-  // Wave 2: inline edit
+  // Inline edit
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
+
+  // Drag-to-reorder items
+  const [dragItemId, setDragItemId] = useState<string | null>(null)
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
+  const touchDragRef = useRef<{ itemId: string | null; overItemId: string | null }>({ itemId: null, overItemId: null })
+  const itemsRef = useRef(items)
+  useEffect(() => { itemsRef.current = items }, [items])
+
+  // Move item context menu (desktop right-click only)
+  const [contextItem, setContextItem] = useState<ShoppingItem | null>(null)
+  const [contextPos, setContextPos] = useState<{ x: number; y: number } | null>(null)
 
   const dn = (email: string) => email.split('@')[0]
   const activeList = localLists.find(l => l.id === activeListId)
@@ -113,6 +134,16 @@ export default function ShoppingPage({
     return () => document.removeEventListener('mousedown', handler)
   }, [dropdownOpen])
 
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextItem) return
+    const handler = () => { setContextItem(null); setContextPos(null) }
+    setTimeout(() => {
+      document.addEventListener('mousedown', handler)
+    }, 0)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [contextItem])
+
   // Cleanup pending delete on unmount
   useEffect(() => {
     return () => {
@@ -122,6 +153,84 @@ export default function ShoppingPage({
       }
     }
   }, [])
+
+  // Document-level touch listeners for item drag-to-reorder
+  useEffect(() => {
+    if (!dragItemId) return
+
+    function onMove(e: TouchEvent) {
+      if (!e.touches.length) return
+      const touch = e.touches[0]
+      const el = document.elementFromPoint(touch.clientX, touch.clientY)
+      const row = el?.closest('[data-item-id]')
+      const overId = row?.getAttribute('data-item-id') ?? null
+      if (overId !== touchDragRef.current.overItemId) {
+        touchDragRef.current.overItemId = overId
+        setDragOverItemId(overId)
+      }
+      e.preventDefault()
+    }
+
+    function onEnd() {
+      const { itemId, overItemId } = touchDragRef.current
+      if (itemId && overItemId && itemId !== overItemId) {
+        commitItemReorder(itemId, overItemId)
+      }
+      touchDragRef.current = { itemId: null, overItemId: null }
+      setDragItemId(null)
+      setDragOverItemId(null)
+    }
+
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onEnd)
+    return () => {
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onEnd)
+    }
+  }, [dragItemId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Item reorder ──────────────────────────────────────────────────────────
+  function commitItemReorder(fromId: string, toId: string) {
+    const current = itemsRef.current
+    const unchecked = current.filter(i => !i.checked)
+    const checked = current.filter(i => i.checked)
+    const fromIdx = unchecked.findIndex(i => i.id === fromId)
+    const toIdx = unchecked.findIndex(i => i.id === toId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const newUnchecked = [...unchecked]
+    const [moved] = newUnchecked.splice(fromIdx, 1)
+    newUnchecked.splice(toIdx, 0, moved)
+    const updated = newUnchecked.map((it, idx) => ({ ...it, sort_order: idx }))
+    setItems([...updated, ...checked])
+    reorderItems(updated.map(i => i.id))
+  }
+
+  function handleTouchDragStart(itemId: string) {
+    touchDragRef.current = { itemId, overItemId: null }
+    setDragItemId(itemId)
+  }
+
+  function handleItemDragStart(itemId: string) {
+    setDragItemId(itemId)
+    setDragOverItemId(itemId)
+  }
+
+  function handleItemDragOver(itemId: string) {
+    setDragOverItemId(itemId)
+  }
+
+  function handleItemDrop(targetId: string) {
+    if (dragItemId && dragItemId !== targetId) {
+      commitItemReorder(dragItemId, targetId)
+    }
+    setDragItemId(null)
+    setDragOverItemId(null)
+  }
+
+  function handleItemDragEnd() {
+    setDragItemId(null)
+    setDragOverItemId(null)
+  }
 
   // ── Undo delete ──────────────────────────────────────────────────────────
   function scheduleDelete(toDelete: ShoppingItem[]) {
@@ -157,7 +266,7 @@ export default function ShoppingPage({
       const toAdd = restored.filter(i => !existingIds.has(i.id))
       return [...prev, ...toAdd].sort((a, b) => {
         if (a.checked !== b.checked) return a.checked ? 1 : -1
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
     })
   }
@@ -203,8 +312,8 @@ export default function ShoppingPage({
     setInviteStatus(null)
 
     const [{ data: newItems }, { data: newMembers }] = await Promise.all([
-      supabase.from('shopping_items').select('id, text, checked, created_at, created_by_email')
-        .eq('list_id', listId).order('created_at', { ascending: false }),
+      supabase.from('shopping_items').select('id, text, checked, created_at, created_by_email, sort_order')
+        .eq('list_id', listId).order('sort_order', { ascending: true }).order('created_at', { ascending: false }),
       supabase.from('shopping_list_members').select('id, email, user_id, status')
         .eq('list_id', listId).eq('status', 'active'),
     ])
@@ -222,6 +331,71 @@ export default function ShoppingPage({
     setLocalLists(prev => prev.map(l => l.id === listId ? { ...l, name } : l))
     await renameList(listId, name)
     router.refresh()
+  }
+
+  // ── Drag-to-reorder lists ─────────────────────────────────────────────────
+  function handleListDrop(targetIdx: number) {
+    if (dragListIdx === null || dragListIdx === targetIdx) {
+      setDragListIdx(null)
+      setDragListOverIdx(null)
+      return
+    }
+    const newOrder = [...localLists]
+    const [moved] = newOrder.splice(dragListIdx, 1)
+    newOrder.splice(targetIdx, 0, moved)
+    setLocalLists(newOrder)
+    setDragListIdx(null)
+    setDragListOverIdx(null)
+    reorderLists(newOrder.map(l => l.id))
+  }
+
+  // ── Archive / restore ─────────────────────────────────────────────────────
+  async function handleArchiveList() {
+    if (!confirm(`Архівувати список "${activeList?.name}"?`)) return
+    setArchivingList(true)
+    const listToArchive = localLists.find(l => l.id === activeListId)
+    const remaining = localLists.filter(l => l.id !== activeListId)
+    setLocalLists(remaining)
+    if (listToArchive) setLocalArchivedLists(prev => [...prev, listToArchive])
+    setShowManage(false)
+    await archiveList(activeListId)
+    if (remaining.length > 0) {
+      setArchivingList(false)
+      await switchList(remaining[0].id)
+    } else {
+      setArchivingList(false)
+      router.refresh()
+    }
+  }
+
+  async function handleRestoreList(listId: string) {
+    const listToRestore = localArchivedLists.find(l => l.id === listId)
+    setLocalArchivedLists(prev => prev.filter(l => l.id !== listId))
+    if (listToRestore) setLocalLists(prev => [...prev, listToRestore])
+    await restoreList(listId)
+    router.refresh()
+  }
+
+  async function handleDeleteForever(listId: string) {
+    const list = localArchivedLists.find(l => l.id === listId)
+    if (!confirm(`Видалити назавжди "${list?.name}"? Всі товари буде втрачено.`)) return
+    setLocalArchivedLists(prev => prev.filter(l => l.id !== listId))
+    await deleteList(listId)
+  }
+
+  // ── Move item context menu (desktop only) ─────────────────────────────────
+  function showContextMenu(item: ShoppingItem, x: number, y: number) {
+    setContextItem(item)
+    setContextPos({ x, y })
+  }
+
+  async function handleMoveItem(toListId: string) {
+    if (!contextItem) return
+    const item = contextItem
+    setContextItem(null)
+    setContextPos(null)
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    await moveItem(item.id, toListId)
   }
 
   // ── Realtime ─────────────────────────────────────────────────────────────
@@ -339,14 +513,6 @@ export default function ShoppingPage({
     else router.refresh()
   }
 
-  async function handleDeleteList() {
-    if (!confirm(`Видалити список "${activeList?.name}"? Всі товари буде втрачено.`)) return
-    setDeletingList(true)
-    await deleteList(activeListId)
-    setDeletingList(false)
-    router.refresh()
-  }
-
   // ── Pending invite banners ────────────────────────────────────────────────
   const pendingBanners = (
     <>
@@ -403,6 +569,32 @@ export default function ShoppingPage({
               + Створити перший список
             </button>
           )}
+          {localArchivedLists.length > 0 && (
+            <div style={{ marginTop: 8, width: '100%', maxWidth: 340 }}>
+              <button onClick={() => setShowArchiveSection(s => !s)}
+                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Архів ({localArchivedLists.length})</span>
+                <span style={{ fontSize: 11 }}>{showArchiveSection ? '▲' : '▼'}</span>
+              </button>
+              {showArchiveSection && (
+                <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                  {localArchivedLists.map(list => (
+                    <div key={list.id} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
+                      <span style={{ flex: 1, fontSize: 14, color: 'var(--muted)' }}>{list.name}</span>
+                      <button onClick={() => handleRestoreList(list.id)}
+                        style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--accent)', fontSize: 12, cursor: 'pointer' }}>
+                        Відновити
+                      </button>
+                      <button onClick={() => handleDeleteForever(list.id)}
+                        style={{ padding: '5px 8px', borderRadius: 6, border: 'none', background: 'transparent', color: '#e55', fontSize: 14, cursor: 'pointer' }}>
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -410,6 +602,9 @@ export default function ShoppingPage({
 
   const sorted = [...items].sort((a, b) => {
     if (a.checked !== b.checked) return a.checked ? 1 : -1
+    const sA = a.sort_order ?? 0
+    const sB = b.sort_order ?? 0
+    if (sA !== sB) return sA - sB
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
   const unchecked = sorted.filter(i => !i.checked)
@@ -417,6 +612,7 @@ export default function ShoppingPage({
   const otherOnline = onlineUsers.filter(e => e !== userEmail)
   const activeCount = liveUncheckedCounts[activeListId] ?? 0
   const activeAvatars = (membersByList[activeListId] ?? []).slice(0, 3)
+  const otherLists = localLists.filter(l => l.id !== activeListId)
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 60px' }}>
@@ -443,11 +639,28 @@ export default function ShoppingPage({
             {localLists.map((list, idx) => {
               const isActive = list.id === activeListId
               const isRenaming = renamingListId === list.id
+              const isDragOver = dragListOverIdx === idx && dragListIdx !== null && dragListIdx !== idx
               const count = liveUncheckedCounts[list.id] ?? 0
               const avatars = (membersByList[list.id] ?? []).slice(0, 3)
               return (
-                <div key={list.id} onClick={() => { if (!isRenaming) switchList(list.id) }}
-                  style={{ padding: '11px 14px', cursor: isRenaming ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: idx < localLists.length - 1 ? '1px solid var(--border)' : 'none', background: isActive ? 'rgba(128,128,128,0.06)' : 'transparent' }}>
+                <div
+                  key={list.id}
+                  draggable={!isRenaming}
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragListIdx(idx); setDragListOverIdx(idx) }}
+                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragListOverIdx(idx) }}
+                  onDrop={e => { e.preventDefault(); handleListDrop(idx) }}
+                  onDragEnd={() => { setDragListIdx(null); setDragListOverIdx(null) }}
+                  onClick={() => { if (!isRenaming && dragListIdx === null) switchList(list.id) }}
+                  style={{
+                    padding: '11px 14px', cursor: isRenaming ? 'default' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    borderBottom: idx < localLists.length - 1 ? '1px solid var(--border)' : 'none',
+                    background: isDragOver ? 'rgba(100,100,255,0.07)' : isActive ? 'rgba(128,128,128,0.06)' : 'transparent',
+                    opacity: dragListIdx === idx ? 0.45 : 1,
+                    borderTop: isDragOver ? '2px solid var(--accent)' : undefined,
+                  }}
+                >
+                  <span title="Перетягнути" style={{ fontSize: 16, color: 'var(--muted)', cursor: 'grab', flexShrink: 0, userSelect: 'none', opacity: 0.5 }} onMouseDown={e => e.stopPropagation()}>⠿</span>
                   <span style={{ fontSize: 13, color: 'var(--accent)', opacity: isActive ? 1 : 0, flexShrink: 0, width: 14 }}>✓</span>
                   {isRenaming ? (
                     <input value={renameValue} onChange={e => setRenameValue(e.target.value)}
@@ -470,6 +683,28 @@ export default function ShoppingPage({
                 </div>
               )
             })}
+            {localArchivedLists.length > 0 && (
+              <>
+                <div onClick={e => { e.stopPropagation(); setShowArchiveSection(s => !s) }}
+                  style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--border)', color: 'var(--muted)', fontSize: 13 }}>
+                  <span style={{ flex: 1 }}>📦 Архів ({localArchivedLists.length})</span>
+                  <span style={{ fontSize: 11 }}>{showArchiveSection ? '▲' : '▼'}</span>
+                </div>
+                {showArchiveSection && localArchivedLists.map(list => (
+                  <div key={list.id} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--border)', background: 'rgba(128,128,128,0.03)' }}>
+                    <span style={{ flex: 1, fontSize: 14, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
+                    <button onClick={e => { e.stopPropagation(); handleRestoreList(list.id) }}
+                      style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>
+                      Відновити
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); handleDeleteForever(list.id) }}
+                      style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: '#e55', fontSize: 14, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
             <div onClick={() => { setDropdownOpen(false); setShowCreateForm(true) }}
               style={{ padding: '11px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent)', fontSize: 14, fontWeight: 600, borderTop: '1px solid var(--border)' }}>
               + Новий список
@@ -516,7 +751,6 @@ export default function ShoppingPage({
         </button>
       </div>
 
-      {/* Items */}
       {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '32px 0', fontSize: 14 }}>Завантаження...</div>}
 
       {!loading && sorted.length === 0 && (
@@ -530,14 +764,20 @@ export default function ShoppingPage({
           {unchecked.map(item => (
             <ItemRow key={item.id} item={item}
               sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
-              isShared={isShared}
+              isShared={isShared} canMove={otherLists.length > 0}
               isEditing={editingItemId === item.id} editText={editText}
-              onTap={handleTap}
-              onDelete={item => scheduleDelete([item])}
-              onEdit={startEdit}
+              isDragged={dragItemId === item.id}
+              isDragTarget={dragOverItemId === item.id && dragItemId !== null && dragItemId !== item.id}
+              onTap={handleTap} onEdit={startEdit}
               onEditChange={setEditText}
               onEditSubmit={() => editingItemId && submitEdit(item)}
               onEditCancel={() => setEditingItemId(null)}
+              onShowContextMenu={showContextMenu}
+              onDragStart={handleItemDragStart}
+              onDragOver={handleItemDragOver}
+              onDrop={handleItemDrop}
+              onDragEnd={handleItemDragEnd}
+              onTouchDragStart={handleTouchDragStart}
             />
           ))}
         </div>
@@ -557,14 +797,19 @@ export default function ShoppingPage({
             {checked.map(item => (
               <ItemRow key={item.id} item={item}
                 sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
-                isShared={isShared}
+                isShared={isShared} canMove={false}
                 isEditing={editingItemId === item.id} editText={editText}
-                onTap={handleTap}
-                onDelete={item => scheduleDelete([item])}
-                onEdit={startEdit}
+                isDragged={false} isDragTarget={false}
+                onTap={handleTap} onEdit={startEdit}
                 onEditChange={setEditText}
                 onEditSubmit={() => editingItemId && submitEdit(item)}
                 onEditCancel={() => setEditingItemId(null)}
+                onShowContextMenu={showContextMenu}
+                onDragStart={handleItemDragStart}
+                onDragOver={handleItemDragOver}
+                onDrop={handleItemDrop}
+                onDragEnd={handleItemDragEnd}
+                onTouchDragStart={handleTouchDragStart}
               />
             ))}
           </div>
@@ -625,9 +870,9 @@ export default function ShoppingPage({
                 style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
                 Вийти зі списку
               </button>
-              <button onClick={handleDeleteList} disabled={deletingList}
-                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #e55', background: 'transparent', color: '#e55', fontSize: 13, cursor: 'pointer', opacity: deletingList ? 0.6 : 1 }}>
-                {deletingList ? '...' : 'Видалити список'}
+              <button onClick={handleArchiveList} disabled={archivingList}
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', opacity: archivingList ? 0.6 : 1 }}>
+                {archivingList ? '...' : 'Архівувати список'}
               </button>
             </div>
           </div>
@@ -644,72 +889,107 @@ export default function ShoppingPage({
           </button>
         </div>
       )}
+
+      {/* Move item context menu (desktop right-click only) */}
+      {contextItem && contextPos && otherLists.length > 0 && (
+        <MoveContextMenu
+          pos={contextPos}
+          lists={otherLists}
+          onMove={handleMoveItem}
+          onClose={() => { setContextItem(null); setContextPos(null) }}
+        />
+      )}
     </div>
   )
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-const ACTIONS_W = 108
+// ── ItemRow ───────────────────────────────────────────────────────────────────
 
 function ItemRow({
-  item, sliding, fading, isShared,
+  item, sliding, fading, isShared, canMove,
   isEditing, editText, onEditChange, onEditSubmit, onEditCancel,
-  onTap, onDelete, onEdit,
+  isDragged, isDragTarget,
+  onTap, onEdit, onShowContextMenu,
+  onDragStart, onDragOver, onDrop, onDragEnd, onTouchDragStart,
 }: {
   item: ShoppingItem
   sliding: boolean
   fading: boolean
   isShared: boolean
+  canMove: boolean
   isEditing: boolean
   editText: string
+  isDragged: boolean
+  isDragTarget: boolean
   onEditChange: (t: string) => void
   onEditSubmit: () => void
   onEditCancel: () => void
   onTap: (item: ShoppingItem) => void
-  onDelete: (item: ShoppingItem) => void
   onEdit: (item: ShoppingItem) => void
+  onShowContextMenu: (item: ShoppingItem, x: number, y: number) => void
+  onDragStart: (id: string) => void
+  onDragOver: (id: string) => void
+  onDrop: (id: string) => void
+  onDragEnd: () => void
+  onTouchDragStart: (id: string) => void
 }) {
-  const [swipeX, setSwipeX] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
-  const [hovered, setHovered] = useState(false)
-  const startXRef = useRef(0)
-  const openRef = useRef(false)
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mouseDownRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const startPos = useRef({ x: 0, y: 0 })
 
-  const showButtons = hovered || swipeX < -10
-
-  function onTouchStart(e: React.TouchEvent) {
-    startXRef.current = e.touches[0].clientX
-    setIsDragging(true)
+  function clearLongPress() {
+    if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null }
+  }
+  function clearMouseDown() {
+    if (mouseDownRef.current) { clearTimeout(mouseDownRef.current); mouseDownRef.current = null }
   }
 
-  function onTouchMove(e: React.TouchEvent) {
-    const dx = e.touches[0].clientX - startXRef.current
-    if (openRef.current) {
-      setSwipeX(Math.min(0, Math.max(-ACTIONS_W, -ACTIONS_W + dx)))
-    } else if (dx < 0) {
-      setSwipeX(Math.max(-ACTIONS_W, dx))
-    }
+  // Desktop: long hold → edit
+  function handleMouseDown() {
+    mouseDownRef.current = setTimeout(() => {
+      mouseDownRef.current = null
+      onEdit(item)
+    }, 700)
+  }
+  function handleMouseUp() { clearMouseDown() }
+
+  // Mobile: long press (still) → edit
+  function handleTouchStart(e: React.TouchEvent) {
+    const touch = e.touches[0]
+    startPos.current = { x: touch.clientX, y: touch.clientY }
+    longPressRef.current = setTimeout(() => {
+      longPressRef.current = null
+      onEdit(item)
+    }, 650)
+  }
+  function handleTouchMove(e: React.TouchEvent) {
+    const touch = e.touches[0]
+    const dx = touch.clientX - startPos.current.x
+    const dy = touch.clientY - startPos.current.y
+    if (Math.sqrt(dx * dx + dy * dy) > 8) clearLongPress()
+  }
+  function handleTouchEnd() { clearLongPress() }
+
+  // Mobile drag handle touch events
+  function handleHandleTouchStart(e: React.TouchEvent) {
+    e.stopPropagation()
+    e.preventDefault()
+    onTouchDragStart(item.id)
   }
 
-  function onTouchEnd() {
-    setIsDragging(false)
-    if (swipeX < -(ACTIONS_W * 0.4)) {
-      setSwipeX(-ACTIONS_W)
-      openRef.current = true
-    } else {
-      setSwipeX(0)
-      openRef.current = false
-    }
+  // Desktop: start drag (cancel long-hold timer)
+  function handleDragStartEvent(e: React.DragEvent) {
+    if (item.checked) { e.preventDefault(); return }
+    clearMouseDown()
+    e.dataTransfer.effectAllowed = 'move'
+    onDragStart(item.id)
   }
 
-  function handleRowClick() {
-    if (openRef.current || swipeX < -10) {
-      setSwipeX(0)
-      openRef.current = false
-      return
-    }
-    onTap(item)
+  // Desktop right-click → context menu (move to list)
+  function handleContextMenu(e: React.MouseEvent) {
+    if (!canMove) return
+    e.preventDefault()
+    onShowContextMenu(item, e.clientX, e.clientY)
   }
 
   if (isEditing) {
@@ -725,36 +1005,52 @@ function ItemRow({
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      data-item-id={item.id}
+      draggable={!item.checked}
+      onDragStart={handleDragStartEvent}
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(item.id) }}
+      onDrop={e => { e.preventDefault(); onDrop(item.id) }}
+      onDragEnd={onDragEnd}
       className={sliding ? 'shopping-slide-in' : fading ? 'shopping-fade-out' : ''}
-      style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', opacity: fading ? 0 : 1, transform: fading ? 'translateY(-10px)' : 'none', transition: fading ? 'opacity 0.3s ease, transform 0.3s ease' : 'none' }}
+      style={{
+        position: 'relative', borderRadius: 12, overflow: 'hidden',
+        opacity: fading ? 0 : isDragged ? 0.35 : 1,
+        transform: fading ? 'translateY(-10px)' : 'none',
+        transition: fading ? 'opacity 0.3s ease, transform 0.3s ease' : 'opacity 0.15s',
+        pointerEvents: isDragged ? 'none' : 'all',
+        borderTop: isDragTarget ? '2px solid var(--accent)' : undefined,
+      }}
     >
-      {/* Action buttons (revealed on swipe or hover) */}
-      <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: ACTIONS_W, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, paddingRight: 10, paddingLeft: 20, background: `linear-gradient(to right, transparent, var(--bg2) 35%)`, opacity: showButtons ? 1 : 0, transition: 'opacity 0.15s', pointerEvents: showButtons ? 'all' : 'none', zIndex: 2 }}>
-        <button
-          onClick={e => { e.stopPropagation(); setSwipeX(0); openRef.current = false; onEdit(item) }}
-          style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          ✏️
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); setSwipeX(0); openRef.current = false; onDelete(item) }}
-          style={{ width: 40, height: 40, borderRadius: 8, border: 'none', background: '#e55', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          🗑️
-        </button>
-      </div>
-
-      {/* Main row */}
       <div
-        onClick={handleRowClick}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        style={{ padding: '14px 16px', background: 'var(--bg2)', border: '1.5px solid var(--border)', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transform: `translateX(${swipeX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease', userSelect: 'none', WebkitTapHighlightColor: 'transparent', position: 'relative', zIndex: 1 }}
+        onClick={() => onTap(item)}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onContextMenu={handleContextMenu}
+        style={{
+          padding: '14px 16px', paddingLeft: item.checked ? 16 : 10,
+          background: 'var(--bg2)', border: '1.5px solid var(--border)', borderRadius: 12,
+          cursor: item.checked ? 'pointer' : 'grab',
+          display: 'flex', alignItems: 'center', gap: 10,
+          userSelect: 'none', WebkitTapHighlightColor: 'transparent',
+        }}
       >
+        {/* Drag handle — mobile only (touch), hidden on checked */}
+        {!item.checked && (
+          <div
+            onTouchStart={handleHandleTouchStart}
+            style={{ fontSize: 18, color: 'var(--muted)', opacity: 0.4, flexShrink: 0, lineHeight: 1, touchAction: 'none', cursor: 'grab', paddingRight: 2 }}
+          >
+            ≡
+          </div>
+        )}
+
         <div style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, border: `2px solid ${item.checked ? 'var(--green)' : 'var(--border)'}`, background: item.checked ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', color: '#fff', fontSize: 13, fontWeight: 700 }}>
           {item.checked && '✓'}
         </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, color: item.checked ? 'var(--muted)' : 'var(--text)', textDecoration: item.checked ? 'line-through' : 'none', transition: 'color 0.25s', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {item.text}
@@ -769,6 +1065,47 @@ function ItemRow({
     </div>
   )
 }
+
+// ── Context menu (desktop, move between lists) ────────────────────────────────
+
+function MoveContextMenu({ pos, lists, onMove, onClose }: {
+  pos: { x: number; y: number }
+  lists: ListMeta[]
+  onMove: (toListId: string) => void
+  onClose: () => void
+}) {
+  const menuH = lists.length * 44 + 40
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 400
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 700
+  const top = Math.max(8, Math.min(pos.y, vh - menuH - 8))
+  const left = Math.max(8, Math.min(pos.x, vw - 196))
+
+  return (
+    <div
+      style={{ position: 'fixed', top, left, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', zIndex: 500, overflow: 'hidden', minWidth: 180 }}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      <div style={{ padding: '9px 14px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>
+        Перемістити до:
+      </div>
+      {lists.map(list => (
+        <ContextMenuItem key={list.id} label={list.name} onClick={() => onMove(list.id)} />
+      ))}
+    </div>
+  )
+}
+
+function ContextMenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ padding: '12px 14px', cursor: 'pointer', fontSize: 14, color: 'var(--text)', background: hovered ? 'rgba(128,128,128,0.08)' : 'transparent', transition: 'background 0.1s', borderBottom: '1px solid var(--border)' }}>
+      {label}
+    </div>
+  )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function Avatar({ email, size }: { email: string; size: number }) {
   return (
