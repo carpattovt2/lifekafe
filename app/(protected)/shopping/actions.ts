@@ -5,74 +5,88 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 
-async function getActiveGroup(userId: string) {
-  const admin = createAdminClient()
-  const { data } = await admin
-    .from('shopping_group_members')
-    .select('group_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .limit(1)
-  return data?.[0] ?? null
-}
-
-export async function sendInvite(inviteeEmail: string): Promise<{ error?: string }> {
+async function getAuthUser() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  return user
+}
+
+export async function createList(name: string): Promise<{ id?: string; error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+  const id = randomUUID()
+
+  const { error: listErr } = await admin
+    .from('shopping_lists')
+    .insert({ id, name: name.trim() || 'Список покупок', created_by: user.id })
+  if (listErr) return { error: listErr.message }
+
+  const { error: memberErr } = await admin
+    .from('shopping_list_members')
+    .insert({ list_id: id, user_id: user.id, email: user.email!.toLowerCase(), status: 'active' })
+  if (memberErr) return { error: memberErr.message }
+
+  revalidatePath('/shopping')
+  return { id }
+}
+
+export async function renameList(listId: string, name: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('shopping_lists')
+    .update({ name: name.trim() || 'Список покупок' })
+    .eq('id', listId)
+    .eq('created_by', user.id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/shopping')
+  return {}
+}
+
+export async function sendInvite(listId: string, inviteeEmail: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
   if (!user) return { error: 'Not authenticated' }
 
   const email = inviteeEmail.trim().toLowerCase()
   if (email === user.email?.toLowerCase()) return { error: 'Не можна запросити себе' }
 
-  const membership = await getActiveGroup(user.id)
-  if (!membership) return { error: 'Групу не знайдено' }
-
   const admin = createAdminClient()
+
+  // Verify user is active member of this list
+  const { data: membership } = await admin
+    .from('shopping_list_members')
+    .select('id')
+    .eq('list_id', listId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .single()
+  if (!membership) return { error: 'Немає доступу до цього списку' }
+
   const { error } = await admin
-    .from('shopping_group_members')
-    .insert({ group_id: membership.group_id, email, invited_by_email: user.email, status: 'pending' })
+    .from('shopping_list_members')
+    .insert({ list_id: listId, email, invited_by_email: user.email, status: 'pending' })
 
   if (error) {
-    if (error.code === '23505') return { error: 'Запит вже надіслано або людина вже в групі' }
+    if (error.code === '23505') return { error: 'Запрошення вже надіслано або людина вже в списку' }
     return { error: error.message }
   }
   return {}
 }
 
-export async function acceptInvite(inviteGroupId: string): Promise<{ error?: string }> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export async function acceptInvite(listId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
   if (!user) return { error: 'Not authenticated' }
 
   const admin = createAdminClient()
-  const current = await getActiveGroup(user.id)
-
-  if (current) {
-    await admin
-      .from('shopping_list')
-      .update({ group_id: inviteGroupId })
-      .eq('group_id', current.group_id)
-      .eq('checked', false)
-
-    await admin
-      .from('shopping_group_members')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-
-    const { count } = await admin
-      .from('shopping_group_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('group_id', current.group_id)
-    if (count === 0) {
-      await admin.from('shopping_groups').delete().eq('id', current.group_id)
-    }
-  }
-
   const { error } = await admin
-    .from('shopping_group_members')
+    .from('shopping_list_members')
     .update({ user_id: user.id, status: 'active' })
-    .eq('group_id', inviteGroupId)
+    .eq('list_id', listId)
     .eq('email', user.email!.toLowerCase())
     .eq('status', 'pending')
 
@@ -81,16 +95,15 @@ export async function acceptInvite(inviteGroupId: string): Promise<{ error?: str
   return {}
 }
 
-export async function declineInvite(inviteGroupId: string): Promise<{ error?: string }> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export async function declineInvite(listId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
   if (!user) return { error: 'Not authenticated' }
 
   const admin = createAdminClient()
   await admin
-    .from('shopping_group_members')
+    .from('shopping_list_members')
     .delete()
-    .eq('group_id', inviteGroupId)
+    .eq('list_id', listId)
     .eq('email', user.email!.toLowerCase())
     .eq('status', 'pending')
 
@@ -98,29 +111,27 @@ export async function declineInvite(inviteGroupId: string): Promise<{ error?: st
   return {}
 }
 
-export async function unlinkFromGroup(): Promise<{ error?: string }> {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export async function leaveList(listId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const current = await getActiveGroup(user.id)
-  if (!current) return { error: 'Групу не знайдено' }
-
   const admin = createAdminClient()
-  const newGroupId = randomUUID()
 
-  await admin.from('shopping_groups').insert({ id: newGroupId, created_by: user.id })
-  await admin.from('shopping_group_members').insert({
-    group_id: newGroupId, user_id: user.id,
-    email: user.email!.toLowerCase(), status: 'active',
-  })
-
+  // Remove user's membership
   await admin
-    .from('shopping_group_members')
+    .from('shopping_list_members')
     .delete()
+    .eq('list_id', listId)
     .eq('user_id', user.id)
-    .eq('status', 'active')
-    .neq('group_id', newGroupId)
+
+  // If list is now empty, delete it
+  const { count } = await admin
+    .from('shopping_list_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('list_id', listId)
+  if (count === 0) {
+    await admin.from('shopping_lists').delete().eq('id', listId)
+  }
 
   revalidatePath('/shopping')
   return {}

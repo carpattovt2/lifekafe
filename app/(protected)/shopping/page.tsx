@@ -2,68 +2,73 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { randomUUID } from 'crypto'
-import ShoppingList from '@/components/ShoppingList'
+import ShoppingPage from '@/components/ShoppingPage'
 
 export const dynamic = 'force-dynamic'
 
-async function getOrCreateGroup(userId: string, userEmail: string): Promise<string> {
-  const admin = createAdminClient()
-
-  const { data: rows } = await admin
-    .from('shopping_group_members')
-    .select('group_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .limit(1)
-
-  if (rows && rows.length > 0) return rows[0].group_id
-
-  const newGroupId = randomUUID()
-  await admin.from('shopping_groups').insert({ id: newGroupId, created_by: userId })
-  await admin.from('shopping_group_members').insert({
-    group_id: newGroupId,
-    user_id: userId,
-    email: userEmail.toLowerCase(),
-    status: 'active',
-  })
-
-  return newGroupId
-}
-
-export default async function ShoppingPage() {
+export default async function Page({ searchParams }: { searchParams?: { list?: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const admin = createAdminClient()
-  const groupId = await getOrCreateGroup(user.id, user.email!)
 
-  const [itemsRes, membersRes, invitesRes] = await Promise.all([
+  // Get all lists user is active member of
+  const { data: memberships } = await admin
+    .from('shopping_list_members')
+    .select('list_id, shopping_lists(id, name, created_by)')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+
+  let lists = (memberships ?? [])
+    .map((m: any) => m.shopping_lists)
+    .filter(Boolean) as { id: string; name: string; created_by: string | null }[]
+
+  // Create personal list if user has none
+  if (lists.length === 0) {
+    const id = randomUUID()
+    await admin.from('shopping_lists').insert({ id, name: 'Список покупок', created_by: user.id })
+    await admin.from('shopping_list_members').insert({
+      list_id: id, user_id: user.id,
+      email: user.email!.toLowerCase(), status: 'active',
+    })
+    lists = [{ id, name: 'Список покупок', created_by: user.id }]
+  }
+
+  // Determine selected list
+  const selectedListId = (searchParams?.list && lists.find(l => l.id === searchParams?.list))
+    ? searchParams!.list!
+    : lists[0].id
+
+  // Fetch data for selected list
+  const [itemsRes, membersRes, pendingRes] = await Promise.all([
     admin
-      .from('shopping_list')
+      .from('shopping_items')
       .select('id, text, checked, created_at, created_by_email')
-      .eq('group_id', groupId)
+      .eq('list_id', selectedListId)
       .order('created_at', { ascending: false }),
     admin
-      .from('shopping_group_members')
-      .select('id, email, status, invited_by_email')
-      .eq('group_id', groupId)
+      .from('shopping_list_members')
+      .select('id, email, user_id, status, invited_by_email')
+      .eq('list_id', selectedListId)
       .eq('status', 'active'),
     admin
-      .from('shopping_group_members')
-      .select('group_id, invited_by_email')
+      .from('shopping_list_members')
+      .select('list_id, invited_by_email, shopping_lists(name)')
       .eq('email', user.email!.toLowerCase())
       .eq('status', 'pending'),
   ])
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <ShoppingList
+      <ShoppingPage
+        lists={lists}
+        selectedListId={selectedListId}
         initialItems={itemsRes.data ?? []}
+        members={membersRes.data ?? []}
+        pendingInvites={(pendingRes.data ?? []) as any}
         userEmail={user.email!}
-        groupId={groupId}
-        groupMembers={(membersRes.data ?? []).filter(m => m.email !== user.email!.toLowerCase())}
-        pendingInvites={invitesRes.data ?? []}
+        userId={user.id}
       />
     </div>
   )
