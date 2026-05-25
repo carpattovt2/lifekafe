@@ -51,6 +51,14 @@ export default function ShoppingPage({
   const [activeListId, setActiveListId] = useState(selectedListId || '')
   const [items, setItems] = useState<ShoppingItem[]>(initialItems)
   const [activeMembers, setActiveMembers] = useState<Member[]>(members)
+
+  // Sync when server navigates to a different list (e.g. after accepting invite)
+  useEffect(() => {
+    if (!selectedListId || selectedListId === activeListId) return
+    setActiveListId(selectedListId)
+    setItems(initialItems)
+    setActiveMembers(members)
+  }, [selectedListId]) // eslint-disable-line react-hooks/exhaustive-deps
   const [loading, setLoading] = useState(false)
   const [newText, setNewText] = useState('')
   const [adding, setAdding] = useState(false)
@@ -205,8 +213,8 @@ export default function ShoppingPage({
   async function handleAccept(invite: PendingInvite) {
     setInviteAction(invite.list_id)
     const result = await acceptInvite(invite.list_id)
-    if (!result.error) router.refresh()
     setInviteAction(null)
+    if (!result.error) router.push(`/shopping?list=${invite.list_id}`)
   }
 
   async function handleDecline(invite: PendingInvite) {
