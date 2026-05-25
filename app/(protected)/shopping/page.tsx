@@ -1,41 +1,31 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { randomUUID } from 'crypto'
 import ShoppingList from '@/components/ShoppingList'
 
 export const dynamic = 'force-dynamic'
 
-async function getOrCreateGroup(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  userEmail: string,
-): Promise<string> {
-  const { data: memberships } = await supabase
+async function getOrCreateGroup(userId: string, userEmail: string): Promise<string> {
+  const admin = createAdminClient()
+
+  const { data: rows } = await admin
     .from('shopping_group_members')
     .select('group_id')
     .eq('user_id', userId)
     .eq('status', 'active')
     .limit(1)
 
-  if (memberships && memberships.length > 0) return memberships[0].group_id
+  if (rows && rows.length > 0) return rows[0].group_id
 
-  const { randomUUID } = await import('crypto')
   const newGroupId = randomUUID()
-
-  const { error: groupErr } = await supabase
-    .from('shopping_groups')
-    .insert({ id: newGroupId, created_by: userId })
-  if (groupErr) {
-    console.error('shopping_groups insert failed:', groupErr)
-    throw new Error('Failed to create group: ' + groupErr.message)
-  }
-
-  const { error: memberErr } = await supabase
-    .from('shopping_group_members')
-    .insert({ group_id: newGroupId, user_id: userId, email: userEmail.toLowerCase(), status: 'active' })
-  if (memberErr) {
-    console.error('shopping_group_members insert failed:', memberErr)
-    throw new Error('Failed to create membership: ' + memberErr.message)
-  }
+  await admin.from('shopping_groups').insert({ id: newGroupId, created_by: userId })
+  await admin.from('shopping_group_members').insert({
+    group_id: newGroupId,
+    user_id: userId,
+    email: userEmail.toLowerCase(),
+    status: 'active',
+  })
 
   return newGroupId
 }
@@ -45,20 +35,21 @@ export default async function ShoppingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const groupId = await getOrCreateGroup(supabase, user.id, user.email!)
+  const admin = createAdminClient()
+  const groupId = await getOrCreateGroup(user.id, user.email!)
 
   const [itemsRes, membersRes, invitesRes] = await Promise.all([
-    supabase
+    admin
       .from('shopping_list')
       .select('id, text, checked, created_at, created_by_email')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false }),
-    supabase
+    admin
       .from('shopping_group_members')
       .select('id, email, status, invited_by_email')
       .eq('group_id', groupId)
       .eq('status', 'active'),
-    supabase
+    admin
       .from('shopping_group_members')
       .select('group_id, invited_by_email')
       .eq('email', user.email!.toLowerCase())
