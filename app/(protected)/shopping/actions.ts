@@ -224,18 +224,6 @@ export async function restoreList(listId: string): Promise<{ error?: string }> {
   return {}
 }
 
-export async function reorderItems(orderedIds: string[]): Promise<{ error?: string }> {
-  const user = await getAuthUser()
-  if (!user) return { error: 'Not authenticated' }
-  const admin = createAdminClient()
-  await Promise.all(
-    orderedIds.map((id, idx) =>
-      admin.from('shopping_items').update({ sort_order: idx }).eq('id', id)
-    )
-  )
-  return {}
-}
-
 export async function moveItem(itemId: string, toListId: string): Promise<{ error?: string }> {
   const user = await getAuthUser()
   if (!user) return { error: 'Not authenticated' }

@@ -58,8 +58,8 @@ export default async function Page({ searchParams }: { searchParams?: { list?: s
   const listIds = lists.map(l => l.id)
 
   const [itemsRes, membersRes, allMembersRes, uncheckedRes] = await Promise.all([
-    admin.from('shopping_items').select('id, text, checked, created_at, created_by_email, sort_order')
-      .eq('list_id', selectedListId).order('sort_order', { ascending: true }).order('created_at', { ascending: false }),
+    admin.from('shopping_items').select('id, text, checked, created_at, created_by_email, category')
+      .eq('list_id', selectedListId).order('created_at', { ascending: false }),
     admin.from('shopping_list_members').select('id, email, user_id, status, invited_by_email')
       .eq('list_id', selectedListId).eq('status', 'active'),
     admin.from('shopping_list_members').select('list_id, email')

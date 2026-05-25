@@ -1,17 +1,29 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   createList, deleteList, renameList, sendInvite, acceptInvite, declineInvite, leaveList,
-  reorderLists, archiveList, restoreList, moveItem, reorderItems,
+  reorderLists, archiveList, restoreList, moveItem,
 } from '@/app/(protected)/shopping/actions'
 import OnboardingSheet from '@/components/OnboardingSheet'
 
+const CATEGORIES = [
+  { id: 'meat',    label: "М'ясо & риба",   emoji: '🥩', color: '#E57373' },
+  { id: 'dairy',   label: 'Молочне & яйця',  emoji: '🥛', color: '#64B5F6' },
+  { id: 'produce', label: 'Овочі & фрукти',  emoji: '🥦', color: '#66BB6A' },
+  { id: 'bread',   label: 'Хліб & бакалія',  emoji: '🍞', color: '#FFA726' },
+  { id: 'drinks',  label: 'Напої',            emoji: '🥤', color: '#AB47BC' },
+  { id: 'hygiene', label: 'Гігієна & краса',  emoji: '🧴', color: '#EC407A' },
+  { id: 'home',    label: 'Для дому',         emoji: '🏠', color: '#42A5F5' },
+  { id: 'kids',    label: 'Дитячі',           emoji: '👶', color: '#FFCA28' },
+  { id: 'other',   label: 'Інше',             emoji: '🛒', color: '#78909C' },
+]
+
 interface ShoppingItem {
   id: string; text: string; checked: boolean
-  created_at: string; created_by_email: string | null; sort_order?: number
+  created_at: string; created_by_email: string | null; category?: string
 }
 interface ListMeta { id: string; name: string; created_by: string | null }
 interface Member { id: string; email: string; user_id: string | null; status: string }
@@ -103,12 +115,9 @@ export default function ShoppingPage({
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
-  // Drag-to-reorder items
-  const [dragItemId, setDragItemId] = useState<string | null>(null)
-  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
-  const touchDragRef = useRef<{ itemId: string | null; overItemId: string | null }>({ itemId: null, overItemId: null })
-  const itemsRef = useRef(items)
-  useEffect(() => { itemsRef.current = items }, [items])
+  // Category picker
+  const pendingTextRef = useRef('')
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
 
   // Move item context menu (desktop right-click only)
   const [contextItem, setContextItem] = useState<ShoppingItem | null>(null)
@@ -156,84 +165,6 @@ export default function ShoppingPage({
     }
   }, [])
 
-  // Document-level touch listeners for item drag-to-reorder
-  useEffect(() => {
-    if (!dragItemId) return
-
-    function onMove(e: TouchEvent) {
-      if (!e.touches.length) return
-      const touch = e.touches[0]
-      const el = document.elementFromPoint(touch.clientX, touch.clientY)
-      const row = el?.closest('[data-item-id]')
-      const overId = row?.getAttribute('data-item-id') ?? null
-      if (overId !== touchDragRef.current.overItemId) {
-        touchDragRef.current.overItemId = overId
-        setDragOverItemId(overId)
-      }
-      e.preventDefault()
-    }
-
-    function onEnd() {
-      const { itemId, overItemId } = touchDragRef.current
-      if (itemId && overItemId && itemId !== overItemId) {
-        commitItemReorder(itemId, overItemId)
-      }
-      touchDragRef.current = { itemId: null, overItemId: null }
-      setDragItemId(null)
-      setDragOverItemId(null)
-    }
-
-    document.addEventListener('touchmove', onMove, { passive: false })
-    document.addEventListener('touchend', onEnd)
-    return () => {
-      document.removeEventListener('touchmove', onMove)
-      document.removeEventListener('touchend', onEnd)
-    }
-  }, [dragItemId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Item reorder ──────────────────────────────────────────────────────────
-  function commitItemReorder(fromId: string, toId: string) {
-    const current = itemsRef.current
-    const unchecked = current.filter(i => !i.checked)
-    const checked = current.filter(i => i.checked)
-    const fromIdx = unchecked.findIndex(i => i.id === fromId)
-    const toIdx = unchecked.findIndex(i => i.id === toId)
-    if (fromIdx === -1 || toIdx === -1) return
-    const newUnchecked = [...unchecked]
-    const [moved] = newUnchecked.splice(fromIdx, 1)
-    newUnchecked.splice(toIdx, 0, moved)
-    const updated = newUnchecked.map((it, idx) => ({ ...it, sort_order: idx }))
-    setItems([...updated, ...checked])
-    reorderItems(updated.map(i => i.id))
-  }
-
-  function handleTouchDragStart(itemId: string) {
-    touchDragRef.current = { itemId, overItemId: null }
-    setDragItemId(itemId)
-  }
-
-  function handleItemDragStart(itemId: string) {
-    setDragItemId(itemId)
-    setDragOverItemId(itemId)
-  }
-
-  function handleItemDragOver(itemId: string) {
-    setDragOverItemId(itemId)
-  }
-
-  function handleItemDrop(targetId: string) {
-    if (dragItemId && dragItemId !== targetId) {
-      commitItemReorder(dragItemId, targetId)
-    }
-    setDragItemId(null)
-    setDragOverItemId(null)
-  }
-
-  function handleItemDragEnd() {
-    setDragItemId(null)
-    setDragOverItemId(null)
-  }
-
   // ── Undo delete ──────────────────────────────────────────────────────────
   function scheduleDelete(toDelete: ShoppingItem[]) {
     if (pendingDeleteRef.current) {
@@ -268,7 +199,7 @@ export default function ShoppingPage({
       const toAdd = restored.filter(i => !existingIds.has(i.id))
       return [...prev, ...toAdd].sort((a, b) => {
         if (a.checked !== b.checked) return a.checked ? 1 : -1
-        return (a.sort_order ?? 0) - (b.sort_order ?? 0) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
     })
   }
@@ -314,8 +245,8 @@ export default function ShoppingPage({
     setInviteStatus(null)
 
     const [{ data: newItems }, { data: newMembers }] = await Promise.all([
-      supabase.from('shopping_items').select('id, text, checked, created_at, created_by_email, sort_order')
-        .eq('list_id', listId).order('sort_order', { ascending: true }).order('created_at', { ascending: false }),
+      supabase.from('shopping_items').select('id, text, checked, created_at, created_by_email, category')
+        .eq('list_id', listId).order('created_at', { ascending: false }),
       supabase.from('shopping_list_members').select('id, email, user_id, status')
         .eq('list_id', listId).eq('status', 'active'),
     ])
@@ -435,15 +366,24 @@ export default function ShoppingPage({
     return () => { supabase.removeChannel(channel) }
   }, [activeListId, userEmail])
 
-  // ── Add item ─────────────────────────────────────────────────────────────
-  const addItem = useCallback(async () => {
+  // ── Add item (with category picker) ─────────────────────────────────────
+  function handleAddPress() {
     const text = newText.trim()
     if (!text || adding) return
-    setAdding(true)
+    pendingTextRef.current = text
+    setShowCategoryPicker(true)
+  }
+
+  async function handlePickCategory(catId: string) {
+    setShowCategoryPicker(false)
+    const text = pendingTextRef.current
+    pendingTextRef.current = ''
     setNewText('')
+    if (!text) return
+    setAdding(true)
     const { data, error } = await supabase
       .from('shopping_items')
-      .insert({ text, list_id: activeListId, created_by_email: userEmail })
+      .insert({ text, list_id: activeListId, created_by_email: userEmail, category: catId })
       .select().single()
     if (!error && data) {
       setItems(prev => {
@@ -455,7 +395,12 @@ export default function ShoppingPage({
     }
     setAdding(false)
     inputRef.current?.focus()
-  }, [newText, adding, supabase, userEmail, activeListId])
+  }
+
+  function handleClosePicker() {
+    setShowCategoryPicker(false)
+    pendingTextRef.current = ''
+  }
 
   // ── Tap to check ─────────────────────────────────────────────────────────
   async function handleTap(item: ShoppingItem) {
@@ -605,15 +550,15 @@ export default function ShoppingPage({
   )
   }
 
-  const sorted = [...items].sort((a, b) => {
-    if (a.checked !== b.checked) return a.checked ? 1 : -1
-    const sA = a.sort_order ?? 0
-    const sB = b.sort_order ?? 0
-    if (sA !== sB) return sA - sB
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  })
-  const unchecked = sorted.filter(i => !i.checked)
-  const checked = sorted.filter(i => i.checked)
+  const unchecked = items.filter(i => !i.checked).sort((a, b) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+  const checked = items.filter(i => i.checked).sort((a, b) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+  const grouped = CATEGORIES
+    .map(cat => ({ cat, catItems: unchecked.filter(i => (i.category ?? 'other') === cat.id) }))
+    .filter(g => g.catItems.length > 0)
   const otherOnline = onlineUsers.filter(e => e !== userEmail)
   const activeCount = liveUncheckedCounts[activeListId] ?? 0
   const activeAvatars = (membersByList[activeListId] ?? []).slice(0, 3)
@@ -747,10 +692,10 @@ export default function ShoppingPage({
       {/* Add item */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         <input ref={inputRef} value={newText} onChange={e => setNewText(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addItem()}
+          onKeyDown={e => e.key === 'Enter' && handleAddPress()}
           placeholder="Додати товар..." disabled={adding || loading} autoComplete="off"
           style={{ flex: 1, padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 16, outline: 'none', fontFamily: 'inherit', WebkitAppearance: 'none' }} />
-        <button onClick={addItem} disabled={adding || !newText.trim() || loading}
+        <button onClick={handleAddPress} disabled={adding || !newText.trim() || loading}
           style={{ width: 54, height: 54, borderRadius: 12, flexShrink: 0, background: newText.trim() ? 'var(--accent)' : 'var(--bg2)', border: '1px solid var(--border)', color: newText.trim() ? '#fff' : 'var(--muted)', fontSize: 26, cursor: newText.trim() ? 'pointer' : 'default', transition: 'background 0.15s, color 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           +
         </button>
@@ -758,37 +703,36 @@ export default function ShoppingPage({
 
       {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '32px 0', fontSize: 14 }}>Завантаження...</div>}
 
-      {!loading && sorted.length === 0 && (
+      {!loading && unchecked.length === 0 && checked.length === 0 && (
         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: '40px 0' }}>
           Список порожній — додайте перший товар!
         </div>
       )}
 
-      {!loading && unchecked.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: checked.length ? 16 : 0 }}>
-          {unchecked.map(item => (
-            <ItemRow key={item.id} item={item}
-              sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
-              isShared={isShared} canMove={otherLists.length > 0}
-              isEditing={editingItemId === item.id} editText={editText}
-              isDragged={dragItemId === item.id}
-              isDragTarget={dragOverItemId === item.id && dragItemId !== null && dragItemId !== item.id}
-              onTap={handleTap} onEdit={startEdit}
-              onEditChange={setEditText}
-              onEditSubmit={() => editingItemId && submitEdit(item)}
-              onEditCancel={() => setEditingItemId(null)}
-              onShowContextMenu={showContextMenu}
-              onDragStart={handleItemDragStart}
-              onDragOver={handleItemDragOver}
-              onDrop={handleItemDrop}
-              onDragEnd={handleItemDragEnd}
-              onTouchDragStart={handleTouchDragStart}
-            />
-          ))}
+      {!loading && grouped.map(({ cat, catItems }) => (
+        <div key={cat.id} style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingLeft: 2 }}>
+            <span style={{ fontSize: 14, lineHeight: 1 }}>{cat.emoji}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: cat.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{cat.label}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {catItems.map(item => (
+              <ItemRow key={item.id} item={item}
+                sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
+                isShared={isShared} canMove={otherLists.length > 0}
+                isEditing={editingItemId === item.id} editText={editText}
+                onTap={handleTap} onEdit={startEdit}
+                onEditChange={setEditText}
+                onEditSubmit={() => editingItemId && submitEdit(item)}
+                onEditCancel={() => setEditingItemId(null)}
+                onShowContextMenu={showContextMenu}
+              />
+            ))}
+          </div>
         </div>
-      )}
+      ))}
 
-      {!loading && unchecked.length > 0 && checked.length > 0 && (
+      {!loading && grouped.length > 0 && checked.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', margin: '16px 0', position: 'relative' }}>
           <span style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', background: 'var(--bg)', padding: '0 10px', fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Куплено
@@ -804,17 +748,11 @@ export default function ShoppingPage({
                 sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
                 isShared={isShared} canMove={false}
                 isEditing={editingItemId === item.id} editText={editText}
-                isDragged={false} isDragTarget={false}
                 onTap={handleTap} onEdit={startEdit}
                 onEditChange={setEditText}
                 onEditSubmit={() => editingItemId && submitEdit(item)}
                 onEditCancel={() => setEditingItemId(null)}
                 onShowContextMenu={showContextMenu}
-                onDragStart={handleItemDragStart}
-                onDragOver={handleItemDragOver}
-                onDrop={handleItemDrop}
-                onDragEnd={handleItemDragEnd}
-                onTouchDragStart={handleTouchDragStart}
               />
             ))}
           </div>
@@ -825,7 +763,7 @@ export default function ShoppingPage({
         </>
       )}
 
-      {!loading && sorted.length > 0 && (
+      {!loading && (unchecked.length > 0 || checked.length > 0) && (
         <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>
           {unchecked.length > 0 ? `Залишилось: ${unchecked.length}` : '✓ Все куплено!'}
           {checked.length > 0 && ` · Куплено: ${checked.length}`}
@@ -910,7 +848,57 @@ export default function ShoppingPage({
       )}
 
       <OnboardingSheet forceOpen={showHelp} onClose={() => setShowHelp(false)} />
+
+      {showCategoryPicker && (
+        <CategoryPicker onPick={handlePickCategory} onClose={handleClosePicker} />
+      )}
     </div>
+  )
+}
+
+// ── CategoryPicker ────────────────────────────────────────────────────────────
+
+function CategoryPicker({ onPick, onClose }: { onPick: (catId: string) => void; onClose: () => void }) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.48)', zIndex: 400 }}
+      />
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        maxWidth: 560, margin: '0 auto',
+        background: 'var(--bg2)', borderRadius: '20px 20px 0 0',
+        boxShadow: '0 -4px 40px rgba(0,0,0,0.2)',
+        zIndex: 401,
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        animation: 'onboarding-slide-up 0.28s cubic-bezier(0.32,0.72,0,1)',
+      }}>
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '12px auto 8px' }} />
+        <div style={{ padding: '4px 16px 24px' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--muted)', marginBottom: 14, textAlign: 'center' }}>
+            Виберіть категорію
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => onPick(cat.id)}
+                style={{
+                  padding: '14px 8px', borderRadius: 14, border: 'none',
+                  background: cat.color + '22',
+                  cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', gap: 6, fontFamily: 'inherit',
+                }}
+              >
+                <span style={{ fontSize: 28, lineHeight: 1 }}>{cat.emoji}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: cat.color, textAlign: 'center', lineHeight: 1.3 }}>{cat.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -919,9 +907,7 @@ export default function ShoppingPage({
 function ItemRow({
   item, sliding, fading, isShared, canMove,
   isEditing, editText, onEditChange, onEditSubmit, onEditCancel,
-  isDragged, isDragTarget,
   onTap, onEdit, onShowContextMenu,
-  onDragStart, onDragOver, onDrop, onDragEnd, onTouchDragStart,
 }: {
   item: ShoppingItem
   sliding: boolean
@@ -930,19 +916,12 @@ function ItemRow({
   canMove: boolean
   isEditing: boolean
   editText: string
-  isDragged: boolean
-  isDragTarget: boolean
   onEditChange: (t: string) => void
   onEditSubmit: () => void
   onEditCancel: () => void
   onTap: (item: ShoppingItem) => void
   onEdit: (item: ShoppingItem) => void
   onShowContextMenu: (item: ShoppingItem, x: number, y: number) => void
-  onDragStart: (id: string) => void
-  onDragOver: (id: string) => void
-  onDrop: (id: string) => void
-  onDragEnd: () => void
-  onTouchDragStart: (id: string) => void
 }) {
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mouseDownRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -981,21 +960,6 @@ function ItemRow({
   }
   function handleTouchEnd() { clearLongPress() }
 
-  // Mobile drag handle touch events
-  function handleHandleTouchStart(e: React.TouchEvent) {
-    e.stopPropagation()
-    e.preventDefault()
-    onTouchDragStart(item.id)
-  }
-
-  // Desktop: start drag (cancel long-hold timer)
-  function handleDragStartEvent(e: React.DragEvent) {
-    if (item.checked) { e.preventDefault(); return }
-    clearMouseDown()
-    e.dataTransfer.effectAllowed = 'move'
-    onDragStart(item.id)
-  }
-
   // Desktop right-click → context menu (move to list)
   function handleContextMenu(e: React.MouseEvent) {
     if (!canMove) return
@@ -1016,20 +980,12 @@ function ItemRow({
 
   return (
     <div
-      data-item-id={item.id}
-      draggable={!item.checked}
-      onDragStart={handleDragStartEvent}
-      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(item.id) }}
-      onDrop={e => { e.preventDefault(); onDrop(item.id) }}
-      onDragEnd={onDragEnd}
       className={sliding ? 'shopping-slide-in' : fading ? 'shopping-fade-out' : ''}
       style={{
         position: 'relative', borderRadius: 12, overflow: 'hidden',
-        opacity: fading ? 0 : isDragged ? 0.35 : 1,
+        opacity: fading ? 0 : 1,
         transform: fading ? 'translateY(-10px)' : 'none',
-        transition: fading ? 'opacity 0.3s ease, transform 0.3s ease' : 'opacity 0.15s',
-        pointerEvents: isDragged ? 'none' : 'all',
-        borderTop: isDragTarget ? '2px solid var(--accent)' : undefined,
+        transition: fading ? 'opacity 0.3s ease, transform 0.3s ease' : undefined,
       }}
     >
       <div
@@ -1041,22 +997,13 @@ function ItemRow({
         onTouchEnd={handleTouchEnd}
         onContextMenu={handleContextMenu}
         style={{
-          padding: '14px 16px', paddingLeft: item.checked ? 16 : 10,
+          padding: '14px 16px',
           background: 'var(--bg2)', border: '1.5px solid var(--border)', borderRadius: 12,
-          cursor: item.checked ? 'pointer' : 'grab',
+          cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 10,
           userSelect: 'none', WebkitTapHighlightColor: 'transparent',
         }}
       >
-        {/* Drag handle — mobile only (touch), hidden on checked */}
-        {!item.checked && (
-          <div
-            onTouchStart={handleHandleTouchStart}
-            style={{ fontSize: 18, color: 'var(--muted)', opacity: 0.4, flexShrink: 0, lineHeight: 1, touchAction: 'none', cursor: 'grab', paddingRight: 2 }}
-          >
-            ≡
-          </div>
-        )}
 
         <div style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, border: `2px solid ${item.checked ? 'var(--green)' : 'var(--border)'}`, background: item.checked ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', color: '#fff', fontSize: 13, fontWeight: 700 }}>
           {item.checked && '✓'}
