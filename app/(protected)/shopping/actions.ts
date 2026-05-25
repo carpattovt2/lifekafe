@@ -37,11 +37,19 @@ export async function renameList(listId: string, name: string): Promise<{ error?
   if (!user) return { error: 'Not authenticated' }
 
   const admin = createAdminClient()
+  const { data: membership } = await admin
+    .from('shopping_list_members')
+    .select('id')
+    .eq('list_id', listId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .single()
+  if (!membership) return { error: 'Немає доступу' }
+
   const { error } = await admin
     .from('shopping_lists')
     .update({ name: name.trim() || 'Список покупок' })
     .eq('id', listId)
-    .eq('created_by', user.id)
   if (error) return { error: error.message }
 
   revalidatePath('/shopping')

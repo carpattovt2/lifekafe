@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  createList, deleteList, sendInvite, acceptInvite, declineInvite, leaveList,
+  createList, deleteList, renameList, sendInvite, acceptInvite, declineInvite, leaveList,
 } from '@/app/(protected)/shopping/actions'
 
 interface ShoppingItem {
@@ -13,7 +13,10 @@ interface ShoppingItem {
 }
 interface ListMeta { id: string; name: string; created_by: string | null }
 interface Member { id: string; email: string; user_id: string | null; status: string }
-interface PendingInvite { list_id: string; invited_by_email: string | null; shopping_lists: { name: string } | null }
+interface PendingInvite {
+  list_id: string; invited_by_email: string | null
+  shopping_lists: { name: string } | null
+}
 
 interface Props {
   lists: ListMeta[]
@@ -23,13 +26,29 @@ interface Props {
   pendingInvites: PendingInvite[]
   userEmail: string
   userId: string
+  uncheckedCounts: Record<string, number>
+  membersByList: Record<string, string[]>
 }
 
-export default function ShoppingPage({ lists, selectedListId, initialItems, members, pendingInvites, userEmail, userId }: Props) {
+export default function ShoppingPage({
+  lists: propLists,
+  selectedListId,
+  initialItems,
+  members,
+  pendingInvites,
+  userEmail,
+  userId,
+  uncheckedCounts,
+  membersByList,
+}: Props) {
   const supabase = createClient()
   const router = useRouter()
 
-  const [activeListId, setActiveListId] = useState(selectedListId)
+  const [localLists, setLocalLists] = useState(propLists)
+  const listsKey = propLists.map(l => `${l.id}:${l.name}`).join(',')
+  useEffect(() => { setLocalLists(propLists) }, [listsKey])
+
+  const [activeListId, setActiveListId] = useState(selectedListId || '')
   const [items, setItems] = useState<ShoppingItem[]>(initialItems)
   const [activeMembers, setActiveMembers] = useState<Member[]>(members)
   const [loading, setLoading] = useState(false)
@@ -49,19 +68,40 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
   const [inviteAction, setInviteAction] = useState<string | null>(null)
   const [deletingList, setDeletingList] = useState(false)
 
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [renamingListId, setRenamingListId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const displayName = (email: string) => email.split('@')[0]
-  const activeList = lists.find(l => l.id === activeListId) ?? lists[0]
 
-  // Switch list
+  const dn = (email: string) => email.split('@')[0]
+  const activeList = localLists.find(l => l.id === activeListId)
+
+  const liveUncheckedCounts = {
+    ...uncheckedCounts,
+    [activeListId]: items.filter(i => !i.checked).length,
+  }
+
+  useEffect(() => {
+    if (!dropdownOpen) return
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false)
+        setRenamingListId(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [dropdownOpen])
+
   async function switchList(listId: string) {
     if (listId === activeListId || loading) return
+    setDropdownOpen(false)
     setLoading(true)
     setActiveListId(listId)
     setItems([])
     setActiveMembers([])
     setInviteStatus(null)
-
     const [{ data: newItems }, { data: newMembers }] = await Promise.all([
       supabase.from('shopping_items').select('id, text, checked, created_at, created_by_email')
         .eq('list_id', listId).order('created_at', { ascending: false }),
@@ -74,8 +114,17 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
     router.push(`/shopping?list=${listId}`, { scroll: false })
   }
 
-  // Realtime
+  async function submitRename(listId: string) {
+    const name = renameValue.trim()
+    setRenamingListId(null)
+    if (!name || name === localLists.find(l => l.id === listId)?.name) return
+    setLocalLists(prev => prev.map(l => l.id === listId ? { ...l, name } : l))
+    await renameList(listId, name)
+    router.refresh()
+  }
+
   useEffect(() => {
+    if (!activeListId) return
     const channel = supabase
       .channel(`shopping-${activeListId}`, { config: { presence: { key: userEmail } } })
       .on('postgres_changes',
@@ -105,7 +154,6 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') await channel.track({ email: userEmail })
       })
-
     return () => { supabase.removeChannel(channel) }
   }, [activeListId, userEmail])
 
@@ -114,13 +162,10 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
     if (!text || adding) return
     setAdding(true)
     setNewText('')
-
     const { data, error } = await supabase
       .from('shopping_items')
       .insert({ text, list_id: activeListId, created_by_email: userEmail })
-      .select()
-      .single()
-
+      .select().single()
     if (!error && data) {
       setItems(prev => {
         if (prev.some(i => i.id === data.id)) return prev
@@ -152,12 +197,8 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
     setInviteSending(true)
     setInviteStatus(null)
     const result = await sendInvite(activeListId, inviteEmail.trim())
-    if (result.error) {
-      setInviteStatus({ msg: result.error, ok: false })
-    } else {
-      setInviteStatus({ msg: 'Запрошення надіслано!', ok: true })
-      setInviteEmail('')
-    }
+    if (result.error) setInviteStatus({ msg: result.error, ok: false })
+    else { setInviteStatus({ msg: 'Запрошення надіслано!', ok: true }); setInviteEmail('') }
     setInviteSending(false)
   }
 
@@ -201,19 +242,8 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
     router.refresh()
   }
 
-  const sorted = [...items].sort((a, b) => {
-    if (a.checked !== b.checked) return a.checked ? 1 : -1
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  })
-  const unchecked = sorted.filter(i => !i.checked)
-  const checked = sorted.filter(i => i.checked)
-  const partners = activeMembers.filter(m => m.email !== userEmail.toLowerCase())
-  const otherOnline = onlineUsers.filter(e => e !== userEmail)
-
-  return (
-    <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 60px' }}>
-
-      {/* Pending invite banners */}
+  const pendingBanners = (
+    <>
       {pendingInvites.map(invite => (
         <div key={invite.list_id} style={{
           background: 'var(--bg2)', border: '1.5px solid var(--accent)',
@@ -223,9 +253,9 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
           <div style={{ fontSize: 14, color: 'var(--text)', fontWeight: 600 }}>
             Запрошення до списку «{invite.shopping_lists?.name ?? 'Список покупок'}»
           </div>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {invite.invited_by_email ? `від ${displayName(invite.invited_by_email)}` : ''}
-          </div>
+          {invite.invited_by_email && (
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>від {dn(invite.invited_by_email)}</div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => handleAccept(invite)} disabled={inviteAction === invite.list_id}
               style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: inviteAction === invite.list_id ? 0.6 : 1 }}>
@@ -238,28 +268,168 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
           </div>
         </div>
       ))}
+    </>
+  )
 
-      {/* List tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
-        {lists.map(list => (
-          <button key={list.id} onClick={() => switchList(list.id)}
-            style={{
-              padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 500,
-              border: '1px solid var(--border)', cursor: 'pointer', whiteSpace: 'nowrap',
-              background: list.id === activeListId ? 'var(--accent)' : 'var(--bg2)',
-              color: list.id === activeListId ? '#fff' : 'var(--muted)',
-              transition: 'all 0.15s',
-            }}>
-            {list.name}
-          </button>
-        ))}
-        <button onClick={() => setShowCreateForm(c => !c)}
-          style={{ padding: '7px 12px', borderRadius: 20, fontSize: 13, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          + Новий список
+  // Empty state
+  if (localLists.length === 0) {
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 60px' }}>
+        {pendingBanners}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '55vh', gap: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 52 }}>🛒</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>Немає жодного списку</div>
+          <div style={{ fontSize: 14, color: 'var(--muted)' }}>Створіть свій перший список покупок</div>
+          {showCreateForm ? (
+            <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 340 }}>
+              <input
+                value={newListName}
+                onChange={e => setNewListName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreateList()}
+                placeholder="Назва списку..."
+                autoFocus
+                style={{ flex: 1, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--accent)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 15, outline: 'none', fontFamily: 'inherit' }}
+              />
+              <button onClick={handleCreateList} disabled={isCreating}
+                style={{ padding: '12px 16px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: isCreating ? 0.6 : 1 }}>
+                {isCreating ? '...' : 'OK'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setShowCreateForm(true)}
+              style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+              + Створити перший список
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const sorted = [...items].sort((a, b) => {
+    if (a.checked !== b.checked) return a.checked ? 1 : -1
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
+  const unchecked = sorted.filter(i => !i.checked)
+  const checked = sorted.filter(i => i.checked)
+  const otherOnline = onlineUsers.filter(e => e !== userEmail)
+  const activeCount = liveUncheckedCounts[activeListId] ?? 0
+  const activeAvatars = (membersByList[activeListId] ?? []).slice(0, 3)
+
+  return (
+    <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 60px' }}>
+      {pendingBanners}
+
+      {/* Dropdown list selector */}
+      <div ref={dropdownRef} style={{ position: 'relative', marginBottom: 16 }}>
+        <button
+          onClick={() => { setDropdownOpen(o => !o); setRenamingListId(null) }}
+          style={{
+            width: '100%', padding: '12px 16px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--bg2)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+            textAlign: 'left',
+          }}
+        >
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeList?.name ?? 'Список'}
+          </span>
+          {activeCount > 0 && (
+            <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 400, flexShrink: 0 }}>· {activeCount}</span>
+          )}
+          {activeAvatars.map(email => <Avatar key={email} email={email} size={22} />)}
+          <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>
+            {dropdownOpen ? '▲' : '▼'}
+          </span>
         </button>
+
+        {dropdownOpen && (
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+            background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
+            zIndex: 100, overflow: 'hidden', boxShadow: '0 8px 28px rgba(0,0,0,0.13)',
+          }}>
+            {localLists.map((list, idx) => {
+              const isActive = list.id === activeListId
+              const isRenaming = renamingListId === list.id
+              const count = liveUncheckedCounts[list.id] ?? 0
+              const avatars = (membersByList[list.id] ?? []).slice(0, 3)
+              return (
+                <div
+                  key={list.id}
+                  onClick={() => { if (!isRenaming) switchList(list.id) }}
+                  style={{
+                    padding: '11px 14px', cursor: isRenaming ? 'default' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    borderBottom: idx < localLists.length - 1 ? '1px solid var(--border)' : 'none',
+                    background: isActive ? 'rgba(128,128,128,0.06)' : 'transparent',
+                  }}
+                >
+                  <span style={{ fontSize: 13, color: 'var(--accent)', opacity: isActive ? 1 : 0, flexShrink: 0, width: 14 }}>✓</span>
+                  {isRenaming ? (
+                    <input
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') submitRename(list.id)
+                        if (e.key === 'Escape') setRenamingListId(null)
+                      }}
+                      onBlur={() => submitRename(list.id)}
+                      onClick={e => e.stopPropagation()}
+                      autoFocus
+                      style={{
+                        flex: 1, background: 'var(--bg)', border: '1px solid var(--accent)',
+                        borderRadius: 6, padding: '4px 8px', color: 'var(--text)',
+                        fontSize: 14, outline: 'none', fontFamily: 'inherit',
+                      }}
+                    />
+                  ) : (
+                    <span style={{
+                      flex: 1, fontSize: 14, fontWeight: isActive ? 600 : 400,
+                      color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {list.name}
+                    </span>
+                  )}
+                  {count > 0 && !isRenaming && (
+                    <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>· {count}</span>
+                  )}
+                  {avatars.map(email => <Avatar key={email} email={email} size={20} />)}
+                  {isActive && !isRenaming && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        setRenamingListId(list.id)
+                        setRenameValue(list.name)
+                      }}
+                      style={{
+                        width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+                        border: '1px solid var(--border)', background: 'transparent',
+                        color: 'var(--muted)', fontSize: 12, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      ✏️
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+            <div
+              onClick={() => { setDropdownOpen(false); setShowCreateForm(true) }}
+              style={{
+                padding: '11px 14px', cursor: 'pointer', display: 'flex',
+                alignItems: 'center', gap: 8, color: 'var(--accent)',
+                fontSize: 14, fontWeight: 600, borderTop: '1px solid var(--border)',
+              }}
+            >
+              + Новий список
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* New list form */}
+      {/* Create list form */}
       {showCreateForm && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <input
@@ -281,25 +451,15 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
         </div>
       )}
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
-            🛒 {activeList?.name ?? 'Список покупок'}
-          </h1>
-          {partners.length > 0 && (
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-              спільний з {partners.map(p => displayName(p.email)).join(', ')}
-            </div>
-          )}
+      {/* Online indicators */}
+      {otherOnline.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <OnlineDot label="Ти" />
+          {otherOnline.map(e => <OnlineDot key={e} label={dn(e)} />)}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <OnlineDot label="Ти" active />
-          {otherOnline.map(e => <OnlineDot key={e} label={displayName(e)} active />)}
-        </div>
-      </div>
+      )}
 
-      {/* Add item input */}
+      {/* Add item */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         <input
           ref={inputRef}
@@ -318,7 +478,11 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
       </div>
 
       {/* Items */}
-      {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '32px 0', fontSize: 14 }}>Завантаження...</div>}
+      {loading && (
+        <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '32px 0', fontSize: 14 }}>
+          Завантаження...
+        </div>
+      )}
 
       {!loading && sorted.length === 0 && (
         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: '40px 0' }}>
@@ -357,7 +521,7 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
         </div>
       )}
 
-      {/* Manage section */}
+      {/* Manage */}
       <div style={{ marginTop: 28 }}>
         <button onClick={() => setShowManage(s => !s)}
           style={{ width: '100%', padding: '11px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -367,8 +531,6 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
 
         {showManage && (
           <div style={{ marginTop: 8, padding: 16, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-            {/* Members */}
             {activeMembers.length > 0 && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
@@ -377,7 +539,7 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
                 {activeMembers.map(m => (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{displayName(m.email)}</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{dn(m.email)}</div>
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{m.email}</div>
                     </div>
                     {m.email === userEmail.toLowerCase() && (
@@ -388,7 +550,6 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
               </div>
             )}
 
-            {/* Invite */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
                 Запросити до цього списку
@@ -414,7 +575,6 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
               )}
             </div>
 
-            {/* Leave / Delete */}
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={handleLeave}
                 style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
@@ -432,10 +592,23 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
   )
 }
 
-function OnlineDot({ label, active }: { label: string; active: boolean }) {
+function Avatar({ email, size }: { email: string; size: number }) {
+  const text = email.split('@')[0].slice(0, 2).toUpperCase()
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', background: 'var(--accent)',
+      color: '#fff', fontSize: Math.round(size * 0.38), fontWeight: 700, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {text}
+    </div>
+  )
+}
+
+function OnlineDot({ label }: { label: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--muted)' }}>
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'var(--green)' : 'var(--border)', display: 'inline-block', flexShrink: 0 }} />
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', flexShrink: 0 }} />
       {label}
     </div>
   )
@@ -445,13 +618,34 @@ function ItemRow({ item, sliding, fading, onTap }: {
   item: ShoppingItem; sliding: boolean; fading: boolean; onTap: (item: ShoppingItem) => void
 }) {
   return (
-    <div onClick={() => onTap(item)}
+    <div
+      onClick={() => onTap(item)}
       className={sliding ? 'shopping-slide-in' : fading ? 'shopping-fade-out' : ''}
-      style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--bg2)', border: '1.5px solid var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, opacity: fading ? 0 : 1, transform: fading ? 'translateY(-10px)' : 'none', transition: fading ? 'opacity 0.32s ease, transform 0.32s ease' : 'none', userSelect: 'none', WebkitTapHighlightColor: 'transparent' }}>
-      <div style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, border: `2px solid ${item.checked ? 'var(--green)' : 'var(--border)'}`, background: item.checked ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', color: '#fff', fontSize: 13, fontWeight: 700 }}>
+      style={{
+        padding: '14px 16px', borderRadius: 12, background: 'var(--bg2)',
+        border: '1.5px solid var(--border)', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 12,
+        opacity: fading ? 0 : 1,
+        transform: fading ? 'translateY(-10px)' : 'none',
+        transition: fading ? 'opacity 0.32s ease, transform 0.32s ease' : 'none',
+        userSelect: 'none', WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      <div style={{
+        width: 24, height: 24, borderRadius: 7, flexShrink: 0,
+        border: `2px solid ${item.checked ? 'var(--green)' : 'var(--border)'}`,
+        background: item.checked ? 'var(--green)' : 'transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'all 0.2s', color: '#fff', fontSize: 13, fontWeight: 700,
+      }}>
         {item.checked && '✓'}
       </div>
-      <span style={{ flex: 1, fontSize: 16, color: item.checked ? 'var(--muted)' : 'var(--text)', textDecoration: item.checked ? 'line-through' : 'none', transition: 'color 0.25s' }}>
+      <span style={{
+        flex: 1, fontSize: 16,
+        color: item.checked ? 'var(--muted)' : 'var(--text)',
+        textDecoration: item.checked ? 'line-through' : 'none',
+        transition: 'color 0.25s',
+      }}>
         {item.text}
       </span>
       {item.checked && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0, opacity: 0.6 }}>✕</span>}
