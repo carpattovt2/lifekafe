@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  createList, sendInvite, acceptInvite, declineInvite, leaveList,
+  createList, deleteList, sendInvite, acceptInvite, declineInvite, leaveList,
 } from '@/app/(protected)/shopping/actions'
 
 interface ShoppingItem {
@@ -44,8 +44,10 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
   const [inviteStatus, setInviteStatus] = useState<{ msg: string; ok: boolean } | null>(null)
   const [inviteSending, setInviteSending] = useState(false)
   const [newListName, setNewListName] = useState('')
-  const [creatingList, setCreatingList] = useState(false)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
   const [inviteAction, setInviteAction] = useState<string | null>(null)
+  const [deletingList, setDeletingList] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const displayName = (email: string) => email.split('@')[0]
@@ -180,14 +182,23 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
   }
 
   async function handleCreateList() {
-    if (creatingList) return
-    setCreatingList(true)
+    if (isCreating) return
+    setIsCreating(true)
     const name = newListName.trim() || 'Новий список'
     const result = await createList(name)
     setNewListName('')
-    setCreatingList(false)
+    setIsCreating(false)
+    setShowCreateForm(false)
     if (result.id) router.push(`/shopping?list=${result.id}`)
     else router.refresh()
+  }
+
+  async function handleDeleteList() {
+    if (!confirm(`Видалити список "${activeList?.name}"? Всі товари буде втрачено.`)) return
+    setDeletingList(true)
+    await deleteList(activeListId)
+    setDeletingList(false)
+    router.refresh()
   }
 
   const sorted = [...items].sort((a, b) => {
@@ -242,14 +253,14 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
             {list.name}
           </button>
         ))}
-        <button onClick={() => setCreatingList(c => !c)}
+        <button onClick={() => setShowCreateForm(c => !c)}
           style={{ padding: '7px 12px', borderRadius: 20, fontSize: 13, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           + Новий список
         </button>
       </div>
 
       {/* New list form */}
-      {creatingList && (
+      {showCreateForm && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <input
             value={newListName}
@@ -259,11 +270,11 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
             autoFocus
             style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--accent)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
-          <button onClick={handleCreateList}
-            style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-            Створити
+          <button onClick={handleCreateList} disabled={isCreating}
+            style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: isCreating ? 0.6 : 1 }}>
+            {isCreating ? '...' : 'Створити'}
           </button>
-          <button onClick={() => setCreatingList(false)}
+          <button onClick={() => setShowCreateForm(false)}
             style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
             ✕
           </button>
@@ -403,11 +414,17 @@ export default function ShoppingPage({ lists, selectedListId, initialItems, memb
               )}
             </div>
 
-            {/* Leave */}
-            <button onClick={handleLeave}
-              style={{ padding: '9px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
-              Вийти зі списку
-            </button>
+            {/* Leave / Delete */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleLeave}
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
+                Вийти зі списку
+              </button>
+              <button onClick={handleDeleteList} disabled={deletingList}
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #e55', background: 'transparent', color: '#e55', fontSize: 13, cursor: 'pointer', opacity: deletingList ? 0.6 : 1 }}>
+                {deletingList ? '...' : 'Видалити список'}
+              </button>
+            </div>
           </div>
         )}
       </div>

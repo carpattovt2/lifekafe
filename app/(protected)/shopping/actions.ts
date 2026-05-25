@@ -111,6 +111,27 @@ export async function declineInvite(listId: string): Promise<{ error?: string }>
   return {}
 }
 
+export async function deleteList(listId: string): Promise<{ error?: string }> {
+  const user = await getAuthUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const admin = createAdminClient()
+
+  const { data: membership } = await admin
+    .from('shopping_list_members')
+    .select('id')
+    .eq('list_id', listId)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .single()
+  if (!membership) return { error: 'Немає доступу до цього списку' }
+
+  await admin.from('shopping_lists').delete().eq('id', listId)
+
+  revalidatePath('/shopping')
+  return {}
+}
+
 export async function leaveList(listId: string): Promise<{ error?: string }> {
   const user = await getAuthUser()
   if (!user) return { error: 'Not authenticated' }
