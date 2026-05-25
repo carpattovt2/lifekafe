@@ -221,9 +221,16 @@ export default function ShoppingList({ initialItems, userEmail, groupId, groupMe
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
-          🛒 Список покупок
-        </h1>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
+            🛒 Список покупок
+          </h1>
+          {partners.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
+              спільний з {partners.map(p => displayName(p.email)).join(', ')}
+            </div>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <OnlineDot label="Ти" active />
           {otherOnline.map(e => (
