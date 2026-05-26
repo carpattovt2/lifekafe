@@ -2,10 +2,10 @@
 
 import { useReducer, useEffect, useRef, useState } from 'react'
 import {
-  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
+  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction } from '@/lib/sacred/types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS, ARCHER_LEVELS, TOWER_FLOORS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 
@@ -221,6 +221,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const color  = SIDE_COLOR[unit.side]
   const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(0,0,0,0.12)'
   const AvatarSVG = CLASS_SVG[unit.class]
+  const unitLevelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
+                      : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
+                      : undefined
   const portraitSrc = unit.level
     ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
      : unit.class === 'archer'  ? `/sacred/archers/level${unit.level}.jpg`
@@ -303,8 +306,8 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
                     <span style={{ fontSize: 10, color: '#fff', fontWeight: 700, lineHeight: 1 }}>➜</span>
                   )}
                   {unit.level && (
-                    <span style={{ fontSize: 7, fontWeight: 700, background: 'rgba(255,255,255,0.88)', color: '#b07850', borderRadius: 3, padding: '1px 4px' }}>
-                      Lv{unit.level}
+                    <span style={{ fontSize: 7, fontWeight: 700, background: 'rgba(255,255,255,0.9)', color: '#b07850', borderRadius: 3, padding: '1px 4px', maxWidth: 44, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {unitLevelName ?? `Lv${unit.level}`}
                     </span>
                   )}
                 </div>
@@ -331,10 +334,11 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
                 </div>
                 {/* XP bar */}
                 {unit.xpToNext !== undefined && unit.xpToNext !== Infinity && (
-                  <div style={{ width: '100%', height: 2, background: 'rgba(176,120,80,0.35)', borderRadius: 1, marginTop: 2 }}>
+                  <div style={{ width: '100%', height: 3, background: 'rgba(176,120,80,0.3)', borderRadius: 2, marginTop: 2 }}>
                     <div style={{
                       width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
-                      height: '100%', background: '#b07850', borderRadius: 1, transition: 'width 0.3s',
+                      height: '100%', background: '#b07850', borderRadius: 2, transition: 'width 0.4s',
+                      boxShadow: '0 0 4px rgba(176,120,80,0.6)',
                     }} />
                   </div>
                 )}
@@ -714,7 +718,12 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
 }
 
 // ── Landing screen ─────────────────────────────────────────────────────────────
-function Landing({ onNewGame }: { onNewGame: () => void }) {
+function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: {
+  onNewGame: () => void
+  onStartTower: () => void
+  onContinueTower: () => void
+  savedTowerFloor: number | null
+}) {
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
@@ -728,21 +737,51 @@ function Landing({ onNewGame }: { onNewGame: () => void }) {
       <div style={{ fontSize: 30, fontWeight: 800, color: '#b07850', letterSpacing: '-0.02em', marginBottom: 8 }}>
         Серафити
       </div>
-      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300, marginBottom: 44 }}>
+      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300, marginBottom: 36 }}>
         Тактична покрокова битва. Обирай армію і веди її до перемоги.
       </div>
-      <button
-        onClick={onNewGame}
-        style={{
-          padding: '16px 44px', fontSize: 16, fontWeight: 700,
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
+        <button onClick={onNewGame} style={{
+          padding: '14px 0', fontSize: 15, fontWeight: 700,
           background: '#b07850', color: '#fff',
           border: 'none', borderRadius: 12, cursor: 'pointer',
           boxShadow: '0 2px 12px rgba(176,120,80,0.3)',
-        }}
-      >
-        ⚔ Нова гра
-      </button>
-      <div style={{ marginTop: 52, display: 'flex', gap: 24, fontSize: 11, color: 'var(--muted)' }}>
+        }}>
+          ⚔ Одиночний бій
+        </button>
+
+        {savedTowerFloor ? (
+          <>
+            <button onClick={onContinueTower} style={{
+              padding: '14px 0', fontSize: 15, fontWeight: 700,
+              background: '#4a7a5a', color: '#fff',
+              border: 'none', borderRadius: 12, cursor: 'pointer',
+              boxShadow: '0 2px 12px rgba(74,122,90,0.3)',
+            }}>
+              🗼 Продовжити тауер ({savedTowerFloor}/{TOWER_FLOORS.length})
+            </button>
+            <button onClick={onStartTower} style={{
+              padding: '10px 0', fontSize: 13, fontWeight: 600,
+              background: 'transparent', color: 'var(--muted)',
+              border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, cursor: 'pointer',
+            }}>
+              Новий тауер
+            </button>
+          </>
+        ) : (
+          <button onClick={onStartTower} style={{
+            padding: '14px 0', fontSize: 15, fontWeight: 700,
+            background: '#4a7a5a', color: '#fff',
+            border: 'none', borderRadius: 12, cursor: 'pointer',
+            boxShadow: '0 2px 12px rgba(74,122,90,0.3)',
+          }}>
+            🗼 Тауер
+          </button>
+        )}
+      </div>
+
+      <div style={{ marginTop: 44, display: 'flex', gap: 24, fontSize: 11, color: 'var(--muted)' }}>
         {(['warrior', 'archer', 'mage', 'catapult'] as const).map(cls => {
           const labels: Record<string, string> = { warrior: 'Воїни', archer: 'Лучники', mage: 'Маги', catapult: 'Катапульта' }
           const AvatarSVG = CLASS_SVG[cls]
@@ -760,14 +799,32 @@ function Landing({ onNewGame }: { onNewGame: () => void }) {
   )
 }
 
+// ── Tower helpers ──────────────────────────────────────────────────────────────
+const LS_TOWER_FLOOR  = 'sacred_tower_floor'
+const LS_TOWER_UNITS  = 'sacred_tower_units'
+const LS_TOWER_COUNTS = 'sacred_tower_counts'
+
+function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[]): GameUnit[] {
+  const freshArmy = buildCustomArmy(towerCounts, 'player')
+  return battleUnits
+    .filter(u => u.side === 'player')
+    .map(u => {
+      if (u.hp > 0) return { ...u, hp: u.maxHp, buffs: [], hasActed: false }
+      return freshArmy.find(f => f.class === u.class && f.slot === u.slot && f.row === u.row) ?? u
+    })
+}
+
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 3 }
 
-function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; playerUnits?: GameUnit[]; onRestart: () => void }) {
+function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowerLose }: {
+  counts: ArmyCounts; playerUnits?: GameUnit[]; onRestart: () => void
+  towerFloor?: TowerFloor; onTowerWin?: (units: GameUnit[]) => void; onTowerLose?: () => void
+}) {
   const [state, dispatch] = useReducer(
     battleReducer,
     undefined as unknown as ArmyCounts,
-    () => createInitialState(counts, playerUnits),
+    () => createInitialState(counts, playerUnits, towerFloor?.aiCounts),
   )
   const [floats, setFloats]       = useState<BattleEvent[]>([])
   const [infoUnit, setInfoUnit]   = useState<GameUnit | null>(null)
@@ -857,8 +914,13 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
       {/* Header */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850' }}>✦ Серафити</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Раунд {state.round}</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850' }}>✦ Серафити</div>
+            {towerFloor && <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, opacity: 0.8 }}>🗼 {towerFloor.floor}/{TOWER_FLOORS.length}</div>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {towerFloor ? `${towerFloor.name} · ` : ''}Раунд {state.round}
+          </div>
         </div>
         <TurnQueue queue={state.queue} units={state.units} currentIdx={state.queueIdx} />
       </div>
@@ -935,15 +997,37 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
         borderTop: '1px solid var(--border)', background: '#fff',
       }}>
         {state.phase === 'game-over' ? (
-          <div style={{ padding: '16px 20px', textAlign: 'center' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 12 }}>
-              {state.winner === 'player' ? '🏆 Перемога!' : '💀 Поразка'}
+          towerFloor ? (
+            <div style={{ padding: '16px 20px', textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 4 }}>
+                {state.winner === 'player' ? '🏆 Поверх пройдено!' : '💀 Поразка'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+                {state.winner === 'player' ? towerFloor.name : 'Тауер завершено. Починай спочатку.'}
+              </div>
+              {state.winner === 'player' ? (
+                <button onClick={() => onTowerWin?.(state.units)}
+                  style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  {towerFloor.floor < TOWER_FLOORS.length ? 'Далі →' : '🏆 Завершити тауер'}
+                </button>
+              ) : (
+                <button onClick={onTowerLose}
+                  style={{ padding: '10px 28px', background: '#c07070', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  До меню
+                </button>
+              )}
             </div>
-            <button onClick={onRestart}
-              style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-              Новий бій
-            </button>
-          </div>
+          ) : (
+            <div style={{ padding: '16px 20px', textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 12 }}>
+                {state.winner === 'player' ? '🏆 Перемога!' : '💀 Поразка'}
+              </div>
+              <button onClick={onRestart}
+                style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                Новий бій
+              </button>
+            </div>
+          )
 
         ) : isPlayerTurn && actor ? (
           <div style={{ padding: '10px 16px' }}>
@@ -997,21 +1081,288 @@ function Battle({ counts, playerUnits, onRestart }: { counts: ArmyCounts; player
   )
 }
 
+// ── Tower map ──────────────────────────────────────────────────────────────────
+function aiCompositionText(counts: ArmyCounts): string {
+  const parts: string[] = []
+  if (counts.warriors)  parts.push(`${counts.warriors} воїн${counts.warriors > 1 ? 'и' : ''}`)
+  if (counts.archers)   parts.push(`${counts.archers} лучник${counts.archers > 1 ? 'и' : ''}`)
+  if (counts.mages)     parts.push(`${counts.mages} маг${counts.mages > 1 ? 'и' : ''}`)
+  if (counts.catapults) parts.push(`${counts.catapults} катапульта`)
+  return parts.join(', ') || 'немає'
+}
+
+function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
+  floorIdx: number
+  playerUnits: GameUnit[]
+  onEnterBattle: () => void
+  onBackToMenu: () => void
+}) {
+  const currentFloor = TOWER_FLOORS[floorIdx]
+
+  return (
+    <div style={{
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
+      color: 'var(--text)', fontFamily: "'Inter', sans-serif",
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Header */}
+      <div style={{ padding: '16px 20px 0', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <button onClick={onBackToMenu} style={{
+            padding: '6px 10px', fontSize: 12, color: 'var(--muted)',
+            background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}>← Меню</button>
+          <div style={{ flex: 1, fontSize: 17, fontWeight: 800, color: '#b07850', textAlign: 'center' }}>🗼 Тауер Серафітів</div>
+          <div style={{ width: 56 }} />
+        </div>
+        {/* Floor progress bar */}
+        <div style={{ display: 'flex', gap: 3, paddingBottom: 14 }}>
+          {TOWER_FLOORS.map((_, i) => (
+            <div key={i} style={{
+              flex: 1, height: 5, borderRadius: 3,
+              background: i < floorIdx ? '#7aaa82' : i === floorIdx ? '#b07850' : 'rgba(0,0,0,0.1)',
+              transition: 'background 0.3s',
+            }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Scrollable body */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 24px' }}>
+
+        {/* Current floor info */}
+        <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(176,120,80,0.07)', border: '1px solid rgba(176,120,80,0.22)', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+            Поверх {currentFloor.floor} з {TOWER_FLOORS.length}
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{currentFloor.name}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            ⚔ Вороги: {aiCompositionText(currentFloor.aiCounts)}
+          </div>
+        </div>
+
+        {/* Floor list */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+            Поверхи тауера
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {TOWER_FLOORS.map((floor, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9,
+                background: i === floorIdx ? 'rgba(176,120,80,0.08)' : '#fff',
+                border: `1px solid ${i === floorIdx ? 'rgba(176,120,80,0.3)' : 'rgba(0,0,0,0.07)'}`,
+              }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  background: i < floorIdx ? '#7aaa82' : i === floorIdx ? '#b07850' : 'rgba(0,0,0,0.07)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontWeight: 700, color: i <= floorIdx ? '#fff' : 'var(--muted)',
+                }}>
+                  {i < floorIdx ? '✓' : floor.floor}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: i === floorIdx ? 700 : 500, color: i === floorIdx ? '#b07850' : 'var(--text)' }}>
+                    {floor.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                    {aiCompositionText(floor.aiCounts)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Player units summary */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+            Твоя армія
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {playerUnits.map(u => {
+              const AvatarSVG = CLASS_SVG[u.class]
+              const color = SIDE_COLOR.player
+              const levelName = u.class === 'warrior' ? WARRIOR_LEVELS[u.level ?? 1]?.name
+                              : u.class === 'archer'  ? ARCHER_LEVELS[u.level ?? 1]?.name
+                              : undefined
+              const maxLevel = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : 0
+              const xpPct = maxLevel > 0 && (u.level ?? 1) < maxLevel
+                ? Math.min(100, ((u.xp ?? 0) / (u.xpToNext ?? 1)) * 100) : 0
+              return (
+                <div key={u.id} style={{
+                  width: 58, borderRadius: 8, padding: '7px 6px 6px',
+                  background: '#fff', border: `1.5px solid ${color}44`,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                }}>
+                  <AvatarSVG color={color} size={22} />
+                  <div style={{ fontSize: 8, fontWeight: 700, color: '#b07850', textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 52 }}>
+                    {levelName ?? u.name}
+                  </div>
+                  {xpPct > 0 && (
+                    <div style={{ width: '100%', height: 3, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
+                      <div style={{ width: `${xpPct}%`, height: '100%', background: '#b07850', borderRadius: 2 }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Enter battle */}
+      <div style={{ padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: '#fff', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <button onClick={onEnterBattle} style={{
+          width: '100%', padding: '15px 0', fontSize: 16, fontWeight: 700,
+          background: '#b07850', color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
+          boxShadow: '0 2px 14px rgba(176,120,80,0.3)', fontFamily: 'inherit',
+        }}>
+          ⚔ Вступити в бій
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Root component ─────────────────────────────────────────────────────────────
+type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle'
+
 export default function SacredGame() {
-  const [screen, setScreen] = useState<'landing' | 'army-builder' | 'placement' | 'battle'>('landing')
+  const [screen, setScreen] = useState<RootScreen>('landing')
+  const [isTowerMode, setIsTowerMode] = useState(false)
   const [counts, setCounts] = useState<ArmyCounts | null>(null)
   const [playerUnits, setPlayerUnits] = useState<GameUnit[] | null>(null)
+  const [towerFloorIdx, setTowerFloorIdx] = useState(0)
+  const [towerCounts, setTowerCounts] = useState<ArmyCounts | null>(null)
+  const [towerUnits, setTowerUnits] = useState<GameUnit[] | null>(null)
+  const [savedTowerFloor, setSavedTowerFloor] = useState<number | null>(null)
 
-  if (screen === 'landing') return <Landing onNewGame={() => setScreen('army-builder')} />
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LS_TOWER_FLOOR)
+      setSavedTowerFloor(saved ? parseInt(saved) : null)
+    } catch {}
+  }, [])
+
+  function clearTowerSave() {
+    try {
+      localStorage.removeItem(LS_TOWER_FLOOR)
+      localStorage.removeItem(LS_TOWER_UNITS)
+      localStorage.removeItem(LS_TOWER_COUNTS)
+    } catch {}
+    setSavedTowerFloor(null)
+  }
+
+  function saveTowerProgress(floorNum: number, units: GameUnit[], tc: ArmyCounts) {
+    try {
+      localStorage.setItem(LS_TOWER_FLOOR, String(floorNum))
+      localStorage.setItem(LS_TOWER_UNITS, JSON.stringify(units))
+      localStorage.setItem(LS_TOWER_COUNTS, JSON.stringify(tc))
+    } catch {}
+    setSavedTowerFloor(floorNum)
+  }
+
+  function handleNewGame() {
+    setIsTowerMode(false)
+    setScreen('army-builder')
+  }
+
+  function handleStartTower() {
+    clearTowerSave()
+    setIsTowerMode(true)
+    setTowerFloorIdx(0)
+    setTowerUnits(null)
+    setTowerCounts(null)
+    setScreen('army-builder')
+  }
+
+  function handleContinueTower() {
+    try {
+      const floorNum = parseInt(localStorage.getItem(LS_TOWER_FLOOR) ?? '1')
+      const units = JSON.parse(localStorage.getItem(LS_TOWER_UNITS) ?? '[]') as GameUnit[]
+      const tc = JSON.parse(localStorage.getItem(LS_TOWER_COUNTS) ?? '{}') as ArmyCounts
+      setIsTowerMode(true)
+      setTowerFloorIdx(floorNum - 1)
+      setTowerUnits(units)
+      setTowerCounts(tc)
+      setScreen('tower-map')
+    } catch {
+      handleStartTower()
+    }
+  }
+
+  function handleArmyBuilt(c: ArmyCounts) {
+    setCounts(c)
+    if (isTowerMode) setTowerCounts(c)
+    setScreen('placement')
+  }
+
+  function handlePlacementDone(units: GameUnit[]) {
+    setPlayerUnits(units)
+    if (isTowerMode) {
+      setTowerUnits(units)
+      saveTowerProgress(1, units, towerCounts!)
+      setScreen('tower-map')
+    } else {
+      setScreen('battle')
+    }
+  }
+
+  function handleTowerWin(battleUnits: GameUnit[]) {
+    const nextIdx = towerFloorIdx + 1
+    if (nextIdx >= TOWER_FLOORS.length) {
+      clearTowerSave()
+      setScreen('landing')
+      return
+    }
+    const nextUnits = prepareNextFloorUnits(towerCounts!, battleUnits)
+    saveTowerProgress(nextIdx + 1, nextUnits, towerCounts!)
+    setTowerFloorIdx(nextIdx)
+    setTowerUnits(nextUnits)
+    setScreen('tower-map')
+  }
+
+  function handleTowerLose() {
+    clearTowerSave()
+    setScreen('landing')
+  }
+
+  if (screen === 'landing') return (
+    <Landing
+      onNewGame={handleNewGame}
+      onStartTower={handleStartTower}
+      onContinueTower={handleContinueTower}
+      savedTowerFloor={savedTowerFloor}
+    />
+  )
   if (screen === 'army-builder') return (
-    <ArmyBuilder onStart={c => { setCounts(c); setScreen('placement') }} />
+    <ArmyBuilder onStart={handleArmyBuilt} />
   )
   if (screen === 'placement') return (
     <PlacementScreen
       counts={counts!}
-      onStart={units => { setPlayerUnits(units); setScreen('battle') }}
+      onStart={handlePlacementDone}
       onBack={() => setScreen('army-builder')}
+    />
+  )
+  if (screen === 'tower-map') return (
+    <TowerMap
+      floorIdx={towerFloorIdx}
+      playerUnits={towerUnits!}
+      onEnterBattle={() => setScreen('tower-battle')}
+      onBackToMenu={() => setScreen('landing')}
+    />
+  )
+  if (screen === 'tower-battle') return (
+    <Battle
+      counts={towerCounts!}
+      playerUnits={towerUnits!}
+      onRestart={() => {}}
+      towerFloor={TOWER_FLOORS[towerFloorIdx]}
+      onTowerWin={handleTowerWin}
+      onTowerLose={handleTowerLose}
     />
   )
   return <Battle counts={counts!} playerUnits={playerUnits ?? undefined} onRestart={() => setScreen('landing')} />
