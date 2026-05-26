@@ -113,6 +113,22 @@ export interface ArmyCounts {
   catapults: number  // 0–1, row 1 slot 2 + row 2 slot 2 base; counts as 2 units
 }
 
+export interface TowerFloor {
+  floor: number
+  name: string
+  aiCounts: ArmyCounts
+}
+
+export const TOWER_FLOORS: TowerFloor[] = [
+  { floor: 1, name: 'Прикордонна застава', aiCounts: { warriors: 2, archers: 0, mages: 0, catapults: 0 } },
+  { floor: 2, name: 'Лісовий загін',        aiCounts: { warriors: 2, archers: 1, mages: 0, catapults: 0 } },
+  { floor: 3, name: 'Гірський перевал',      aiCounts: { warriors: 3, archers: 1, mages: 1, catapults: 0 } },
+  { floor: 4, name: 'Річкова переправа',     aiCounts: { warriors: 3, archers: 2, mages: 1, catapults: 0 } },
+  { floor: 5, name: 'Осадний табір',         aiCounts: { warriors: 4, archers: 2, mages: 1, catapults: 0 } },
+  { floor: 6, name: 'Замкові мури',          aiCounts: { warriors: 4, archers: 2, mages: 2, catapults: 0 } },
+  { floor: 7, name: 'Цитадель Серафітів',   aiCounts: { warriors: 4, archers: 1, mages: 2, catapults: 1 } },
+]
+
 // ── Archer level data ──────────────────────────────────────────────────────────
 export interface ArcherLevelData {
   name: string

@@ -660,10 +660,11 @@ const TURN_RESET = {
   needsTarget: false,
 }
 
-export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[]): BattleState {
+export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[], aiCounts?: ArmyCounts): BattleState {
   const playerUnits = prebuiltPlayerUnits
     ?? (counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
-  const units = [...playerUnits, ...buildDefaultAIArmy()]
+  const aiUnits = aiCounts ? buildCustomArmy(aiCounts, 'ai') : buildDefaultAIArmy()
+  const units = [...playerUnits, ...aiUnits]
   const queue = buildQueue(units)
   const first = units.find(u => u.id === queue[0])!
   return {
