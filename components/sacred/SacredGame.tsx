@@ -25,6 +25,7 @@ const BUFF_ICON: Record<string, string> = {
   fortress_buff: '🏰',
   thorns: '🌿',
   taunt: '🗣',
+  initiative_up: '⚡',
 }
 
 const MAGE_PATH_ICON: Record<MagePath, string> = { fire: '🔥', water: '💧', earth: '🌿', air: '💨' }
@@ -1142,6 +1143,9 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
                   if (a === 'provoke' && actor) {
                     const enemySide = actor.side === 'player' ? 'ai' : 'player'
                     disabled = !state.units.some(u => u.side === enemySide && u.hp > 0 && u.row === 0)
+                  }
+                  if (a === 'aim' && actor) {
+                    disabled = actor.buffs.some(b => b.type === 'aimed')
                   }
                   return (
                     <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}

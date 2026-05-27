@@ -16,6 +16,7 @@ export type BuffType =
   | 'fortress_buff' // earth lv5: +X% defense (party)
   | 'thorns'        // stone skin lv3: attacker takes X dmg on hit
   | 'taunt'         // warrior lv2 provoke: front-row enemies must target this unit
+  | 'initiative_up' // archer aim: +X initiative for queue ordering
 
 export interface Buff {
   id: string
@@ -226,24 +227,24 @@ export interface ArcherLevelData {
 export const ARCHER_LEVELS: Record<number, ArcherLevelData> = {
   1: {
     name: 'Розвідник',
-    hp: 65, minDmg: 12, maxDmg: 18, accuracy: 0.85, defense: 0,    evasion: 0.15,
-    initiative: 60, critChance: 0,    critMult: 2.0, morale: 50,
+    hp: 65, minDmg: 12, maxDmg: 18, accuracy: 0.80, defense: 0, evasion: 0.20,
+    initiative: 60, critChance: 0, critMult: 2.0, morale: 50,
     actions: ['shot', 'aim'],
     aimCritChance: 0.35, aimCritMult: 2.0,
-    xpToNext: 100,
+    xpToNext: 140,
   },
   2: {
     name: 'Мисливець',
-    hp: 90, minDmg: 16, maxDmg: 24, accuracy: 0.88, defense: 0.05, evasion: 0.18,
-    initiative: 63, critChance: 0.08, critMult: 2.0, morale: 55,
-    actions: ['shot', 'aim', 'poison_shot'],
+    hp: 90, minDmg: 16, maxDmg: 24, accuracy: 0.80, defense: 0, evasion: 0.15,
+    initiative: 60, critChance: 0, critMult: 2.0, morale: 55,
+    actions: ['shot', 'aim'],
     aimCritChance: 0.35, aimCritMult: 2.0,
-    xpToNext: 200,
+    xpToNext: 300,
   },
   3: {
     name: 'Рейнджер',
-    hp: 120, minDmg: 22, maxDmg: 32, accuracy: 0.92, defense: 0.10, evasion: 0.22,
-    initiative: 68, critChance: 0.18, critMult: 2.5, morale: 65,
+    hp: 120, minDmg: 22, maxDmg: 32, accuracy: 0.85, defense: 0, evasion: 0.15,
+    initiative: 60, critChance: 0, critMult: 2.0, morale: 65,
     actions: ['shot', 'aim', 'double_shot'],
     aimCritChance: 0.45, aimCritMult: 2.5,
     xpToNext: Infinity,

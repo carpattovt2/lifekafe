@@ -192,7 +192,11 @@ export function buildDefaultAIArmy(): GameUnit[] {
 // ── Initiative queue ───────────────────────────────────────────────────────────
 function buildQueue(units: GameUnit[]): string[] {
   return [...units.filter(u => u.hp > 0)]
-    .sort((a, b) => b.initiative - a.initiative + (Math.random() - 0.5) * 0.1)
+    .sort((a, b) => {
+      const aInit = a.initiative + a.buffs.filter(b => b.type === 'initiative_up').reduce((s, b) => s + b.value, 0)
+      const bInit = b.initiative + b.buffs.filter(b => b.type === 'initiative_up').reduce((s, b) => s + b.value, 0)
+      return bInit - aInit + (Math.random() - 0.5) * 0.1
+    })
     .map(u => u.id)
 }
 
@@ -254,22 +258,19 @@ interface AttackResult {
 
 function resolveAttack(
   atk: GameUnit, def: GameUnit, units: GameUnit[],
-  opts: { dmgMult?: number; accBonus?: number; ignoreEvasion?: boolean; elemPath?: MagePath } = {},
+  opts: { dmgMult?: number; accBonus?: number; ignoreEvasion?: boolean; elemPath?: MagePath; critChance?: number; critMult?: number } = {},
 ): AttackResult {
   let { dmgMult = 1, accBonus = 0, ignoreEvasion = false, elemPath } = opts
   const logs: LogEntry[] = []
   const events: BattleEvent[] = []
 
-  let effectiveCritChance = atk.critChance
-  let effectiveCritMult   = atk.critMult
+  let effectiveCritChance = opts.critChance ?? atk.critChance
+  let effectiveCritMult   = opts.critMult   ?? atk.critMult
 
-  // Aimed buff: fixed accuracy bonus + crit enable (crit% scales with archer level)
+  // Aimed buff: accuracy bonus only (crit removed from aim)
   const aimedBuff = atk.buffs.find(b => b.type === 'aimed')
   if (aimedBuff) {
     accBonus += aimedBuff.value
-    const archerData = atk.class === 'archer' ? ARCHER_LEVELS[atk.level ?? 1] : null
-    effectiveCritChance = archerData?.aimCritChance ?? 0.35
-    effectiveCritMult   = archerData?.aimCritMult   ?? 2.0
   }
 
   // Morale buff: +1% acc/eva per 10 morale points
@@ -465,24 +466,38 @@ export function executeAction(
 
     case 'aim': {
       const a = getUnit(actor.id)
-      const accBonus = 0.25 + Math.random() * 0.15
-      const pct = Math.round(accBonus * 100)
-      update({ ...a, buffs: [...a.buffs, makeBuff('aimed', accBonus, 3)] })
-      newLogs.push(log(`🎯 ${actor.name} прицілюється (+${pct}% точн., 35% крит ×2 на 2 ходи)`, 'buff'))
-      newEvents.push(ev(actor.id, `🎯 +${pct}%`, 'buff'))
+      const accBonus = Math.round(a.accuracy * 0.5 * 100) / 100
+      const initBonus = Math.round(a.initiative * 0.5)
+      update({ ...a, buffs: [...a.buffs, makeBuff('aimed', accBonus, 4), makeBuff('initiative_up', initBonus, 4)] })
+      newLogs.push(log(`🎯 ${actor.name} прицілюється (+${Math.round(accBonus * 100)}% точн., +${initBonus} ініціативи на 3 ходи)`, 'buff'))
+      newEvents.push(ev(actor.id, `🎯 Прицілення`, 'buff'))
       break
     }
 
     case 'shot': {
       if (!target) break
-      const res = resolveAttack(actor, target, units)
+      const archerLvl = actor.level ?? 1
+      const shotCrit = (actor.class === 'archer' && archerLvl >= 3) ? { critChance: 0.33, critMult: 2.0 } : {}
+      const res = resolveAttack(actor, target, units, shotCrit)
       newLogs.push(...res.logs)
       newEvents.push(...res.events)
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
-      if (res.hit && !res.evaded) hitLanded = true
+      if (res.hit && !res.evaded) {
+        hitLanded = true
+        // Passive poison (lv2+): 25% chance
+        if (actor.class === 'archer' && archerLvl >= 2) {
+          const tgt = getUnit(target.id)
+          if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'poison') && Math.random() < 0.25) {
+            const poisonDmg = 10 + Math.round(Math.random() * 5)
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('poison', poisonDmg, 3)] })
+            newLogs.push(log(`🧪 ${target.name} отруєний! ${poisonDmg} урону/хід на 3 ходи`, 'debuff'))
+            newEvents.push(ev(target.id, '🧪 Отрута!', 'debuff', actor.id))
+          }
+        }
+      }
       break
     }
 
@@ -516,8 +531,8 @@ export function executeAction(
     case 'double_shot': {
       if (!target) break
       newLogs.push(log(`🏹🏹 ${actor.name} — Подвійний постріл!`, 'attack'))
-      // First arrow — normal
-      const res1 = resolveAttack(actor, target, units)
+      // First arrow — 75% damage, no passives
+      const res1 = resolveAttack(actor, target, units, { dmgMult: 0.75 })
       newLogs.push(...res1.logs)
       newEvents.push(...res1.events)
       if (res1.damage > 0) {
@@ -525,10 +540,10 @@ export function executeAction(
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
       if (res1.hit && !res1.evaded) hitLanded = true
-      // Second arrow — -15% accuracy, only if target still alive
+      // Second arrow — 75% damage, -15% accuracy, no passives
       const tgt2 = getUnit(target.id)
       if (tgt2.hp > 0) {
-        const res2 = resolveAttack(actor, tgt2, units, { accBonus: -0.15 })
+        const res2 = resolveAttack(actor, tgt2, units, { dmgMult: 0.75, accBonus: -0.15 })
         newLogs.push(...res2.logs)
         newEvents.push(...res2.events)
         if (res2.damage > 0) {
@@ -1113,10 +1128,10 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: 'Удар + -10% броні цілі на 1 хід',          needsTarget: true,  targetSide: 'ai'   },
   consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+25 HP союзнику',                           needsTarget: true,  targetSide: 'ally' },
   provoke:         { key: 'provoke',         label: 'Провокація',        desc: 'Вороги переднього ряду б\'ють тільки тебе + +20% броні на 1 хід', needsTarget: false, targetSide: null },
-  shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога',                  needsTarget: true,  targetSide: 'ai'   },
-  aim:             { key: 'aim',             label: 'Прицілення',        desc: '+25–40% точн. та крит на 2 ходи',           needsTarget: false, targetSide: null   },
+  shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога. Lv2+: 25% отруєння. Lv3: 33% крит ×2', needsTarget: true,  targetSide: 'ai'   },
+  aim:             { key: 'aim',             label: 'Прицілення',        desc: '+50% точності та +50% ініціативи на 3 власних ходи', needsTarget: false, targetSide: null   },
   poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },
-  double_shot:     { key: 'double_shot',     label: 'Подвійний постріл', desc: '2 стріли, 2-га -15% точн.',                needsTarget: true,  targetSide: 'ai'   },
+  double_shot:     { key: 'double_shot',     label: 'Подвійний постріл', desc: '2 стріли по 75% урону, друга -15% точн.',  needsTarget: true,  targetSide: 'ai'   },
   chain_lightning: { key: 'chain_lightning', label: 'Ланцюгова молнія',  desc: 'Б\'є всіх ворогів одночасно',              needsTarget: false, targetSide: null   },
   fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: '×3–6 урону по цілі (зростає з рівнем)',    needsTarget: true,  targetSide: 'ai'   },
   ignite:          { key: 'ignite',          label: 'Підпал',            desc: 'Удар + підпал (X урону/хід N ходів)',      needsTarget: true,  targetSide: 'ai'   },
