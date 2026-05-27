@@ -19,7 +19,7 @@ const CLASS_INFO = [
     icon: '🏹',
     label: 'Лучники',
     row: 'Дальній ряд',
-    max: 3,
+    max: 4,
     unitCost: 1,
     color: '#c4a040',
     desc: 'Постріл або прицілення (+20% шанс бонусу на 3 ходи). Шанс 25% додаткового пострілу.',
@@ -29,7 +29,7 @@ const CLASS_INFO = [
     icon: '✨',
     label: 'Маги',
     row: 'Підтримка',
-    max: 2,
+    max: 4,
     unitCost: 1,
     color: '#7ea8c4',
     desc: 'Закляття або зцілення. Шанс 20% накласти дебаф на ворога (вибір гравця).',
@@ -59,7 +59,7 @@ export default function ArmyBuilder({ onStart }: Props) {
   function change(key: keyof ArmyCounts, delta: number) {
     setCounts(prev => {
       const prevTotal = prev.warriors + prev.archers + prev.mages + prev.catapults * 2
-      const effectiveMax = key === 'archers' ? (prev.catapults > 0 ? 2 : 3)
+      const effectiveMax = (key === 'archers' || key === 'mages') && prev.catapults > 0 ? 3
         : CLASS_INFO.find(c => c.key === key)!.max
       const unitCost = CLASS_INFO.find(c => c.key === key)!.unitCost
       const prevCost = key === 'catapults' ? prev[key] * 2 : prev[key]
@@ -68,7 +68,8 @@ export default function ArmyBuilder({ onStart }: Props) {
       const nextCost = key === 'catapults' ? next * 2 : next
       if (prevTotal - prevCost + nextCost > MAX_TOTAL) return prev
       const newCounts = { ...prev, [key]: next }
-      if (key === 'catapults' && next > 0 && prev.archers > 2) newCounts.archers = 2
+      if (key === 'catapults' && next > 0 && prev.archers > 3) newCounts.archers = 3
+      if (key === 'catapults' && next > 0 && prev.mages > 3)   newCounts.mages = 3
       return newCounts
     })
   }
@@ -90,7 +91,7 @@ export default function ArmyBuilder({ onStart }: Props) {
       <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {CLASS_INFO.map(info => {
           const count = counts[info.key]
-          const effectiveMax = info.key === 'archers' ? (counts.catapults > 0 ? 2 : 3) : info.max
+          const effectiveMax = (info.key === 'archers' || info.key === 'mages') && counts.catapults > 0 ? 3 : info.max
           const canAdd = count < effectiveMax && total + info.unitCost <= MAX_TOTAL
           return (
             <div key={info.key} style={{

@@ -3,26 +3,30 @@ export type Side = 'player' | 'ai'
 export type Row = 0 | 1 | 2
 
 export type BuffType =
-  | 'defense_up'    // warrior shield: +50% damage reduction this turn
-  | 'aimed'         // archer aim: fixed acc bonus + crit for 2 turns
-  | 'morale_up'     // knight battle cry: +N morale → +1% acc/eva per 10 morale
-  | 'armor_break'   // paladin sacred strike: -10% target armor for 1 turn
-  | 'poison'        // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
-  | 'burning'       // fire mage: X dmg/turn for N turns (like poison, no stack)
-  | 'frozen'        // water/earth: skip next turn (turnsLeft = 1)
-  | 'accuracy_down' // frost bolt / gust: -X% accuracy for N turns
-  | 'regen'         // ice shield lv3+ / stone skin lv3+: +X HP at turn start
-  | 'wind_shield'   // air lv4: +X% evasion
-  | 'fortress_buff' // earth lv5: +X% defense (party)
-  | 'thorns'        // stone skin lv3: attacker takes X dmg on hit
-  | 'taunt'         // warrior lv2 provoke: front-row enemies must target this unit
-  | 'initiative_up' // archer aim: +X initiative for queue ordering
+  | 'defense_up'      // warrior shield: +50% damage reduction this turn
+  | 'aimed'           // archer aim: fixed acc bonus + crit for 2 turns
+  | 'morale_up'       // knight battle cry: +N morale → +1% acc/eva per 10 morale
+  | 'armor_break'     // paladin sacred strike: -10% target armor for 1 turn
+  | 'poison'          // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
+  | 'burning'         // fire mage: X dmg/turn for N turns (like poison, no stack)
+  | 'frozen'          // water/earth: skip next turn (turnsLeft = 1)
+  | 'accuracy_down'   // frost bolt / gust: -X% accuracy for N turns
+  | 'accuracy_up'     // air tailwind: +X% accuracy for N turns
+  | 'regen'           // ice shield lv3+ / stone skin lv3+: +X HP at turn start
+  | 'wind_shield'     // air lv4: +X% evasion
+  | 'fortress_buff'   // earth lv5: +X% defense (party)
+  | 'thorns'          // stone skin lv3: attacker takes X dmg on hit
+  | 'taunt'           // warrior lv2 provoke: front-row enemies must target this unit
+  | 'initiative_up'   // archer aim / air tailwind: +X initiative for queue ordering
+  | 'initiative_down' // air wind_gust: -X initiative for N turns
+  | 'cooldown'        // hurricane / armageddon: action blocked for 2 turns (uses actionKey)
 
 export interface Buff {
   id: string
   type: BuffType
   value: number
   turnsLeft: number
+  actionKey?: ActionKey  // used by 'cooldown' to identify which action is blocked
 }
 
 export interface GameUnit {
@@ -91,10 +95,11 @@ export type ActionKey =
   | 'stone_skin'      // earth lv2-4: ally def buff (+ thorns at lv3+, regen at lv4+)
   | 'earthquake'      // earth lv5: rock_throw hits ALL enemies (half dmg)
   | 'fortress_aura'   // earth lv5: massive defense buff to all allies
-  | 'lightning_bolt'  // air lv2-4: high-crit damage (chains to extra targets at lv3+)
-  | 'gust'            // air lv2-4: accuracy_down debuff (stronger at higher levels)
-  | 'thunder_storm'   // air lv5: lightning_bolt hits ALL enemies
-  | 'hurricane'       // air lv5: massive single-target + frozen (skip turn)
+  | 'lightning_bolt'  // air (legacy): high-crit damage
+  | 'gust'            // air lv2-5: damage + 50% initiative_down passive (Порив вітру)
+  | 'tailwind'        // air lv3-5: +initiative% and +accuracy% to all allies (Попутний вітер)
+  | 'thunder_storm'   // air (legacy): lightning_bolt hits ALL enemies
+  | 'hurricane'       // air lv5: area 30-40 dmg + Громова дезорієнтація + 2-turn cooldown
   | 'provoke'         // warrior lv2: front-row enemies must target this unit + +20% defense
   | 'barrage'         // catapult: area strike, adjacents get 25–50% damage
   | 'grapeshot'       // catapult: all enemies in same row, -40% damage
@@ -149,8 +154,8 @@ export type BattleAction =
 
 export interface ArmyCounts {
   warriors: number   // 0–4, row 0
-  archers: number    // 0–2, row 1 (max 2 when catapult present)
-  mages: number      // 0–2, row 2
+  archers: number    // 0–4, row 1 (max 3 when catapult present, slot 2 reserved)
+  mages: number      // 0–4, row 2 (max 3 when catapult present, slot 2 reserved for base)
   catapults: number  // 0–1, row 1 slot 2 + row 2 slot 2 base; counts as 2 units
 }
 
@@ -165,9 +170,9 @@ export const TOWER_FLOORS: TowerFloor[] = [
   { floor: 2, name: 'Лісовий загін',        aiCounts: { warriors: 2, archers: 1, mages: 0, catapults: 0 } },
   { floor: 3, name: 'Гірський перевал',      aiCounts: { warriors: 3, archers: 1, mages: 1, catapults: 0 } },
   { floor: 4, name: 'Річкова переправа',     aiCounts: { warriors: 3, archers: 2, mages: 1, catapults: 0 } },
-  { floor: 5, name: 'Осадний табір',         aiCounts: { warriors: 4, archers: 2, mages: 1, catapults: 0 } },
-  { floor: 6, name: 'Замкові мури',          aiCounts: { warriors: 4, archers: 2, mages: 2, catapults: 0 } },
-  { floor: 7, name: 'Цитадель Серафітів',   aiCounts: { warriors: 4, archers: 1, mages: 2, catapults: 1 } },
+  { floor: 5, name: 'Осадний табір',         aiCounts: { warriors: 4, archers: 3, mages: 2, catapults: 0 } },
+  { floor: 6, name: 'Замкові мури',          aiCounts: { warriors: 4, archers: 4, mages: 2, catapults: 0 } },
+  { floor: 7, name: 'Цитадель Серафітів',   aiCounts: { warriors: 4, archers: 2, mages: 3, catapults: 1 } },
 ]
 
 // ── Mage level data ────────────────────────────────────────────────────────────
@@ -208,10 +213,10 @@ export const MAGE_PATHS: Record<MagePath, Record<number, MageLevelData>> = {
     5: { name: 'Архонт Землі',    hp: 165, minDmg: 20, maxDmg: 30, accuracy: 0.84, defense: 0.30, evasion: 0.08, initiative: 38, critChance: 0.10, critMult: 2.0, morale: 80, actions: ['earthquake', 'fortress_aura'], xpToNext: Infinity },
   },
   air: {
-    2: { name: 'Вітровий Маг',    hp:  70, minDmg: 13, maxDmg: 19, accuracy: 0.72, defense: 0,    evasion: 0.18, initiative: 42, critChance: 0.15, critMult: 2.5, morale: 55, actions: ['lightning_bolt', 'gust'],    xpToNext: 200 },
-    3: { name: 'Буревій',         hp:  88, minDmg: 16, maxDmg: 24, accuracy: 0.76, defense: 0,    evasion: 0.20, initiative: 46, critChance: 0.25, critMult: 2.5, morale: 60, actions: ['lightning_bolt', 'gust'],    xpToNext: 350 },
-    4: { name: 'Майстер Повітря', hp: 108, minDmg: 20, maxDmg: 29, accuracy: 0.80, defense: 0.05, evasion: 0.22, initiative: 50, critChance: 0.35, critMult: 3.0, morale: 65, actions: ['lightning_bolt', 'gust'],    xpToNext: 500 },
-    5: { name: 'Архонт Повітря',  hp: 130, minDmg: 24, maxDmg: 35, accuracy: 0.84, defense: 0.08, evasion: 0.24, initiative: 55, critChance: 0.45, critMult: 3.0, morale: 75, actions: ['thunder_storm', 'hurricane'], xpToNext: Infinity },
+    2: { name: 'Вітровий Маг',    hp:  70, minDmg: 13, maxDmg: 19, accuracy: 0.72, defense: 0, evasion: 0.20, initiative: 75, critChance: 0, critMult: 2.0, morale: 55, actions: ['gust'],                         xpToNext: 200 },
+    3: { name: 'Буревій',         hp:  85, minDmg: 16, maxDmg: 24, accuracy: 0.76, defense: 0, evasion: 0.22, initiative: 75, critChance: 0, critMult: 2.0, morale: 60, actions: ['gust', 'tailwind'],              xpToNext: 350 },
+    4: { name: 'Майстер Повітря', hp: 100, minDmg: 20, maxDmg: 29, accuracy: 0.80, defense: 0, evasion: 0.23, initiative: 75, critChance: 0, critMult: 2.0, morale: 65, actions: ['gust', 'tailwind'],              xpToNext: 500 },
+    5: { name: 'Архонт Повітря',  hp: 120, minDmg: 24, maxDmg: 35, accuracy: 0.84, defense: 0, evasion: 0.25, initiative: 75, critChance: 0, critMult: 2.0, morale: 75, actions: ['gust', 'tailwind', 'hurricane'], xpToNext: Infinity },
   },
 }
 

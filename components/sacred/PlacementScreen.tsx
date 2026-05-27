@@ -8,7 +8,7 @@ const SIDE_COLOR: Record<Side, string> = { player: '#6fa67a', ai: '#c07070' }
 const CLASS_ICON: Record<string, string> = { warrior: '⚔', archer: '🏹', mage: '✨', catapult: '⚙' }
 const CLASS_COLOR: Record<string, string> = { player: '#6fa67a', ai: '#c07070' }
 const ROW_LABEL: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд', 2: 'Підтримка' }
-const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 3 }
+const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4, 2: 4 }
 
 interface Props {
   counts: ArmyCounts

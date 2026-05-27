@@ -3,8 +3,9 @@
 import { useReducer, useEffect, useRef, useState } from 'react'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
+  generateRecruitOptions, addUnitToArmy,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass } from '@/lib/sacred/types'
 import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
@@ -20,12 +21,15 @@ const BUFF_ICON: Record<string, string> = {
   burning: '🔥',
   frozen: '❄',
   accuracy_down: '🌀',
+  accuracy_up: '🎯',
   regen: '💚',
   wind_shield: '💨',
   fortress_buff: '🏰',
   thorns: '🌿',
   taunt: '🗣',
   initiative_up: '⚡',
+  initiative_down: '🐢',
+  cooldown: '⏳',
 }
 
 const MAGE_PATH_ICON: Record<MagePath, string> = { fire: '🔥', water: '💧', earth: '🌿', air: '💨' }
@@ -833,7 +837,7 @@ function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: Ma
     fire:  'Сильний burst + підпал DoT. Фаєрбол посилюється, Інферно б\'є всіх.',
     water: 'Контроль + підтримка. Заморозка, крижаний щит, лікування команди.',
     earth: 'Незблокований урон + захист. Кам\'яна шкіра, тернії, Фортеця.',
-    air:   'Висока крит. шанс + дебафи. Ланцюг блискавок, Ураган, пориви вітру.',
+    air:   'Швидкий дезорієнтатор. Порив вітру (-ініціатива), Попутний вітер (+ініц. союзникам), Ураган (дезорієнтація).',
   }
   return (
     <>
@@ -873,6 +877,193 @@ function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: Ma
   )
 }
 
+// ── Recruitment screen ─────────────────────────────────────────────────────────
+const CLASS_LABEL_UA: Record<UnitClass, string> = {
+  warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта',
+}
+const CLASS_DESC_UA: Record<UnitClass, string> = {
+  warrior: 'Передній ряд. Ближній бій, щит, провокація.',
+  archer:  'Дальній ряд. Постріл, прицілення, пасивне отруєння.',
+  mage:    'Підтримка. Магічні атаки, шлях обирається після рівня 1.',
+  catapult: '',
+}
+
+function RecruitmentScreen({ options, onPick, onSkip }: {
+  options: GameUnit[]; onPick: (cls: UnitClass) => void; onSkip: () => void
+}) {
+  return (
+    <div style={{
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
+      fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', padding: '32px 24px',
+    }}>
+      <div style={{ fontSize: 28, marginBottom: 8 }}>🎖</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: '#b07850', marginBottom: 6 }}>Нове поповнення!</div>
+      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 28, textAlign: 'center' }}>
+        Після перемоги до тебе приєднується новий боєць. Обери одного:
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320 }}>
+        {options.map((u, i) => {
+          const AvatarSVG = CLASS_SVG[u.class]
+          return (
+            <button key={i} onClick={() => onPick(u.class)} style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
+              borderRadius: 12, border: '1.5px solid rgba(176,120,80,0.3)',
+              background: 'rgba(176,120,80,0.06)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+            }}>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(176,120,80,0.12)', border: '1.5px solid rgba(176,120,80,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AvatarSVG color="#b07850" size={26} />
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>{CLASS_LABEL_UA[u.class]}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{CLASS_DESC_UA[u.class]}</div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      <button onClick={onSkip} style={{
+        marginTop: 20, padding: '10px 24px', fontSize: 13, color: 'var(--muted)',
+        background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}>Пропустити</button>
+    </div>
+  )
+}
+
+// ── Arrange screen (between floors) ────────────────────────────────────────────
+function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: GameUnit[]) => void }) {
+  const [arranged, setArranged] = useState<GameUnit[]>(units)
+  const [selected, setSelected] = useState<string | null>(null)
+  const hasCatapult = arranged.some(u => u.class === 'catapult')
+
+  function handleSlotClick(row: Row, slot: number) {
+    if (hasCatapult && row === 2 && slot === 2) return
+    if (hasCatapult && row === 1 && slot === 2) { setSelected(null); return }
+    const occupant = arranged.find(u => u.row === row && u.slot === slot)
+    if (selected) {
+      const selUnit = arranged.find(u => u.id === selected)!
+      if (selUnit.row !== row) { setSelected(null); return } // same row only
+      if (occupant) {
+        setArranged(prev => prev.map(u => {
+          if (u.id === selUnit.id) return { ...u, slot: occupant.slot }
+          if (u.id === occupant.id) return { ...u, slot: selUnit.slot }
+          return u
+        }))
+      } else {
+        setArranged(prev => prev.map(u => u.id === selUnit.id ? { ...u, slot } : u))
+      }
+      setSelected(null)
+      return
+    }
+    if (occupant && occupant.class !== 'catapult') setSelected(occupant.id)
+  }
+
+  const rowLabel: Record<number, string> = { 0: 'Передній ряд (воїни)', 1: 'Дальній ряд (лучники)', 2: 'Підтримка (маги)' }
+
+  return (
+    <div style={{
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
+      fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
+    }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>✦ Розстановка армії</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>Натисни юніта, потім інший слот у тому ж ряду щоб поміняти</div>
+      </div>
+      <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
+        {([0, 1, 2] as Row[]).map(row => (
+          <div key={row} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+              {rowLabel[row]}
+            </div>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+              {Array.from({ length: 4 }, (_, i) => {
+                const isCatBase = hasCatapult && row === 2 && i === 2
+                const isCatSlot = hasCatapult && row === 1 && i === 2
+                const unit = arranged.find(u => u.row === row && u.slot === i)
+                const isSel = unit?.id === selected
+                const selUnit = selected ? arranged.find(u => u.id === selected) : null
+                const isTarget = selUnit && selUnit.row === row && !isCatBase && !isCatSlot && !unit && !isSel
+
+                if (isCatBase) return (
+                  <div key={i} style={{ width: 76, height: 86, borderRadius: 8, flexShrink: 0, border: '1.5px dashed rgba(128,96,168,0.25)', background: 'rgba(128,96,168,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 14, opacity: 0.4, color: '#8060a8' }}>⚙</span>
+                    <span style={{ fontSize: 7, color: '#8060a8', opacity: 0.5 }}>База</span>
+                  </div>
+                )
+
+                return (
+                  <div key={i} onClick={() => handleSlotClick(row, i)} style={{
+                    width: 76, height: 86, borderRadius: 8, flexShrink: 0,
+                    cursor: isCatSlot ? 'default' : 'pointer',
+                    background: isSel ? 'rgba(111,166,122,0.15)' : isTarget ? 'rgba(176,120,80,0.08)' : unit ? '#fff' : 'rgba(0,0,0,0.02)',
+                    border: `2px solid ${isSel ? '#6fa67a' : isTarget ? '#b0785066' : unit ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                    borderStyle: isTarget ? 'dashed' : 'solid',
+                    boxShadow: isSel ? '0 0 0 2px #6fa67a44' : 'none',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: 3, position: 'relative', overflow: 'hidden', transition: 'all 0.12s',
+                  }}>
+                    {unit ? (() => {
+                      const portrait = unit.class === 'warrior' ? `/sacred/warriors/level${unit.level ?? 1}.jpg`
+                        : unit.class === 'archer' ? `/sacred/archers/level${unit.level ?? 1}.jpg`
+                        : unit.class === 'mage' ? (unit.level === 1 || !unit.magePath ? `/sacred/mages/level1.jpg` : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
+                        : null
+                      const unitName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
+                        : unit.class === 'archer' ? ARCHER_LEVELS[unit.level ?? 1]?.name
+                        : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath ? MAGE_PATHS[unit.magePath][unit.level]?.name
+                        : unit.class === 'mage' ? MAGE_BASE.name : unit.name
+                      return portrait ? (
+                        <>
+                          <img src={portrait} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)' }} />
+                          <div style={{ position: 'relative', zIndex: 1, alignSelf: 'stretch', marginTop: 'auto', padding: '0 4px 4px' }}>
+                            <div style={{ fontSize: 8, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{unitName}</div>
+                            {isSel && <div style={{ fontSize: 7, color: '#7aaa82', fontWeight: 700 }}>ОБРАНИЙ</div>}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <CLASS_SVG_Component cls={unit.class} color={isSel ? '#6fa67a' : SIDE_COLOR.player} size={22} />
+                          <span style={{ fontSize: 8, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{unitName}</span>
+                          {isSel && <span style={{ fontSize: 7, color: '#6fa67a', fontWeight: 700 }}>ОБРАНИЙ</span>}
+                        </>
+                      )
+                    })() : (
+                      <span style={{ fontSize: isTarget ? 18 : 14, color: isTarget ? '#b0785066' : 'rgba(0,0,0,0.1)' }}>
+                        {isTarget ? '+' : '·'}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+        {selected && (
+          <div style={{ textAlign: 'center', fontSize: 12, color: '#b07850', padding: '4px 0' }}>
+            Натисни інший слот у тому ж ряду щоб поміняти · або юніта щоб поміняти місцями
+          </div>
+        )}
+      </div>
+      <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: '#fff' }}>
+        <button onClick={() => onDone(arranged)} style={{
+          width: '100%', padding: '14px', borderRadius: 10, border: 'none',
+          background: '#b07850', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}>
+          Продовжити →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Helper for ArrangeScreen SVG
+function CLASS_SVG_Component({ cls, color, size }: { cls: string; color: string; size?: number }) {
+  const Comp = CLASS_SVG[cls]
+  return Comp ? <Comp color={color} size={size} /> : null
+}
+
 // ── Tower helpers ──────────────────────────────────────────────────────────────
 const LS_TOWER_FLOOR  = 'sacred_tower_floor'
 const LS_TOWER_UNITS  = 'sacred_tower_units'
@@ -889,7 +1080,7 @@ function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[])
 }
 
 // ── Battle component ───────────────────────────────────────────────────────────
-const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 3, 2: 3 }
+const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4, 2: 4 }
 
 function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowerLose }: {
   counts: ArmyCounts; playerUnits?: GameUnit[]; onRestart: () => void
@@ -1147,6 +1338,12 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
                   if (a === 'aim' && actor) {
                     disabled = actor.buffs.some(b => b.type === 'aimed')
                   }
+                  if ((a === 'hurricane' || a === 'armageddon') && actor) {
+                    disabled = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
+                  }
+                  if (a === 'tailwind' && actor) {
+                    disabled = state.units.some(u => u.side === actor.side && u.buffs.some(b => b.type === 'accuracy_up'))
+                  }
                   return (
                     <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
                       onSelect={() => handleSelectAction(a)} disabled={disabled} />
@@ -1332,7 +1529,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
 }
 
 // ── Root component ─────────────────────────────────────────────────────────────
-type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle'
+type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange'
 
 export default function SacredGame() {
   const [screen, setScreen] = useState<RootScreen>('landing')
@@ -1343,6 +1540,7 @@ export default function SacredGame() {
   const [towerCounts, setTowerCounts] = useState<ArmyCounts | null>(null)
   const [towerUnits, setTowerUnits] = useState<GameUnit[] | null>(null)
   const [savedTowerFloor, setSavedTowerFloor] = useState<number | null>(null)
+  const [pendingRecruitmentOptions, setPendingRecruitmentOptions] = useState<GameUnit[] | null>(null)
 
   useEffect(() => {
     try {
@@ -1423,9 +1621,35 @@ export default function SacredGame() {
       return
     }
     const nextUnits = prepareNextFloorUnits(towerCounts!, battleUnits)
-    saveTowerProgress(nextIdx + 1, nextUnits, towerCounts!)
     setTowerFloorIdx(nextIdx)
     setTowerUnits(nextUnits)
+    // Recruitment offered after floors 3 and 5 (indices 2 and 4)
+    if (towerFloorIdx === 2 || towerFloorIdx === 4) {
+      const opts = generateRecruitOptions(nextUnits)
+      if (opts.length > 0) {
+        setPendingRecruitmentOptions(opts)
+        setScreen('recruitment')
+        return
+      }
+    }
+    saveTowerProgress(nextIdx + 1, nextUnits, towerCounts!)
+    setScreen('arrange')
+  }
+
+  function handleRecruitmentComplete(cls: UnitClass | null) {
+    let newUnits = towerUnits!
+    if (cls !== null) {
+      newUnits = addUnitToArmy(newUnits, cls)
+      setTowerUnits(newUnits)
+    }
+    setPendingRecruitmentOptions(null)
+    saveTowerProgress(towerFloorIdx + 1, newUnits, towerCounts!)
+    setScreen('arrange')
+  }
+
+  function handleArrangeComplete(arranged: GameUnit[]) {
+    setTowerUnits(arranged)
+    saveTowerProgress(towerFloorIdx + 1, arranged, towerCounts!)
     setScreen('tower-map')
   }
 
@@ -1468,6 +1692,19 @@ export default function SacredGame() {
       towerFloor={TOWER_FLOORS[towerFloorIdx]}
       onTowerWin={handleTowerWin}
       onTowerLose={handleTowerLose}
+    />
+  )
+  if (screen === 'recruitment') return (
+    <RecruitmentScreen
+      options={pendingRecruitmentOptions!}
+      onPick={(cls) => handleRecruitmentComplete(cls)}
+      onSkip={() => handleRecruitmentComplete(null)}
+    />
+  )
+  if (screen === 'arrange') return (
+    <ArrangeScreen
+      units={towerUnits!}
+      onDone={handleArrangeComplete}
     />
   )
   return <Battle counts={counts!} playerUnits={playerUnits ?? undefined} onRestart={() => setScreen('landing')} />
