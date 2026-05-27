@@ -241,7 +241,11 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const portraitSrc = unit.level
     ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
      : unit.class === 'archer'  ? `/sacred/archers/level${unit.level}.jpg`
-     : null)
+     : unit.class === 'mage'
+       ? (unit.level === 1 || !unit.magePath
+           ? `/sacred/mages/level1.jpg`
+           : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
+       : null)
     : null
 
   const pulseClass = isActive
@@ -561,7 +565,11 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
   const sheetPortrait = unit.level
     ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
      : unit.class === 'archer'  ? `/sacred/archers/level${unit.level}.jpg`
-     : null)
+     : unit.class === 'mage'
+       ? (unit.level === 1 || !unit.magePath
+           ? `/sacred/mages/level1.jpg`
+           : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
+       : null)
     : null
   const levelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                   : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
