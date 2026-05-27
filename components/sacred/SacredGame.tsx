@@ -301,7 +301,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
               position: 'relative', zIndex: 1, height: '100%',
               display: 'flex', flexDirection: 'column', padding: '5px 5px 5px',
             }}>
-              {/* Top row: ХОДА / ➜ + Lv badge */}
+              {/* Top row: buff icons + ХОДА badge */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   {unit.buffs.length > 0 && (
@@ -314,18 +314,10 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                <div>
                   {isActive && (
                     <span style={{ fontSize: 7, color: '#fff', fontWeight: 700, background: 'rgba(176,120,80,0.9)', borderRadius: 3, padding: '1px 4px' }}>
                       ХОДА
-                    </span>
-                  )}
-                  {isTargetable && !isActive && (
-                    <span style={{ fontSize: 10, color: '#fff', fontWeight: 700, lineHeight: 1 }}>➜</span>
-                  )}
-                  {unit.level && (
-                    <span style={{ fontSize: 7, fontWeight: 700, background: 'rgba(255,255,255,0.9)', color: '#b07850', borderRadius: 3, padding: '1px 4px', maxWidth: 44, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {unitLevelName ?? `Lv${unit.level}`}
                     </span>
                   )}
                 </div>
@@ -334,13 +326,10 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
               {/* Spacer */}
               <div style={{ flex: 1 }} />
 
-              {/* Bottom: name + HP */}
+              {/* Bottom: rank name + HP */}
               <div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: '#fff', lineHeight: 1.2, marginBottom: 2, textShadow: '0 1px 3px rgba(0,0,0,0.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {unit.name}
-                </div>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums', marginBottom: 3, textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}>
-                  {unit.hp}/{unit.maxHp}
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#fff', lineHeight: 1.2, marginBottom: 3, textShadow: '0 1px 3px rgba(0,0,0,0.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {unitLevelName ?? unit.name}
                 </div>
                 {/* HP bar */}
                 <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 2 }}>

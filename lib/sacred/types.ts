@@ -223,7 +223,7 @@ export interface ArcherLevelData {
 
 export const ARCHER_LEVELS: Record<number, ArcherLevelData> = {
   1: {
-    name: 'Scout',
+    name: 'Розвідник',
     hp: 65, minDmg: 12, maxDmg: 18, accuracy: 0.85, defense: 0,    evasion: 0.15,
     initiative: 60, critChance: 0,    critMult: 2.0, morale: 50,
     actions: ['shot', 'aim'],
@@ -231,7 +231,7 @@ export const ARCHER_LEVELS: Record<number, ArcherLevelData> = {
     xpToNext: 100,
   },
   2: {
-    name: 'Hunter',
+    name: 'Мисливець',
     hp: 90, minDmg: 16, maxDmg: 24, accuracy: 0.88, defense: 0.05, evasion: 0.18,
     initiative: 63, critChance: 0.08, critMult: 2.0, morale: 55,
     actions: ['shot', 'aim', 'poison_shot'],
@@ -239,7 +239,7 @@ export const ARCHER_LEVELS: Record<number, ArcherLevelData> = {
     xpToNext: 200,
   },
   3: {
-    name: 'Ranger',
+    name: 'Рейнджер',
     hp: 120, minDmg: 22, maxDmg: 32, accuracy: 0.92, defense: 0.10, evasion: 0.22,
     initiative: 68, critChance: 0.18, critMult: 2.5, morale: 65,
     actions: ['shot', 'aim', 'double_shot'],
@@ -261,28 +261,28 @@ export interface WarriorLevelData {
 
 export const WARRIOR_LEVELS: Record<number, WarriorLevelData> = {
   1: {
-    name: 'Squire',
+    name: 'Зброєносець',
     hp: 80, minDmg: 10, maxDmg: 15, accuracy: 0.80, defense: 0,    evasion: 0.15,
     initiative: 50, critChance: 0,    critMult: 2.0, morale: 50,
     actions: ['strike', 'shield'],
     frontLineBonus: 0.20, xpToNext: 100,
   },
   2: {
-    name: 'Soldier',
+    name: 'Солдат',
     hp: 110, minDmg: 14, maxDmg: 20, accuracy: 0.85, defense: 0.10, evasion: 0.12,
     initiative: 52, critChance: 0.05, critMult: 1.5, morale: 55,
     actions: ['strike', 'shield'],
     frontLineBonus: 0.20, xpToNext: 200,
   },
   3: {
-    name: 'Knight',
+    name: 'Лицар',
     hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.88, defense: 0.20, evasion: 0.10,
     initiative: 55, critChance: 0.12, critMult: 1.75, morale: 65,
     actions: ['strike', 'shield', 'battle_cry'],
     frontLineBonus: 0.25, xpToNext: 350,
   },
   4: {
-    name: 'Paladin',
+    name: 'Паладін',
     hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.92, defense: 0.35, evasion: 0.08,
     initiative: 60, critChance: 0.18, critMult: 2.0, morale: 80,
     actions: ['sacred_strike', 'shield', 'consecration'],
