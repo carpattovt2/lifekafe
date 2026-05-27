@@ -541,6 +541,7 @@ export function executeAction(
           update({ ...enemy, hp: Math.max(0, enemy.hp - res.damage) })
           if (getUnit(enemy.id).hp === 0) newLogs.push(log(`☠ ${enemy.name} гине!`, 'death'))
         }
+        if (res.hit && !res.evaded) hitLanded = true
       }
       break
     }
@@ -555,6 +556,7 @@ export function executeAction(
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
+      if (res.hit && !res.evaded) hitLanded = true
       break
     }
 
@@ -647,6 +649,7 @@ export function executeAction(
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
       if (res.hit && !res.evaded) {
+        hitLanded = true
         const tgt = getUnit(target.id)
         if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning')) {
           update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', burnDmg, burnDur + 1)] })
@@ -672,6 +675,7 @@ export function executeAction(
           if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
         }
         if (res.hit && !res.evaded) {
+          hitLanded = true
           const tgt = getUnit(e.id)
           if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning')) {
             update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', 7, 4)] })
@@ -696,6 +700,7 @@ export function executeAction(
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
       if (res.hit && !res.evaded) {
+        hitLanded = true
         const tgt = getUnit(target.id)
         if (tgt.hp > 0) {
           if (freeze) {
@@ -740,6 +745,7 @@ export function executeAction(
           if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
         }
         if (res.hit && !res.evaded) {
+          hitLanded = true
           const tgt = getUnit(e.id)
           if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'frozen')) {
             update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
@@ -781,6 +787,7 @@ export function executeAction(
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
       if (res.hit) {
+        hitLanded = true
         const tgt = getUnit(target.id)
         if (tgt.hp > 0) {
           if (stun) {
@@ -827,6 +834,7 @@ export function executeAction(
           if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
         }
         if (res.hit) {
+          hitLanded = true
           const tgt = getUnit(e.id)
           if (tgt.hp > 0) {
             update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', 0.25, 3)] })
@@ -862,6 +870,7 @@ export function executeAction(
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
+      if (res.hit && !res.evaded) hitLanded = true
       // Chain to extra targets
       if (chainCount > 0 && res.hit && !res.evaded) {
         const extras = units
@@ -915,6 +924,7 @@ export function executeAction(
           update({ ...e, hp: Math.max(0, e.hp - res.damage) })
           if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
         }
+        if (res.hit && !res.evaded) hitLanded = true
       }
       break
     }
@@ -929,6 +939,7 @@ export function executeAction(
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
       if (res.hit && !res.evaded) {
+        hitLanded = true
         const tgt = getUnit(target.id)
         if (tgt.hp > 0) {
           update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
@@ -1236,14 +1247,21 @@ function advanceQueue(state: BattleState): BattleState {
 
   if (idx >= queue.length) {
     round++
-    // Award round-survival XP to all living warriors and archers
+    // Award round-survival XP to all living units
     const roundLogs: LogEntry[] = []
     const roundEvents: BattleEvent[] = []
-    for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer') && x.hp > 0)) {
-      const updated = u.class === 'warrior'
-        ? grantWarriorXp(u, 15, roundLogs, roundEvents)
-        : grantArcherXp(u, 15, roundLogs, roundEvents)
-      units = units.map(x => x.id === updated.id ? updated : x)
+    for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage') && x.hp > 0)) {
+      if (u.class === 'warrior') {
+        const updated = grantWarriorXp(u, 15, roundLogs, roundEvents)
+        units = units.map(x => x.id === updated.id ? updated : x)
+      } else if (u.class === 'archer') {
+        const updated = grantArcherXp(u, 15, roundLogs, roundEvents)
+        units = units.map(x => x.id === updated.id ? updated : x)
+      } else if (u.class === 'mage') {
+        const { unit: updated, pendingChoice } = grantMageXp(u, 15, roundLogs, roundEvents)
+        units = units.map(x => x.id === updated.id ? updated : x)
+        // pendingChoice from round XP handled after advanceQueue returns
+      }
     }
     state = {
       ...state, units,
