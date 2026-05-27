@@ -4,8 +4,8 @@ import { useReducer, useEffect, useRef, useState } from 'react'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor } from '@/lib/sacred/types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS, TOWER_FLOORS } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 
@@ -17,7 +17,18 @@ const BUFF_ICON: Record<string, string> = {
   morale_up: '📯',
   armor_break: '💔',
   poison: '🧪',
+  burning: '🔥',
+  frozen: '❄',
+  accuracy_down: '🌀',
+  regen: '💚',
+  wind_shield: '💨',
+  fortress_buff: '🏰',
+  thorns: '🌿',
 }
+
+const MAGE_PATH_ICON: Record<MagePath, string> = { fire: '🔥', water: '💧', earth: '🌿', air: '💨' }
+const MAGE_PATH_NAME: Record<MagePath, string> = { fire: 'Вогонь', water: 'Вода', earth: 'Земля', air: 'Повітря' }
+const MAGE_PATH_COLOR: Record<MagePath, string> = { fire: '#c0392b', water: '#2980b9', earth: '#27ae60', air: '#8e44ad' }
 const BUFF_LABEL: Record<string, string> = {
   defense_up: '+50% броні цей хід',
 }
@@ -223,7 +234,10 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const AvatarSVG = CLASS_SVG[unit.class]
   const unitLevelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                       : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
-                      : undefined
+                      : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath
+                        ? MAGE_PATHS[unit.magePath][unit.level]?.name
+                        : unit.class === 'mage' ? MAGE_BASE.name
+                        : undefined
   const portraitSrc = unit.level
     ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
      : unit.class === 'archer'  ? `/sacred/archers/level${unit.level}.jpg`
@@ -529,6 +543,13 @@ function getActionsForSheet(unit: GameUnit): { key: ActionKey; extra?: string }[
     const lvlActions = ARCHER_LEVELS[unit.level ?? 1]?.actions ?? ['shot', 'aim']
     return lvlActions.map(key => ({ key, extra: ACTION_EXTRA[key] }))
   }
+  if (unit.class === 'mage') {
+    const lvl = unit.level ?? 1
+    const actions = lvl === 1 || !unit.magePath
+      ? MAGE_BASE.actions
+      : MAGE_PATHS[unit.magePath][lvl]?.actions ?? MAGE_BASE.actions
+    return actions.map(key => ({ key, extra: ACTION_EXTRA[key] }))
+  }
   return (CLASS_ACTIONS_INFO[unit.class] ?? []).map(a => ({ ...a, extra: ACTION_EXTRA[a.key] }))
 }
 
@@ -544,10 +565,15 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
     : null
   const levelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                   : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
-                  : undefined
-  const maxLevel = unit.class === 'warrior' ? 4 : unit.class === 'archer' ? 3 : 0
+                  : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath
+                    ? MAGE_PATHS[unit.magePath][unit.level]?.name
+                    : unit.class === 'mage' ? MAGE_BASE.name
+                    : undefined
+  const maxLevel = unit.class === 'warrior' ? 4 : unit.class === 'archer' ? 3 : unit.class === 'mage' ? 5 : 0
   const nextLevelName = unit.class === 'warrior' ? WARRIOR_LEVELS[(unit.level ?? 1) + 1]?.name
                       : unit.class === 'archer'  ? ARCHER_LEVELS[(unit.level ?? 1) + 1]?.name
+                      : unit.class === 'mage' && unit.magePath ? MAGE_PATHS[unit.magePath][(unit.level ?? 1) + 1]?.name
+                      : unit.class === 'mage' ? '?'
                       : undefined
   const stats: [string, string][] = [
     ['⚔ Урон', `${unit.minDmg}–${unit.maxDmg}`],
@@ -799,6 +825,53 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
   )
 }
 
+// ── Mage path choice modal ────────────────────────────────────────────────────
+function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: MagePath) => void }) {
+  const paths: MagePath[] = ['fire', 'water', 'earth', 'air']
+  const pathDesc: Record<MagePath, string> = {
+    fire:  'Сильний burst + підпал DoT. Фаєрбол посилюється, Інферно б\'є всіх.',
+    water: 'Контроль + підтримка. Заморозка, крижаний щит, лікування команди.',
+    earth: 'Незблокований урон + захист. Кам\'яна шкіра, тернії, Фортеця.',
+    air:   'Висока крит. шанс + дебафи. Ланцюг блискавок, Ураган, пориви вітру.',
+  }
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }} />
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 560, background: '#faf8f5',
+        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 20px 32px',
+        fontFamily: "'Inter', sans-serif",
+      }}>
+        <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 16px' }} />
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#b07850', textAlign: 'center', marginBottom: 4 }}>
+          ⭐ {unit.name} готовий до еволюції!
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginBottom: 18 }}>
+          Обери шлях мага — це вплине на всі наступні рівні
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {paths.map(path => (
+            <button key={path} onClick={() => onChoose(path)} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
+              borderRadius: 12, border: `1.5px solid ${MAGE_PATH_COLOR[path]}44`,
+              background: `${MAGE_PATH_COLOR[path]}08`, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+            }}>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>{MAGE_PATH_ICON[path]}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: MAGE_PATH_COLOR[path], marginBottom: 2 }}>
+                  {MAGE_PATH_ICON[path]} {MAGE_PATH_NAME[path]} — {MAGE_PATHS[path][2].name}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Tower helpers ──────────────────────────────────────────────────────────────
 const LS_TOWER_FLOOR  = 'sacred_tower_floor'
 const LS_TOWER_UNITS  = 'sacred_tower_units'
@@ -834,7 +907,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
-  const mainActions = actor ? getMainActions(actor.class, actor.level) : []
+  const mainActions = actor ? getMainActions(actor.class, actor.level, actor.magePath) : []
 
   const targetIds = actor && state.selectedAction
     ? getValidTargets(actor, state.selectedAction, state.units)
@@ -891,6 +964,10 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
   const bannerBg = state.phase === 'player-turn'
     ? 'rgba(111,166,122,0.95)' : 'rgba(192,112,112,0.95)'
 
+  const pendingMage = state.pendingMageLevelUp
+    ? state.units.find(u => u.id === state.pendingMageLevelUp && u.side === 'player') ?? null
+    : null
+
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column',
@@ -929,7 +1006,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
       <div
         ref={battlefieldRef}
         style={{
-          flex: 1, padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 2,
+          flex: 1, padding: '10px 16px 270px', display: 'flex', flexDirection: 'column', gap: 2,
           position: 'relative',
           backgroundImage: [
             'repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(176,120,80,0.04) 23px, rgba(176,120,80,0.04) 24px)',
@@ -991,11 +1068,17 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
         </div>
       </div>
 
-      {/* Action panel — fixed height so battlefield never jumps */}
+      {/* Fixed bottom panel */}
       <div style={{
-        minHeight: 128, display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        borderTop: '1px solid var(--border)', background: '#fff',
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 560, zIndex: 20,
+        background: '#fff', borderTop: '1px solid var(--border)',
+        boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
       }}>
+        {/* Action area */}
+        <div style={{
+          minHeight: 118, display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        }}>
         {state.phase === 'game-over' ? (
           towerFloor ? (
             <div style={{ padding: '16px 20px', textAlign: 'center' }}>
@@ -1072,11 +1155,19 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
             {state.phase === 'ai-thinking' ? `${actor?.name ?? 'Ворог'} думає...` : ''}
           </div>
         )}
+        </div>
+
+        {/* Compact battle log */}
+        <BattleLog entries={state.log} />
       </div>
 
-      <BattleLog entries={state.log} />
-
       {infoUnit && <UnitInfoSheet unit={infoUnit} onClose={() => setInfoUnit(null)} />}
+      {pendingMage && (
+        <MagePathModal
+          unit={pendingMage}
+          onChoose={path => dispatch({ type: 'CHOOSE_MAGE_PATH', unitId: pendingMage.id, path })}
+        />
+      )}
     </div>
   )
 }
@@ -1186,8 +1277,11 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
               const color = SIDE_COLOR.player
               const levelName = u.class === 'warrior' ? WARRIOR_LEVELS[u.level ?? 1]?.name
                               : u.class === 'archer'  ? ARCHER_LEVELS[u.level ?? 1]?.name
-                              : undefined
-              const maxLevel = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : 0
+                              : u.class === 'mage' && u.level && u.level > 1 && u.magePath
+                                ? MAGE_PATHS[u.magePath][u.level]?.name
+                                : u.class === 'mage' ? MAGE_BASE.name
+                                : undefined
+              const maxLevel = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : u.class === 'mage' ? 5 : 0
               const xpPct = maxLevel > 0 && (u.level ?? 1) < maxLevel
                 ? Math.min(100, ((u.xp ?? 0) / (u.xpToNext ?? 1)) * 100) : 0
               return (

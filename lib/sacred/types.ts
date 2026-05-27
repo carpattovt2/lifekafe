@@ -3,11 +3,18 @@ export type Side = 'player' | 'ai'
 export type Row = 0 | 1 | 2
 
 export type BuffType =
-  | 'defense_up'   // warrior shield: +50% damage reduction this turn
-  | 'aimed'        // archer aim: fixed acc bonus + crit for 2 turns
-  | 'morale_up'    // knight battle cry: +N morale → +1% acc/eva per 10 morale
-  | 'armor_break'  // paladin sacred strike: -10% target armor for 1 turn
-  | 'poison'       // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
+  | 'defense_up'    // warrior shield: +50% damage reduction this turn
+  | 'aimed'         // archer aim: fixed acc bonus + crit for 2 turns
+  | 'morale_up'     // knight battle cry: +N morale → +1% acc/eva per 10 morale
+  | 'armor_break'   // paladin sacred strike: -10% target armor for 1 turn
+  | 'poison'        // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
+  | 'burning'       // fire mage: X dmg/turn for N turns (like poison, no stack)
+  | 'frozen'        // water/earth: skip next turn (turnsLeft = 1)
+  | 'accuracy_down' // frost bolt / gust: -X% accuracy for N turns
+  | 'regen'         // ice shield lv3+ / stone skin lv3+: +X HP at turn start
+  | 'wind_shield'   // air lv4: +X% evasion
+  | 'fortress_buff' // earth lv5: +X% defense (party)
+  | 'thorns'        // stone skin lv3: attacker takes X dmg on hit
 
 export interface Buff {
   id: string
@@ -40,11 +47,22 @@ export interface GameUnit {
   buffs: Buff[]
   hasActed: boolean
 
-  // Warrior-only level system
+  // Level system (warrior, archer, mage)
   level?: number
   xp?: number
   xpToNext?: number
+
+  // Mage-only
+  magePath?: MagePath
+
+  // Elemental resistances (0–1, default 0)
+  fireRes?: number
+  waterRes?: number
+  earthRes?: number
+  airRes?: number
 }
+
+export type MagePath = 'fire' | 'water' | 'earth' | 'air'
 
 export type ActionKey =
   | 'strike'          // warrior: melee attack (adjacent slots, same row)
@@ -56,8 +74,22 @@ export type ActionKey =
   | 'aim'             // archer: +25–40% acc + crit for 2 turns (crit% scales with level)
   | 'poison_shot'     // hunter (lv2): shot + poison 4dmg/turn for 3 turns, no stack
   | 'double_shot'     // ranger (lv3): two shots, second -15% acc
-  | 'chain_lightning' // mage: hits all enemies, full damage each
-  | 'fireball'        // mage: ×3 damage to single target
+  | 'chain_lightning' // mage lv1: hits all enemies, full damage each
+  | 'fireball'        // mage lv1 / fire lv2-5: ×N damage to single target (scales with level)
+  | 'ignite'          // fire lv2-4: single target burn DoT (dmg + burning)
+  | 'inferno'         // fire lv5: fireball hits ALL enemies
+  | 'frost_bolt'      // water lv2-4: damage + accuracy_down debuff
+  | 'ice_shield'      // water lv2-4: ally +def buff (+ regen at lv3+, freeze at lv4)
+  | 'blizzard'        // water lv5: frost_bolt hits ALL enemies
+  | 'tidal_heal'      // water lv5: heal all allies
+  | 'rock_throw'      // earth lv2-4: unblockable damage (ignores evasion + acc_down at lv3+)
+  | 'stone_skin'      // earth lv2-4: ally def buff (+ thorns at lv3+, regen at lv4+)
+  | 'earthquake'      // earth lv5: rock_throw hits ALL enemies (half dmg)
+  | 'fortress_aura'   // earth lv5: massive defense buff to all allies
+  | 'lightning_bolt'  // air lv2-4: high-crit damage (chains to extra targets at lv3+)
+  | 'gust'            // air lv2-4: accuracy_down debuff (stronger at higher levels)
+  | 'thunder_storm'   // air lv5: lightning_bolt hits ALL enemies
+  | 'hurricane'       // air lv5: massive single-target + frozen (skip turn)
   | 'barrage'         // catapult: area strike, adjacents get 25–50% damage
   | 'grapeshot'       // catapult: all enemies in same row, -40% damage
 
@@ -97,6 +129,8 @@ export interface BattleState {
   selectedAction: ActionKey | null
   needsTarget: boolean
   events: BattleEvent[]
+
+  pendingMageLevelUp?: string  // unitId of mage awaiting path choice
 }
 
 export type BattleAction =
@@ -105,6 +139,7 @@ export type BattleAction =
   | { type: 'CANCEL_ACTION' }
   | { type: 'AI_TAKE_TURN' }
   | { type: 'ADVANCE_QUEUE' }
+  | { type: 'CHOOSE_MAGE_PATH'; unitId: string; path: MagePath }
 
 export interface ArmyCounts {
   warriors: number   // 0–4, row 0
@@ -128,6 +163,51 @@ export const TOWER_FLOORS: TowerFloor[] = [
   { floor: 6, name: 'Замкові мури',          aiCounts: { warriors: 4, archers: 2, mages: 2, catapults: 0 } },
   { floor: 7, name: 'Цитадель Серафітів',   aiCounts: { warriors: 4, archers: 1, mages: 2, catapults: 1 } },
 ]
+
+// ── Mage level data ────────────────────────────────────────────────────────────
+export interface MageLevelData {
+  name: string
+  hp: number; minDmg: number; maxDmg: number
+  accuracy: number; defense: number; evasion: number
+  initiative: number; critChance: number; critMult: number; morale: number
+  actions: ActionKey[]
+  xpToNext: number
+}
+
+export const MAGE_BASE: MageLevelData = {
+  name: 'Учень',
+  hp: 55, minDmg: 7, maxDmg: 10, accuracy: 0.60, defense: 0, evasion: 0.10,
+  initiative: 30, critChance: 0, critMult: 2.0, morale: 50,
+  actions: ['chain_lightning', 'fireball'],
+  xpToNext: 100,
+}
+
+export const MAGE_PATHS: Record<MagePath, Record<number, MageLevelData>> = {
+  fire: {
+    2: { name: 'Підпалювач',      hp:  75, minDmg: 12, maxDmg: 18, accuracy: 0.68, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0.05, critMult: 2.0, morale: 55, actions: ['fireball', 'ignite'],   xpToNext: 200 },
+    3: { name: 'Піромант',        hp:  95, minDmg: 15, maxDmg: 22, accuracy: 0.72, defense: 0.05, evasion: 0.10, initiative: 38, critChance: 0.10, critMult: 2.0, morale: 60, actions: ['fireball', 'ignite'],   xpToNext: 350 },
+    4: { name: 'Майстер Вогню',   hp: 115, minDmg: 18, maxDmg: 26, accuracy: 0.76, defense: 0.10, evasion: 0.10, initiative: 40, critChance: 0.15, critMult: 2.0, morale: 65, actions: ['fireball', 'ignite'],   xpToNext: 500 },
+    5: { name: 'Архонт Полум\'я', hp: 140, minDmg: 22, maxDmg: 32, accuracy: 0.80, defense: 0.15, evasion: 0.10, initiative: 42, critChance: 0.20, critMult: 2.5, morale: 75, actions: ['fireball', 'inferno'],  xpToNext: Infinity },
+  },
+  water: {
+    2: { name: 'Льодовий Маг',    hp:  80, minDmg: 10, maxDmg: 16, accuracy: 0.70, defense: 0.05, evasion: 0.12, initiative: 36, critChance: 0.05, critMult: 2.0, morale: 55, actions: ['frost_bolt', 'ice_shield'],  xpToNext: 200 },
+    3: { name: 'Кріомант',        hp: 100, minDmg: 13, maxDmg: 20, accuracy: 0.74, defense: 0.10, evasion: 0.12, initiative: 38, critChance: 0.08, critMult: 2.0, morale: 60, actions: ['frost_bolt', 'ice_shield'],  xpToNext: 350 },
+    4: { name: 'Майстер Води',    hp: 120, minDmg: 15, maxDmg: 23, accuracy: 0.78, defense: 0.15, evasion: 0.12, initiative: 40, critChance: 0.12, critMult: 2.0, morale: 65, actions: ['frost_bolt', 'ice_shield'],  xpToNext: 500 },
+    5: { name: 'Морський Архонт', hp: 145, minDmg: 18, maxDmg: 27, accuracy: 0.82, defense: 0.20, evasion: 0.12, initiative: 42, critChance: 0.15, critMult: 2.0, morale: 75, actions: ['blizzard', 'tidal_heal'],    xpToNext: Infinity },
+  },
+  earth: {
+    2: { name: 'Маг Каменю',      hp:  90, minDmg: 11, maxDmg: 17, accuracy: 0.72, defense: 0.08, evasion: 0.08, initiative: 32, critChance: 0,    critMult: 2.0, morale: 60, actions: ['rock_throw', 'stone_skin'],  xpToNext: 200 },
+    3: { name: 'Геомант',         hp: 110, minDmg: 14, maxDmg: 21, accuracy: 0.76, defense: 0.15, evasion: 0.08, initiative: 34, critChance: 0.05, critMult: 2.0, morale: 65, actions: ['rock_throw', 'stone_skin'],  xpToNext: 350 },
+    4: { name: 'Майстер Землі',   hp: 135, minDmg: 17, maxDmg: 25, accuracy: 0.80, defense: 0.22, evasion: 0.08, initiative: 36, critChance: 0.08, critMult: 2.0, morale: 70, actions: ['rock_throw', 'stone_skin'],  xpToNext: 500 },
+    5: { name: 'Архонт Землі',    hp: 165, minDmg: 20, maxDmg: 30, accuracy: 0.84, defense: 0.30, evasion: 0.08, initiative: 38, critChance: 0.10, critMult: 2.0, morale: 80, actions: ['earthquake', 'fortress_aura'], xpToNext: Infinity },
+  },
+  air: {
+    2: { name: 'Вітровий Маг',    hp:  70, minDmg: 13, maxDmg: 19, accuracy: 0.72, defense: 0,    evasion: 0.18, initiative: 42, critChance: 0.15, critMult: 2.5, morale: 55, actions: ['lightning_bolt', 'gust'],    xpToNext: 200 },
+    3: { name: 'Буревій',         hp:  88, minDmg: 16, maxDmg: 24, accuracy: 0.76, defense: 0,    evasion: 0.20, initiative: 46, critChance: 0.25, critMult: 2.5, morale: 60, actions: ['lightning_bolt', 'gust'],    xpToNext: 350 },
+    4: { name: 'Майстер Повітря', hp: 108, minDmg: 20, maxDmg: 29, accuracy: 0.80, defense: 0.05, evasion: 0.22, initiative: 50, critChance: 0.35, critMult: 3.0, morale: 65, actions: ['lightning_bolt', 'gust'],    xpToNext: 500 },
+    5: { name: 'Архонт Повітря',  hp: 130, minDmg: 24, maxDmg: 35, accuracy: 0.84, defense: 0.08, evasion: 0.24, initiative: 55, critChance: 0.45, critMult: 3.0, morale: 75, actions: ['thunder_storm', 'hurricane'], xpToNext: Infinity },
+  },
+}
 
 // ── Archer level data ──────────────────────────────────────────────────────────
 export interface ArcherLevelData {

@@ -1,9 +1,9 @@
 import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
   ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
-  ArmyCounts, BattleEvent, WarriorLevelData, ArcherLevelData,
+  ArmyCounts, BattleEvent, WarriorLevelData, ArcherLevelData, MagePath, MageLevelData,
 } from './types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS } from './types'
+import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS } from './types'
 
 // ── Unit templates ─────────────────────────────────────────────────────────────
 type Template = Omit<GameUnit, 'id' | 'side' | 'row' | 'slot' | 'name' | 'buffs' | 'hasActed' | 'level' | 'xp' | 'xpToNext'>
@@ -47,13 +47,13 @@ function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number): GameUnit 
   const prefix = side === 'ai' ? 'Вор.' : ''
   const label = cls === 'catapult' ? 'Катапульта' : `${CLASS_LABEL[cls]} ${ROMAN[slot] ?? slot + 1}`
   const name = `${prefix}${label}`
-  const base: GameUnit = { ...TEMPLATES[cls], maxHp: TEMPLATES[cls].hp, id: uid(), side, row, slot, hasActed: false, buffs: [], name }
-  if (cls === 'warrior') {
-    return { ...base, level: 1, xp: 0, xpToNext: WARRIOR_LEVELS[1].xpToNext }
+  const base: GameUnit = {
+    ...TEMPLATES[cls], maxHp: TEMPLATES[cls].hp, id: uid(), side, row, slot, hasActed: false, buffs: [], name,
+    fireRes: 0, waterRes: 0, earthRes: 0, airRes: 0,
   }
-  if (cls === 'archer') {
-    return { ...base, level: 1, xp: 0, xpToNext: ARCHER_LEVELS[1].xpToNext }
-  }
+  if (cls === 'warrior') return { ...base, level: 1, xp: 0, xpToNext: WARRIOR_LEVELS[1].xpToNext }
+  if (cls === 'archer')  return { ...base, level: 1, xp: 0, xpToNext: ARCHER_LEVELS[1].xpToNext }
+  if (cls === 'mage')    return { ...base, level: 1, xp: 0, xpToNext: MAGE_BASE.xpToNext }
   return base
 }
 
@@ -129,6 +129,52 @@ function grantArcherXp(
   return { ...unit, xp: newXp }
 }
 
+// ── Mage level-up helpers ──────────────────────────────────────────────────────
+function applyMagePath(unit: GameUnit, path: MagePath, newLevel: number): GameUnit {
+  const data: MageLevelData = MAGE_PATHS[path][newLevel]
+  if (!data) return unit
+  const hpPct = unit.hp / unit.maxHp
+  return {
+    ...unit,
+    magePath: path, level: newLevel, xp: 0,
+    xpToNext: data.xpToNext === Infinity ? Infinity : data.xpToNext,
+    maxHp: data.hp, hp: Math.max(1, Math.round(hpPct * data.hp)),
+    minDmg: data.minDmg, maxDmg: data.maxDmg,
+    accuracy: data.accuracy, defense: data.defense,
+    evasion: data.evasion, initiative: data.initiative,
+    critChance: data.critChance, critMult: data.critMult,
+    morale: data.morale,
+  }
+}
+
+function applyMageLevel(unit: GameUnit, newLevel: number): GameUnit {
+  const path = unit.magePath!
+  return applyMagePath(unit, path, newLevel)
+}
+
+function grantMageXp(
+  unit: GameUnit, amount: number,
+  newLogs: LogEntry[], newEvents: BattleEvent[],
+): { unit: GameUnit; pendingChoice: boolean } {
+  if (unit.class !== 'mage' || amount <= 0) return { unit, pendingChoice: false }
+  const curLevel = unit.level ?? 1
+  const maxLevel = 5
+  if (curLevel >= maxLevel) return { unit, pendingChoice: false }
+  const newXp = (unit.xp ?? 0) + amount
+  if (newXp >= (unit.xpToNext ?? Infinity)) {
+    if (curLevel === 1) {
+      // Don't auto-level: signal that player needs to choose a path
+      return { unit: { ...unit, xp: newXp }, pendingChoice: true }
+    }
+    const nextLevel = curLevel + 1
+    const leveled = applyMageLevel({ ...unit, xp: newXp }, nextLevel)
+    newLogs.push(log(`⭐ ${unit.name} — рівень ${nextLevel} (${MAGE_PATHS[unit.magePath!][nextLevel].name})!`, 'buff'))
+    newEvents.push(ev(unit.id, `⭐ Рівень ${nextLevel}!`, 'buff'))
+    return { unit: leveled, pendingChoice: false }
+  }
+  return { unit: { ...unit, xp: newXp }, pendingChoice: false }
+}
+
 // ── Army builders ──────────────────────────────────────────────────────────────
 export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
   const units: GameUnit[] = []
@@ -195,16 +241,22 @@ function ev(unitId: string, text: string, type: BattleEvent['type'], sourceId?: 
   return { id: ++_evId, unitId, text, type, sourceId }
 }
 
+function getElemResist(def: GameUnit, path: MagePath | undefined): number {
+  if (!path) return 0
+  const r = { fire: def.fireRes, water: def.waterRes, earth: def.earthRes, air: def.airRes }
+  return r[path] ?? 0
+}
+
 interface AttackResult {
-  hit: boolean; evaded: boolean; crit: boolean; damage: number
+  hit: boolean; evaded: boolean; crit: boolean; damage: number; thornsDmg?: number
   logs: LogEntry[]; events: BattleEvent[]
 }
 
 function resolveAttack(
   atk: GameUnit, def: GameUnit, units: GameUnit[],
-  opts: { dmgMult?: number; accBonus?: number } = {},
+  opts: { dmgMult?: number; accBonus?: number; ignoreEvasion?: boolean; elemPath?: MagePath } = {},
 ): AttackResult {
-  let { dmgMult = 1, accBonus = 0 } = opts
+  let { dmgMult = 1, accBonus = 0, ignoreEvasion = false, elemPath } = opts
   const logs: LogEntry[] = []
   const events: BattleEvent[] = []
 
@@ -223,8 +275,10 @@ function resolveAttack(
   // Morale buff: +1% acc/eva per 10 morale points
   const moraleAccBonus = getBuffValue(atk, 'morale_up') * 0.001
   const moraleEvaBonus = getBuffValue(def, 'morale_up') * 0.001
+  // Accuracy down debuff on attacker
+  const accDownPenalty = getBuffValue(atk, 'accuracy_down')
 
-  const acc = Math.min(0.97, atk.accuracy + accBonus + moraleAccBonus)
+  const acc = Math.min(0.97, atk.accuracy + accBonus + moraleAccBonus - accDownPenalty)
   if (Math.random() > acc) {
     logs.push(log(`${atk.name} промахується!`, 'miss'))
     events.push(ev(atk.id, 'Промах!', 'miss'))
@@ -238,7 +292,10 @@ function resolveAttack(
     if (aloneInRow) rangerEvaBonus = 0.10
   }
 
-  if (Math.random() < def.evasion + moraleEvaBonus + rangerEvaBonus) {
+  // Wind shield evasion buff
+  const windShieldBonus = getBuffValue(def, 'wind_shield')
+
+  if (!ignoreEvasion && Math.random() < def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
     events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
@@ -249,9 +306,12 @@ function resolveAttack(
   const isCrit = Math.random() < effectiveCritChance
   if (isCrit) dmg *= effectiveCritMult
 
-  const defTotal = Math.max(0, def.defense + getBuffValue(def, 'defense_up') + frontLineBonus(def, units))
+  const fortressBonus = getBuffValue(def, 'fortress_buff')
+  const defTotal = Math.max(0, def.defense + getBuffValue(def, 'defense_up') + getBuffValue(def, 'fortress_buff') + frontLineBonus(def, units))
   dmg *= (1 - defTotal)
   dmg *= (1 + getBuffValue(def, 'armor_break'))  // armor break amplifies damage
+  // Elemental resistance
+  if (elemPath) dmg *= (1 - getElemResist(def, elemPath))
   dmg = Math.max(1, Math.round(dmg))
 
   if (isCrit) {
@@ -262,7 +322,15 @@ function resolveAttack(
     events.push(ev(def.id, `${dmg}`, 'damage', atk.id))
   }
 
-  return { hit: true, evaded: false, crit: isCrit, damage: dmg, logs, events }
+  // Thorns: reflect damage to attacker
+  const thornsDmg = def.buffs.filter(b => b.type === 'thorns').reduce((s, b) => s + b.value, 0)
+  if (thornsDmg > 0 && dmg > 0) {
+    logs.push(log(`🌿 Тернії! ${atk.name} отримує ${thornsDmg} урону у відповідь`, 'attack'))
+    events.push(ev(atk.id, `🌿 ${thornsDmg}`, 'damage', def.id))
+    // Note: thorn damage is returned in the result so caller can apply it
+  }
+
+  return { hit: true, evaded: false, crit: isCrit, damage: dmg, thornsDmg, logs, events }
 }
 
 // ── Valid targets ──────────────────────────────────────────────────────────────
@@ -282,11 +350,11 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'poison_shot', 'double_shot', 'fireball', 'barrage', 'grapeshot'].includes(action)) {
+  if (['shot', 'poison_shot', 'double_shot', 'fireball', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane', 'barrage', 'grapeshot'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 
-  if (action === 'consecration') {
+  if (['consecration', 'ice_shield', 'stone_skin', 'fortress_aura'].includes(action)) {
     return living(actor.side).map(u => u.id)
   }
 
@@ -296,10 +364,11 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
 // ── Execute one action ─────────────────────────────────────────────────────────
 export function executeAction(
   state: BattleState, actor: GameUnit, action: ActionKey, targetId: string | null,
-): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[] } {
+): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingMageLevelUp?: string } {
   let units = state.units.map(u => ({ ...u }))
   const newLogs: LogEntry[] = []
   const newEvents: BattleEvent[] = []
+  let pendingMageLevelUp: string | undefined
 
   const prevUnitMap = new Map(state.units.map(u => [u.id, u]))
   const getUnit = (id: string) => units.find(u => u.id === id)!
@@ -319,6 +388,11 @@ export function executeAction(
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.thornsDmg && res.thornsDmg > 0) {
+        const atker = getUnit(actor.id)
+        update({ ...atker, hp: Math.max(0, atker.hp - res.thornsDmg) })
+        if (getUnit(actor.id).hp === 0) newLogs.push(log(`☠ ${actor.name} гине від терній!`, 'death'))
       }
       if (res.hit && !res.evaded) hitLanded = true
       break
@@ -380,7 +454,7 @@ export function executeAction(
       const a = getUnit(actor.id)
       const accBonus = 0.25 + Math.random() * 0.15
       const pct = Math.round(accBonus * 100)
-      update({ ...a, buffs: [...a.buffs, makeBuff('aimed', accBonus, 2)] })
+      update({ ...a, buffs: [...a.buffs, makeBuff('aimed', accBonus, 3)] })
       newLogs.push(log(`🎯 ${actor.name} прицілюється (+${pct}% точн., 35% крит ×2 на 2 ходи)`, 'buff'))
       newEvents.push(ev(actor.id, `🎯 +${pct}%`, 'buff'))
       break
@@ -529,10 +603,345 @@ export function executeAction(
       }
       break
     }
+
+    // ── Mage fire path ────────────────────────────────────────────────────────
+    case 'fireball': {
+      if (!target) break
+      const lvl = actor.level ?? 1
+      const path = actor.magePath
+      const mult = path === 'fire'
+        ? (lvl >= 5 ? 6 : lvl >= 4 ? 5 : lvl >= 3 ? 4 : 3.5)
+        : 3
+      newLogs.push(log(`🔥 ${actor.name} — Фаєрбол!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { dmgMult: mult, elemPath: 'fire' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      // fire lv4+: splash to 1 adjacent enemy
+      if (path === 'fire' && lvl >= 4 && res.hit && !res.evaded) {
+        const adj = getAdjacentEnemies(target, units, enemySide).filter(u => u.id !== target.id)[0]
+        if (adj) {
+          const splashRes = resolveAttack(actor, getUnit(adj.id), units, { dmgMult: mult * 0.5, elemPath: 'fire' })
+          newLogs.push(...splashRes.logs); newEvents.push(...splashRes.events)
+          if (splashRes.damage > 0) {
+            update({ ...getUnit(adj.id), hp: Math.max(0, getUnit(adj.id).hp - splashRes.damage) })
+            if (getUnit(adj.id).hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
+          }
+        }
+      }
+      break
+    }
+
+    case 'ignite': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const burnDmg = lvl >= 4 ? 7 : lvl >= 3 ? 5 : 3
+      const burnDur = lvl >= 3 ? 3 : 2
+      newLogs.push(log(`🔥 ${actor.name} — Підпал!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { dmgMult: 1.5, elemPath: 'fire' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        const tgt = getUnit(target.id)
+        if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning')) {
+          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', burnDmg, burnDur + 1)] })
+          newLogs.push(log(`🔥 ${target.name} палає! ${burnDmg} урону/хід × ${burnDur} ходи`, 'debuff'))
+          newEvents.push(ev(target.id, `🔥 Підпал`, 'debuff', actor.id))
+        }
+      }
+      break
+    }
+
+    case 'inferno': {
+      const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
+      if (!enemies.length) break
+      const lvl = actor.level ?? 5
+      newLogs.push(log(`🔥 ${actor.name} — Інферно!`, 'attack'))
+      for (const snap of enemies) {
+        const e = getUnit(snap.id)
+        if (e.hp === 0) continue
+        const res = resolveAttack(actor, e, units, { dmgMult: 4, elemPath: 'fire' })
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
+          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+        }
+        if (res.hit && !res.evaded) {
+          const tgt = getUnit(e.id)
+          if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning')) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', 7, 4)] })
+          }
+        }
+      }
+      break
+    }
+
+    // ── Mage water path ───────────────────────────────────────────────────────
+    case 'frost_bolt': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const mult = lvl >= 4 ? 3 : lvl >= 3 ? 2.5 : 2
+      const accDown = lvl >= 3 ? 0.30 : 0.20
+      const freeze = lvl >= 4
+      newLogs.push(log(`❄ ${actor.name} — Льодяна стріла!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { dmgMult: mult, elemPath: 'water' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        const tgt = getUnit(target.id)
+        if (tgt.hp > 0) {
+          if (freeze) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
+            newLogs.push(log(`❄ ${target.name} заморожений! Пропускає хід`, 'debuff'))
+            newEvents.push(ev(target.id, '❄ Заморожено!', 'debuff', actor.id))
+          } else {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', accDown, 3)] })
+            newLogs.push(log(`❄ ${target.name} охолоджений! -${Math.round(accDown*100)}% точн. 2 ходи`, 'debuff'))
+            newEvents.push(ev(target.id, `❄ -${Math.round(accDown*100)}% точн.`, 'debuff', actor.id))
+          }
+        }
+      }
+      break
+    }
+
+    case 'ice_shield': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const defBonus = lvl >= 4 ? 0.35 : lvl >= 3 ? 0.30 : 0.20
+      const regenAmt = lvl >= 4 ? 5 : lvl >= 3 ? 3 : 0
+      const a = getUnit(target.id)
+      const newBuffs = [...a.buffs, makeBuff('defense_up', defBonus, 3)]
+      if (regenAmt > 0) newBuffs.push(makeBuff('regen', regenAmt, 4))
+      update({ ...a, buffs: newBuffs })
+      newLogs.push(log(`❄ ${actor.name} — Крижаний щит на ${target.name}! +${Math.round(defBonus*100)}% захист${regenAmt ? ` + ${regenAmt} HP/хід` : ''}`, 'buff'))
+      newEvents.push(ev(target.id, `❄ +${Math.round(defBonus*100)}% захист`, 'buff', actor.id))
+      break
+    }
+
+    case 'blizzard': {
+      const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
+      if (!enemies.length) break
+      newLogs.push(log(`❄ ${actor.name} — Заметіль!`, 'attack'))
+      for (const snap of enemies) {
+        const e = getUnit(snap.id)
+        if (e.hp === 0) continue
+        const res = resolveAttack(actor, e, units, { dmgMult: 2, elemPath: 'water' })
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
+          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+        }
+        if (res.hit && !res.evaded) {
+          const tgt = getUnit(e.id)
+          if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'frozen')) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
+          }
+        }
+      }
+      newLogs.push(log(`❄ Усіх ворогів заморожено!`, 'debuff'))
+      break
+    }
+
+    case 'tidal_heal': {
+      const allies = units.filter(u => u.side === actor.side && u.hp > 0)
+      newLogs.push(log(`💧 ${actor.name} — Цілюща хвиля!`, 'heal'))
+      for (const snap of allies) {
+        const a = getUnit(snap.id)
+        const healed = Math.min(a.maxHp, a.hp + 20)
+        const amt = healed - a.hp
+        update({ ...a, hp: healed })
+        if (amt > 0) {
+          newLogs.push(log(`💧 ${a.name} +${amt} HP`, 'heal'))
+          newEvents.push(ev(a.id, `💧 +${amt}`, 'heal', actor.id))
+        }
+      }
+      break
+    }
+
+    // ── Mage earth path ───────────────────────────────────────────────────────
+    case 'rock_throw': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const mult = lvl >= 4 ? 3 : lvl >= 3 ? 2.5 : 2
+      const accDownVal = lvl >= 3 ? 0.15 : 0
+      const stun = lvl >= 4
+      newLogs.push(log(`🪨 ${actor.name} — Кидок каменю!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { dmgMult: mult, ignoreEvasion: true, elemPath: 'earth' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit) {
+        const tgt = getUnit(target.id)
+        if (tgt.hp > 0) {
+          if (stun) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
+            newLogs.push(log(`🪨 ${target.name} оглушений! Пропускає хід`, 'debuff'))
+            newEvents.push(ev(target.id, '🪨 Оглушено!', 'debuff', actor.id))
+          } else if (accDownVal > 0) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', accDownVal, 3)] })
+            newLogs.push(log(`🪨 ${target.name} -${Math.round(accDownVal*100)}% точн. 2 ходи`, 'debuff'))
+            newEvents.push(ev(target.id, `🪨 -${Math.round(accDownVal*100)}% точн.`, 'debuff', actor.id))
+          }
+        }
+      }
+      break
+    }
+
+    case 'stone_skin': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const defBonus = lvl >= 4 ? 0.40 : lvl >= 3 ? 0.35 : 0.25
+      const regenAmt = lvl >= 4 ? 5 : lvl >= 3 ? 3 : 0
+      const thornsAmt = lvl >= 3 ? 3 : 0
+      const a = getUnit(target.id)
+      const newBuffs = [...a.buffs, makeBuff('defense_up', defBonus, 4)]
+      if (regenAmt > 0) newBuffs.push(makeBuff('regen', regenAmt, 4))
+      if (thornsAmt > 0) newBuffs.push(makeBuff('thorns', thornsAmt, 4))
+      update({ ...a, buffs: newBuffs })
+      newLogs.push(log(`🪨 ${actor.name} — Кам'яна шкіра на ${target.name}! +${Math.round(defBonus*100)}% захист${regenAmt ? ` + ${regenAmt} HP/хід` : ''}${thornsAmt ? ` + тернії ${thornsAmt} урону` : ''}`, 'buff'))
+      newEvents.push(ev(target.id, `🪨 +${Math.round(defBonus*100)}% захист`, 'buff', actor.id))
+      break
+    }
+
+    case 'earthquake': {
+      const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
+      if (!enemies.length) break
+      newLogs.push(log(`🪨 ${actor.name} — Землетрус!`, 'attack'))
+      for (const snap of enemies) {
+        const e = getUnit(snap.id)
+        if (e.hp === 0) continue
+        const res = resolveAttack(actor, e, units, { dmgMult: 1.5, ignoreEvasion: true, elemPath: 'earth' })
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
+          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+        }
+        if (res.hit) {
+          const tgt = getUnit(e.id)
+          if (tgt.hp > 0) {
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', 0.25, 3)] })
+          }
+        }
+      }
+      newLogs.push(log(`🪨 Усі вороги дезорієнтовані! -25% точн.`, 'debuff'))
+      break
+    }
+
+    case 'fortress_aura': {
+      if (!target) break
+      const allies = units.filter(u => u.side === actor.side && u.hp > 0)
+      newLogs.push(log(`🪨 ${actor.name} — Фортеця! Усі союзники +50% захист на 2 ходи`, 'buff'))
+      for (const snap of allies) {
+        const a = getUnit(snap.id)
+        update({ ...a, buffs: [...a.buffs, makeBuff('fortress_buff', 0.50, 3)] })
+      }
+      newEvents.push(ev(actor.id, '🪨 Фортеця!', 'buff'))
+      break
+    }
+
+    // ── Mage air path ─────────────────────────────────────────────────────────
+    case 'lightning_bolt': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const mult = lvl >= 4 ? 3 : lvl >= 3 ? 2.5 : 2
+      const chainCount = lvl >= 4 ? 2 : lvl >= 3 ? 1 : 0
+      newLogs.push(log(`⚡ ${actor.name} — Блискавка!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { dmgMult: mult, elemPath: 'air' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      // Chain to extra targets
+      if (chainCount > 0 && res.hit && !res.evaded) {
+        const extras = units
+          .filter(u => u.side === enemySide && u.hp > 0 && u.id !== target.id)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, chainCount)
+        for (const snap of extras) {
+          const e = getUnit(snap.id)
+          if (e.hp === 0) continue
+          const chainRes = resolveAttack(actor, e, units, { dmgMult: mult * 0.6, elemPath: 'air' })
+          newLogs.push(...chainRes.logs); newEvents.push(...chainRes.events)
+          if (chainRes.damage > 0) {
+            update({ ...e, hp: Math.max(0, e.hp - chainRes.damage) })
+            if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+          }
+        }
+      }
+      break
+    }
+
+    case 'gust': {
+      if (!target) break
+      const lvl = actor.level ?? 2
+      const accDown = lvl >= 4 ? 0.35 : lvl >= 3 ? 0.30 : 0.25
+      const windShield = lvl >= 4
+      const a = getUnit(actor.id)
+      if (windShield) {
+        update({ ...a, buffs: [...a.buffs, makeBuff('wind_shield', 0.30, 3)] })
+        newLogs.push(log(`💨 ${actor.name} — Вітровий щит! +30% ухилення`, 'buff'))
+        newEvents.push(ev(actor.id, '💨 +30% ухил.', 'buff'))
+      }
+      const tgt = getUnit(target.id)
+      if (tgt.hp > 0) {
+        update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', accDown, 3)] })
+        newLogs.push(log(`💨 ${actor.name} — Пориви вітру! ${target.name} -${Math.round(accDown*100)}% точн. 2 ходи`, 'debuff'))
+        newEvents.push(ev(target.id, `💨 -${Math.round(accDown*100)}% точн.`, 'debuff', actor.id))
+      }
+      break
+    }
+
+    case 'thunder_storm': {
+      const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
+      if (!enemies.length) break
+      newLogs.push(log(`⚡ ${actor.name} — Гроза!`, 'attack'))
+      for (const snap of enemies) {
+        const e = getUnit(snap.id)
+        if (e.hp === 0) continue
+        const res = resolveAttack(actor, e, units, { dmgMult: 2, elemPath: 'air' })
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
+          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+        }
+      }
+      break
+    }
+
+    case 'hurricane': {
+      if (!target) break
+      newLogs.push(log(`💨 ${actor.name} — Ураган!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { dmgMult: 4, elemPath: 'air' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        const tgt = getUnit(target.id)
+        if (tgt.hp > 0) {
+          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
+          newLogs.push(log(`💨 ${target.name} відкинутий! Пропускає хід`, 'debuff'))
+          newEvents.push(ev(target.id, '💨 Відкинуто!', 'debuff', actor.id))
+        }
+      }
+      break
+    }
   }
 
-  // ── XP: per kill (+50) and per hit (+10) for warriors and archers ─────────
-  if (actor.class === 'warrior' || actor.class === 'archer') {
+  // ── XP: per kill (+50) and per hit (+10) ──────────────────────────────────
+  if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage') {
     const kills = units.filter(u => {
       const prev = prevUnitMap.get(u.id)
       return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
@@ -541,11 +950,20 @@ export function executeAction(
     if (xpGain > 0) {
       const fresh = getUnit(actor.id)
       if (actor.class === 'warrior') update(grantWarriorXp(fresh, xpGain, newLogs, newEvents))
-      else                           update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
+      else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
+      else {
+        const { unit: updatedMage, pendingChoice } = grantMageXp(fresh, xpGain, newLogs, newEvents)
+        update(updatedMage)
+        if (pendingChoice) {
+          newLogs.push(log(`⭐ ${fresh.name} готовий до вибору шляху!`, 'buff'))
+          newEvents.push(ev(fresh.id, '⭐ Вибір шляху!', 'buff'))
+          pendingMageLevelUp = fresh.id
+        }
+      }
     }
   }
 
-  return { units, newLogs, newEvents }
+  return { units, newLogs, newEvents, pendingMageLevelUp }
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
@@ -598,10 +1016,39 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
   }
 
   if (actor.class === 'mage') {
-    if (strongest && strongest.hp > strongest.maxHp * 0.60 && Math.random() < 0.45) {
-      return { action: 'fireball', targetId: strongest.id }
+    const path = actor.magePath
+    const lvl = actor.level ?? 1
+    if (!path || lvl === 1) {
+      if (strongest && strongest.hp > strongest.maxHp * 0.60 && Math.random() < 0.45) return { action: 'fireball', targetId: strongest.id }
+      return { action: 'chain_lightning', targetId: null }
     }
-    return { action: 'chain_lightning', targetId: null }
+    const actions = getMainActions('mage', lvl, path)
+    const hasAoE = actions.some(a => ['inferno', 'blizzard', 'earthquake', 'thunder_storm', 'chain_lightning'].includes(a))
+    const hasSingle = actions.some(a => ['fireball', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane'].includes(a))
+    const hasSupport = actions.some(a => ['ice_shield', 'stone_skin', 'tidal_heal', 'fortress_aura', 'gust'].includes(a))
+
+    // Prefer AoE when multiple enemies
+    if (hasAoE && playerUnits.length >= 2 && Math.random() < 0.55) {
+      const aoA = actions.find(a => ['inferno', 'blizzard', 'earthquake', 'thunder_storm', 'chain_lightning'].includes(a))!
+      return { action: aoA, targetId: null }
+    }
+    // Support when allies need help
+    if (hasSupport && Math.random() < 0.35) {
+      const suppA = actions.find(a => ['ice_shield', 'stone_skin', 'fortress_aura'].includes(a))
+      if (suppA) {
+        const needsHelp = [...aiAllies, actor].filter(u => u.hp < u.maxHp * 0.65).sort((a, b) => a.hp - b.hp)[0]
+        if (needsHelp) return { action: suppA, targetId: needsHelp.id }
+      }
+      if (actions.includes('tidal_heal') && aiAllies.some(u => u.hp < u.maxHp * 0.5)) return { action: 'tidal_heal', targetId: null }
+      if (actions.includes('gust') && weakest) return { action: 'gust', targetId: weakest.id }
+    }
+    // Single target
+    if (hasSingle && weakest) {
+      const singA = actions.find(a => ['fireball', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane'].includes(a))!
+      return { action: singA, targetId: weakest.id }
+    }
+    // Fallback
+    return { action: actions[0], targetId: playerUnits.length ? weakest?.id ?? null : null }
   }
 
   if (actor.class === 'catapult') {
@@ -632,16 +1079,30 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: 'Удар + -10% броні цілі на 1 хід',          needsTarget: true,  targetSide: 'ai'   },
   consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+15 HP та знімає дебафи з союзника',        needsTarget: true,  targetSide: 'ally' },
   shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога',                  needsTarget: true,  targetSide: 'ai'   },
-  aim:             { key: 'aim',             label: 'Прицілення',        desc: '+25–40% точн. та крит ×(2–ходи)',           needsTarget: false, targetSide: null   },
+  aim:             { key: 'aim',             label: 'Прицілення',        desc: '+25–40% точн. та крит на 2 ходи',           needsTarget: false, targetSide: null   },
   poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },
   double_shot:     { key: 'double_shot',     label: 'Подвійний постріл', desc: '2 стріли, 2-га -15% точн.',                needsTarget: true,  targetSide: 'ai'   },
   chain_lightning: { key: 'chain_lightning', label: 'Ланцюгова молнія',  desc: 'Б\'є всіх ворогів одночасно',              needsTarget: false, targetSide: null   },
-  fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: '×3 урону по одній цілі',                   needsTarget: true,  targetSide: 'ai'   },
-  barrage:         { key: 'barrage',         label: 'Удар по площі',     desc: 'Ціль + сусіди отримують 25–50% урону',     needsTarget: true,  targetSide: 'ai'   },
-  grapeshot:       { key: 'grapeshot',       label: 'Картеч',            desc: 'Весь ряд цілі з -40% урону',               needsTarget: true,  targetSide: 'ai'   },
+  fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: '×3–6 урону по цілі (зростає з рівнем)',    needsTarget: true,  targetSide: 'ai'   },
+  ignite:          { key: 'ignite',          label: 'Підпал',            desc: 'Удар + підпал (X урону/хід N ходів)',      needsTarget: true,  targetSide: 'ai'   },
+  inferno:         { key: 'inferno',         label: 'Інферно',           desc: 'Фаєрбол ×4 по ВСІХ ворогах + підпал',     needsTarget: false, targetSide: null   },
+  frost_bolt:      { key: 'frost_bolt',      label: 'Льодяна стріла',    desc: 'Урон + зменшення точності / заморожує',    needsTarget: true,  targetSide: 'ai'   },
+  ice_shield:      { key: 'ice_shield',      label: 'Крижаний щит',      desc: '+захист союзнику (+ регенерація на lv3+)', needsTarget: true,  targetSide: 'ally' },
+  blizzard:        { key: 'blizzard',        label: 'Заметіль',          desc: 'Льодяна стріла ×2 по ВСІХ + заморожує',   needsTarget: false, targetSide: null   },
+  tidal_heal:      { key: 'tidal_heal',      label: 'Цілюща хвиля',      desc: 'Лікує +20 HP всій команді',               needsTarget: false, targetSide: null   },
+  rock_throw:      { key: 'rock_throw',      label: 'Кидок каменю',      desc: 'Ігнорує ухилення (оглушує на lv4)',        needsTarget: true,  targetSide: 'ai'   },
+  stone_skin:      { key: 'stone_skin',      label: 'Кам\'яна шкіра',    desc: '+захист союзнику (+ тернії/регенер.)',     needsTarget: true,  targetSide: 'ally' },
+  earthquake:      { key: 'earthquake',      label: 'Землетрус',         desc: 'Кидок каменю ×1.5 по ВСІХ + -25% точн.', needsTarget: false, targetSide: null   },
+  fortress_aura:   { key: 'fortress_aura',   label: 'Фортеця',           desc: 'Всі союзники +50% захист на 2 ходи',      needsTarget: true,  targetSide: 'ally' },
+  lightning_bolt:  { key: 'lightning_bolt',  label: 'Блискавка',         desc: 'Висока крит. шанс, ланцюгується на lv3+', needsTarget: true,  targetSide: 'ai'   },
+  gust:            { key: 'gust',            label: 'Пориви вітру',      desc: '-точн. ворогу (+ вітровий щит на lv4)',   needsTarget: true,  targetSide: 'ai'   },
+  thunder_storm:   { key: 'thunder_storm',   label: 'Гроза',             desc: 'Блискавка ×2 по ВСІХ ворогах',            needsTarget: false, targetSide: null   },
+  hurricane:       { key: 'hurricane',       label: 'Ураган',            desc: '×4 урону + ціль пропускає хід',           needsTarget: true,  targetSide: 'ai'   },
+  barrage:         { key: 'barrage',         label: 'Удар по площі',     desc: 'Ціль + сусіди отримують 25–50% урону',    needsTarget: true,  targetSide: 'ai'   },
+  grapeshot:       { key: 'grapeshot',       label: 'Картеч',            desc: 'Весь ряд цілі з -40% урону',              needsTarget: true,  targetSide: 'ai'   },
 }
 
-export function getMainActions(cls: UnitClass, level?: number): ActionKey[] {
+export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePath): ActionKey[] {
   if (cls === 'warrior') {
     const lvl = level ?? 1
     return WARRIOR_LEVELS[lvl]?.actions ?? ['strike', 'shield']
@@ -649,6 +1110,11 @@ export function getMainActions(cls: UnitClass, level?: number): ActionKey[] {
   if (cls === 'archer') {
     const lvl = level ?? 1
     return ARCHER_LEVELS[lvl]?.actions ?? ['shot', 'aim']
+  }
+  if (cls === 'mage') {
+    const lvl = level ?? 1
+    if (lvl === 1 || !magePath) return MAGE_BASE.actions
+    return MAGE_PATHS[magePath][lvl]?.actions ?? MAGE_BASE.actions
   }
   if (cls === 'catapult') return ['barrage', 'grapeshot']
   return ['chain_lightning', 'fireball']
@@ -687,8 +1153,9 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || actor.hp === 0) return state
       if (!ACTIONS[a].needsTarget) {
-        const { units, newLogs, newEvents } = executeAction(state, actor, a, null)
-        return advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+        const { units, newLogs, newEvents, pendingMageLevelUp } = executeAction(state, actor, a, null)
+        const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+        return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
       }
       return { ...state, selectedAction: a, needsTarget: true, events: [] }
     }
@@ -696,21 +1163,51 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
     case 'CONFIRM_TARGET': {
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || !state.selectedAction) return state
-      const { units, newLogs, newEvents } = executeAction(state, actor, state.selectedAction, action.targetId)
-      return advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      const { units, newLogs, newEvents, pendingMageLevelUp } = executeAction(state, actor, state.selectedAction, action.targetId)
+      const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
+    }
+
+    case 'CHOOSE_MAGE_PATH': {
+      const mage = state.units.find(u => u.id === action.unitId)
+      if (!mage || mage.class !== 'mage') return state
+      const leveled = applyMagePath(mage, action.path, 2)
+      const units = state.units.map(u => u.id === action.unitId ? leveled : u)
+      const pathNames: Record<string, string> = { fire: 'Вогонь', water: 'Вода', earth: 'Земля', air: 'Повітря' }
+      return {
+        ...state, units, pendingMageLevelUp: undefined,
+        log: [...state.log, { id: ++_logId, text: `⭐ ${mage.name} обирає шлях ${pathNames[action.path]} — ${MAGE_PATHS[action.path][2].name}!`, type: 'buff' }],
+        events: [ev(action.unitId, `⭐ ${pathNames[action.path]}!`, 'buff')],
+      }
     }
 
     case 'CANCEL_ACTION':
       return { ...state, selectedAction: null, needsTarget: false }
 
     case 'AI_TAKE_TURN': {
+      // If AI mage needs path choice, auto-pick
+      if (state.pendingMageLevelUp) {
+        const mage = state.units.find(u => u.id === state.pendingMageLevelUp)
+        if (mage && mage.side === 'ai') {
+          const paths: MagePath[] = ['fire', 'water', 'earth', 'air']
+          const picked = paths[Math.floor(Math.random() * paths.length)]
+          const leveled = applyMagePath(mage, picked, 2)
+          const units = state.units.map(u => u.id === mage.id ? leveled : u)
+          return advanceQueue({
+            ...state, units, pendingMageLevelUp: undefined,
+            log: [...state.log, { id: ++_logId, text: `⭐ ${mage.name} обирає ${picked}`, type: 'buff' }],
+            events: [],
+          })
+        }
+      }
       const actorId = state.queue[state.queueIdx]
       const actor = state.units.find(u => u.id === actorId)
       if (!actor || actor.hp === 0 || actor.side !== 'ai') return advanceQueue(state)
       const { action: act, targetId } = aiDecide(actor, state)
       if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
-      const { units, newLogs, newEvents } = executeAction(state, actor, act, targetId)
-      return advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      const { units, newLogs, newEvents, pendingMageLevelUp } = executeAction(state, actor, act, targetId)
+      const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
     }
 
     case 'ADVANCE_QUEUE':
@@ -760,27 +1257,67 @@ function advanceQueue(state: BattleState): BattleState {
     idx = 0
   }
 
-  // Apply poison damage at start of next unit's turn
+  // Apply DoT and regen at start of next unit's turn
   const nextId = queue[idx]
   const nextUnit = units.find(u => u.id === nextId)
-  if (nextUnit && nextUnit.hp > 0 && nextUnit.buffs.some(b => b.type === 'poison')) {
-    const poisonDmg = nextUnit.buffs.filter(b => b.type === 'poison').reduce((s, b) => s + b.value, 0)
-    const newHp = Math.max(0, nextUnit.hp - poisonDmg)
-    units = units.map(u => u.id === nextId ? {
-      ...u,
-      hp: newHp,
-      buffs: u.buffs
-        .map(b => b.type === 'poison' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b)
-        .filter(b => b.turnsLeft > 0),
-    } : u)
-    const poisonLog: LogEntry = { id: ++_logId, text: `🧪 ${nextUnit.name} отруєний: -${poisonDmg} HP`, type: 'debuff' }
-    state = { ...state, log: [...state.log, poisonLog] }
-    if (newHp === 0) {
-      state = { ...state, log: [...state.log, { id: ++_logId, text: `☠ ${nextUnit.name} гине від отрути!`, type: 'death' }] }
-      const playerAlive2 = units.filter(u => u.side === 'player' && u.hp > 0).length
-      const aiAlive2     = units.filter(u => u.side === 'ai'     && u.hp > 0).length
-      if (playerAlive2 === 0) return { ...state, units, phase: 'game-over', winner: 'ai' }
-      if (aiAlive2     === 0) return { ...state, units, phase: 'game-over', winner: 'player' }
+  if (nextUnit && nextUnit.hp > 0) {
+    // Poison
+    if (nextUnit.buffs.some(b => b.type === 'poison')) {
+      const dmg = nextUnit.buffs.filter(b => b.type === 'poison').reduce((s, b) => s + b.value, 0)
+      const newHp = Math.max(0, nextUnit.hp - dmg)
+      units = units.map(u => u.id === nextId ? {
+        ...u, hp: newHp,
+        buffs: u.buffs.map(b => b.type === 'poison' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b).filter(b => b.turnsLeft > 0),
+      } : u)
+      state = { ...state, log: [...state.log, { id: ++_logId, text: `🧪 ${nextUnit.name} отруєний: -${dmg} HP`, type: 'debuff' }] }
+      if (newHp === 0) {
+        state = { ...state, log: [...state.log, { id: ++_logId, text: `☠ ${nextUnit.name} гине від отрути!`, type: 'death' }] }
+        const pa = units.filter(u => u.side === 'player' && u.hp > 0).length
+        const aa = units.filter(u => u.side === 'ai' && u.hp > 0).length
+        if (pa === 0) return { ...state, units, phase: 'game-over', winner: 'ai' }
+        if (aa === 0) return { ...state, units, phase: 'game-over', winner: 'player' }
+      }
+    }
+    // Burning
+    const nextUnitNow = units.find(u => u.id === nextId)!
+    if (nextUnitNow.hp > 0 && nextUnitNow.buffs.some(b => b.type === 'burning')) {
+      const dmg = nextUnitNow.buffs.filter(b => b.type === 'burning').reduce((s, b) => s + b.value, 0)
+      const newHp = Math.max(0, nextUnitNow.hp - dmg)
+      units = units.map(u => u.id === nextId ? {
+        ...u, hp: newHp,
+        buffs: u.buffs.map(b => b.type === 'burning' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b).filter(b => b.turnsLeft > 0),
+      } : u)
+      state = { ...state, log: [...state.log, { id: ++_logId, text: `🔥 ${nextUnitNow.name} палає: -${dmg} HP`, type: 'debuff' }] }
+      if (newHp === 0) {
+        state = { ...state, log: [...state.log, { id: ++_logId, text: `☠ ${nextUnitNow.name} згорів!`, type: 'death' }] }
+        const pa = units.filter(u => u.side === 'player' && u.hp > 0).length
+        const aa = units.filter(u => u.side === 'ai' && u.hp > 0).length
+        if (pa === 0) return { ...state, units, phase: 'game-over', winner: 'ai' }
+        if (aa === 0) return { ...state, units, phase: 'game-over', winner: 'player' }
+      }
+    }
+    // Regen
+    const nextUnitNow2 = units.find(u => u.id === nextId)!
+    if (nextUnitNow2.hp > 0 && nextUnitNow2.buffs.some(b => b.type === 'regen')) {
+      const heal = nextUnitNow2.buffs.filter(b => b.type === 'regen').reduce((s, b) => s + b.value, 0)
+      const newHp = Math.min(nextUnitNow2.maxHp, nextUnitNow2.hp + heal)
+      const amt = newHp - nextUnitNow2.hp
+      units = units.map(u => u.id === nextId ? {
+        ...u, hp: newHp,
+        buffs: u.buffs.map(b => b.type === 'regen' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b).filter(b => b.turnsLeft > 0),
+      } : u)
+      if (amt > 0) state = { ...state, log: [...state.log, { id: ++_logId, text: `💚 ${nextUnitNow2.name} відновлює ${amt} HP`, type: 'heal' }] }
+    }
+    // Frozen: skip turn
+    const nextUnitNow3 = units.find(u => u.id === nextId)!
+    if (nextUnitNow3.hp > 0 && nextUnitNow3.buffs.some(b => b.type === 'frozen')) {
+      units = units.map(u => u.id === nextId ? {
+        ...u,
+        buffs: u.buffs.map(b => b.type === 'frozen' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b).filter(b => b.turnsLeft > 0),
+      } : u)
+      state = { ...state, log: [...state.log, { id: ++_logId, text: `❄ ${nextUnitNow3.name} заморожений — пропускає хід`, type: 'info' }] }
+      // Skip: advance to the next unit after this one
+      return advanceQueue({ ...state, units, queue, queueIdx: idx, round, phase: 'ai-thinking', ...TURN_RESET })
     }
   }
 
