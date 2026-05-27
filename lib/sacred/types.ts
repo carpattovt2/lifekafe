@@ -76,10 +76,13 @@ export type ActionKey =
   | 'aim'             // archer: +25–40% acc + crit for 2 turns (crit% scales with level)
   | 'poison_shot'     // hunter (lv2): shot + poison 4dmg/turn for 3 turns, no stack
   | 'double_shot'     // ranger (lv3): two shots, second -15% acc
-  | 'chain_lightning' // mage lv1: hits all enemies, full damage each
-  | 'fireball'        // mage lv1 / fire lv2-5: ×N damage to single target (scales with level)
-  | 'ignite'          // fire lv2-4: single target burn DoT (dmg + burning)
-  | 'inferno'         // fire lv5: fireball hits ALL enemies
+  | 'magic_bolt'      // mage lv1: single target, force damage (no element)
+  | 'fireball'        // fire lv2-5: fixed damage + 25% burn passive
+  | 'fire_orb'        // fire lv3-5: area attack, 50% splash, no burn
+  | 'armageddon'      // fire lv5: hits ALL enemies, fire damage
+  | 'ignite'          // legacy (unused)
+  | 'inferno'         // legacy (unused)
+  | 'chain_lightning' // legacy (unused)
   | 'frost_bolt'      // water lv2-4: damage + accuracy_down debuff
   | 'ice_shield'      // water lv2-4: ally +def buff (+ regen at lv3+, freeze at lv4)
   | 'blizzard'        // water lv5: frost_bolt hits ALL enemies
@@ -181,16 +184,16 @@ export const MAGE_BASE: MageLevelData = {
   name: 'Учень',
   hp: 55, minDmg: 7, maxDmg: 10, accuracy: 0.60, defense: 0, evasion: 0.10,
   initiative: 30, critChance: 0, critMult: 2.0, morale: 50,
-  actions: ['chain_lightning', 'fireball'],
+  actions: ['magic_bolt'],
   xpToNext: 100,
 }
 
 export const MAGE_PATHS: Record<MagePath, Record<number, MageLevelData>> = {
   fire: {
-    2: { name: 'Підпалювач',      hp:  75, minDmg: 12, maxDmg: 18, accuracy: 0.68, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0.05, critMult: 2.0, morale: 55, actions: ['fireball', 'ignite'],   xpToNext: 200 },
-    3: { name: 'Піромант',        hp:  95, minDmg: 15, maxDmg: 22, accuracy: 0.72, defense: 0.05, evasion: 0.10, initiative: 38, critChance: 0.10, critMult: 2.0, morale: 60, actions: ['fireball', 'ignite'],   xpToNext: 350 },
-    4: { name: 'Майстер Вогню',   hp: 115, minDmg: 18, maxDmg: 26, accuracy: 0.76, defense: 0.10, evasion: 0.10, initiative: 40, critChance: 0.15, critMult: 2.0, morale: 65, actions: ['fireball', 'ignite'],   xpToNext: 500 },
-    5: { name: 'Архонт Полум\'я', hp: 140, minDmg: 22, maxDmg: 32, accuracy: 0.80, defense: 0.15, evasion: 0.10, initiative: 42, critChance: 0.20, critMult: 2.5, morale: 75, actions: ['fireball', 'inferno'],  xpToNext: Infinity },
+    2: { name: 'Підпалювач',      hp:  75, minDmg: 20, maxDmg: 20, accuracy: 0.75, defense: 0,    evasion: 0.15, initiative: 35, critChance: 0, critMult: 2.0, morale: 55, actions: ['fireball'],                  xpToNext: 200 },
+    3: { name: 'Піромант',        hp:  95, minDmg: 25, maxDmg: 25, accuracy: 0.75, defense: 0.05, evasion: 0.12, initiative: 35, critChance: 0, critMult: 2.0, morale: 60, actions: ['fireball', 'fire_orb'],      xpToNext: 350 },
+    4: { name: 'Майстер Вогню',   hp: 115, minDmg: 30, maxDmg: 30, accuracy: 0.75, defense: 0.10, evasion: 0.10, initiative: 35, critChance: 0, critMult: 2.0, morale: 65, actions: ['fireball', 'fire_orb'],      xpToNext: 500 },
+    5: { name: 'Архонт Полум\'я', hp: 140, minDmg: 35, maxDmg: 35, accuracy: 0.75, defense: 0.10, evasion: 0.10, initiative: 35, critChance: 0, critMult: 2.0, morale: 75, actions: ['fireball', 'fire_orb', 'armageddon'], xpToNext: Infinity },
   },
   water: {
     2: { name: 'Льодовий Маг',    hp:  80, minDmg: 10, maxDmg: 16, accuracy: 0.70, defense: 0.05, evasion: 0.12, initiative: 36, critChance: 0.05, critMult: 2.0, morale: 55, actions: ['frost_bolt', 'ice_shield'],  xpToNext: 200 },

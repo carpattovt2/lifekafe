@@ -357,7 +357,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'poison_shot', 'double_shot', 'fireball', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane', 'barrage', 'grapeshot'].includes(action)) {
+  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane', 'barrage', 'grapeshot'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 
@@ -555,6 +555,19 @@ export function executeAction(
       break
     }
 
+    case 'magic_bolt': {
+      if (!target) break
+      newLogs.push(log(`✨ ${actor.name} — Магічний болт!`, 'attack'))
+      const res = resolveAttack(actor, target, units)
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) hitLanded = true
+      break
+    }
+
     case 'chain_lightning': {
       const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
       if (!enemies.length) break
@@ -576,15 +589,70 @@ export function executeAction(
 
     case 'fireball': {
       if (!target) break
+      const fireLvl = actor.level ?? 2
+      const fireDmg = actor.minDmg // fixed per level in stats
       newLogs.push(log(`🔥 ${actor.name} — Фаєрбол!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { dmgMult: 3 })
-      newLogs.push(...res.logs)
-      newEvents.push(...res.events)
+      const res = resolveAttack(actor, target, units, { accBonus: 0.75 - actor.accuracy, elemPath: 'fire' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
-      if (res.hit && !res.evaded) hitLanded = true
+      if (res.hit && !res.evaded) {
+        hitLanded = true
+        // Passive burn: 25% chance, 3 turns, 15% of fireball dmg per tick
+        const tgt = getUnit(target.id)
+        if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning') && Math.random() < 0.25) {
+          const burnDmg = Math.max(1, Math.round(fireDmg * 0.15))
+          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', burnDmg, 4)] })
+          newLogs.push(log(`🔥 ${target.name} палає! ${burnDmg} урону/хід на 3 ходи`, 'debuff'))
+          newEvents.push(ev(target.id, `🔥 Підпал`, 'debuff', actor.id))
+        }
+      }
+      break
+    }
+
+    case 'fire_orb': {
+      if (!target) break
+      const orbDmg = actor.minDmg
+      newLogs.push(log(`🔥 ${actor.name} — Вогняний шар!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { accBonus: 0.80 - actor.accuracy, elemPath: 'fire' })
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        hitLanded = true
+        for (const adjSnap of getAdjacentEnemies(target, units, enemySide)) {
+          const adj = getUnit(adjSnap.id)
+          if (adj.hp === 0) continue
+          const splashRes = resolveAttack(actor, adj, units, { dmgMult: 0.5, accBonus: 0.80 - actor.accuracy, elemPath: 'fire' })
+          newLogs.push(...splashRes.logs); newEvents.push(...splashRes.events)
+          if (splashRes.damage > 0) {
+            update({ ...adj, hp: Math.max(0, adj.hp - splashRes.damage) })
+            if (getUnit(adj.id).hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
+          }
+        }
+      }
+      break
+    }
+
+    case 'armageddon': {
+      const allEnemies = units.filter(u => u.side === enemySide && u.hp > 0)
+      if (!allEnemies.length) break
+      newLogs.push(log(`💥 ${actor.name} — Армагедон!`, 'attack'))
+      for (const snap of allEnemies) {
+        const e = getUnit(snap.id)
+        if (e.hp === 0) continue
+        const res = resolveAttack(actor, e, units, { accBonus: 0.65 - actor.accuracy, elemPath: 'fire' })
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
+          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+        }
+        if (res.hit && !res.evaded) hitLanded = true
+      }
       break
     }
 
@@ -634,84 +702,7 @@ export function executeAction(
       break
     }
 
-    // ── Mage fire path ────────────────────────────────────────────────────────
-    case 'fireball': {
-      if (!target) break
-      const lvl = actor.level ?? 1
-      const path = actor.magePath
-      const mult = path === 'fire'
-        ? (lvl >= 5 ? 6 : lvl >= 4 ? 5 : lvl >= 3 ? 4 : 3.5)
-        : 3
-      newLogs.push(log(`🔥 ${actor.name} — Фаєрбол!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { dmgMult: mult, elemPath: 'fire' })
-      newLogs.push(...res.logs); newEvents.push(...res.events)
-      if (res.damage > 0) {
-        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
-        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-      }
-      // fire lv4+: splash to 1 adjacent enemy
-      if (path === 'fire' && lvl >= 4 && res.hit && !res.evaded) {
-        const adj = getAdjacentEnemies(target, units, enemySide).filter(u => u.id !== target.id)[0]
-        if (adj) {
-          const splashRes = resolveAttack(actor, getUnit(adj.id), units, { dmgMult: mult * 0.5, elemPath: 'fire' })
-          newLogs.push(...splashRes.logs); newEvents.push(...splashRes.events)
-          if (splashRes.damage > 0) {
-            update({ ...getUnit(adj.id), hp: Math.max(0, getUnit(adj.id).hp - splashRes.damage) })
-            if (getUnit(adj.id).hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
-          }
-        }
-      }
-      break
-    }
-
-    case 'ignite': {
-      if (!target) break
-      const lvl = actor.level ?? 2
-      const burnDmg = lvl >= 4 ? 7 : lvl >= 3 ? 5 : 3
-      const burnDur = lvl >= 3 ? 3 : 2
-      newLogs.push(log(`🔥 ${actor.name} — Підпал!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { dmgMult: 1.5, elemPath: 'fire' })
-      newLogs.push(...res.logs); newEvents.push(...res.events)
-      if (res.damage > 0) {
-        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
-        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-      }
-      if (res.hit && !res.evaded) {
-        hitLanded = true
-        const tgt = getUnit(target.id)
-        if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning')) {
-          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', burnDmg, burnDur + 1)] })
-          newLogs.push(log(`🔥 ${target.name} палає! ${burnDmg} урону/хід × ${burnDur} ходи`, 'debuff'))
-          newEvents.push(ev(target.id, `🔥 Підпал`, 'debuff', actor.id))
-        }
-      }
-      break
-    }
-
-    case 'inferno': {
-      const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
-      if (!enemies.length) break
-      const lvl = actor.level ?? 5
-      newLogs.push(log(`🔥 ${actor.name} — Інферно!`, 'attack'))
-      for (const snap of enemies) {
-        const e = getUnit(snap.id)
-        if (e.hp === 0) continue
-        const res = resolveAttack(actor, e, units, { dmgMult: 4, elemPath: 'fire' })
-        newLogs.push(...res.logs); newEvents.push(...res.events)
-        if (res.damage > 0) {
-          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
-          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
-        }
-        if (res.hit && !res.evaded) {
-          hitLanded = true
-          const tgt = getUnit(e.id)
-          if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning')) {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', 7, 4)] })
-          }
-        }
-      }
-      break
-    }
+    // ── Mage fire path (handled above as 'fireball', 'fire_orb', 'armageddon') ──
 
     // ── Mage water path ───────────────────────────────────────────────────────
     case 'frost_bolt': {
@@ -1068,17 +1059,19 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     const path = actor.magePath
     const lvl = actor.level ?? 1
     if (!path || lvl === 1) {
-      if (strongest && strongest.hp > strongest.maxHp * 0.60 && Math.random() < 0.45) return { action: 'fireball', targetId: strongest.id }
-      return { action: 'chain_lightning', targetId: null }
+      return { action: 'magic_bolt', targetId: weakest?.id ?? null }
     }
     const actions = getMainActions('mage', lvl, path)
-    const hasAoE = actions.some(a => ['inferno', 'blizzard', 'earthquake', 'thunder_storm', 'chain_lightning'].includes(a))
-    const hasSingle = actions.some(a => ['fireball', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane'].includes(a))
-    const hasSupport = actions.some(a => ['ice_shield', 'stone_skin', 'tidal_heal', 'fortress_aura', 'gust'].includes(a))
+    const aoEActions = ['armageddon', 'blizzard', 'earthquake', 'thunder_storm', 'fire_orb']
+    const singleActions = ['fireball', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane']
+    const supportActions = ['ice_shield', 'stone_skin', 'tidal_heal', 'fortress_aura', 'gust']
+    const hasAoE = actions.some(a => aoEActions.includes(a))
+    const hasSingle = actions.some(a => singleActions.includes(a))
+    const hasSupport = actions.some(a => supportActions.includes(a))
 
     // Prefer AoE when multiple enemies
     if (hasAoE && playerUnits.length >= 2 && Math.random() < 0.55) {
-      const aoA = actions.find(a => ['inferno', 'blizzard', 'earthquake', 'thunder_storm', 'chain_lightning'].includes(a))!
+      const aoA = actions.find(a => aoEActions.includes(a))!
       return { action: aoA, targetId: null }
     }
     // Support when allies need help
@@ -1093,7 +1086,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     }
     // Single target
     if (hasSingle && weakest) {
-      const singA = actions.find(a => ['fireball', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'hurricane'].includes(a))!
+      const singA = actions.find(a => singleActions.includes(a))!
       return { action: singA, targetId: weakest.id }
     }
     // Fallback
@@ -1132,8 +1125,11 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   aim:             { key: 'aim',             label: 'Прицілення',        desc: '+50% точності та +50% ініціативи на 3 власних ходи', needsTarget: false, targetSide: null   },
   poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },
   double_shot:     { key: 'double_shot',     label: 'Подвійний постріл', desc: '2 стріли по 75% урону, друга -15% точн.',  needsTarget: true,  targetSide: 'ai'   },
+  magic_bolt:      { key: 'magic_bolt',      label: 'Магічний болт',     desc: 'Магічна атака по одній цілі (тип: Сила)', needsTarget: true,  targetSide: 'ai'   },
   chain_lightning: { key: 'chain_lightning', label: 'Ланцюгова молнія',  desc: 'Б\'є всіх ворогів одночасно',              needsTarget: false, targetSide: null   },
-  fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: '×3–6 урону по цілі (зростає з рівнем)',    needsTarget: true,  targetSide: 'ai'   },
+  fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: 'Вогняна атака, 25% підпал на 3 ходи',     needsTarget: true,  targetSide: 'ai'   },
+  fire_orb:        { key: 'fire_orb',        label: 'Вогняний шар',      desc: 'Вогняна атака + 50% урону сусідам',       needsTarget: true,  targetSide: 'ai'   },
+  armageddon:      { key: 'armageddon',      label: 'Армагедон',         desc: 'Вогняна атака по всіх ворогах (65% точн.)', needsTarget: false, targetSide: null  },
   ignite:          { key: 'ignite',          label: 'Підпал',            desc: 'Удар + підпал (X урону/хід N ходів)',      needsTarget: true,  targetSide: 'ai'   },
   inferno:         { key: 'inferno',         label: 'Інферно',           desc: 'Фаєрбол ×4 по ВСІХ ворогах + підпал',     needsTarget: false, targetSide: null   },
   frost_bolt:      { key: 'frost_bolt',      label: 'Льодяна стріла',    desc: 'Урон + зменшення точності / заморожує',    needsTarget: true,  targetSide: 'ai'   },
@@ -1163,8 +1159,8 @@ export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePa
   }
   if (cls === 'mage') {
     const lvl = level ?? 1
-    if (lvl === 1 || !magePath) return MAGE_BASE.actions
-    return MAGE_PATHS[magePath][lvl]?.actions ?? MAGE_BASE.actions
+    if (lvl === 1 || !magePath) return MAGE_BASE.actions as ActionKey[]
+    return (MAGE_PATHS[magePath][lvl]?.actions ?? MAGE_BASE.actions) as ActionKey[]
   }
   if (cls === 'catapult') return ['barrage', 'grapeshot']
   return ['chain_lightning', 'fireball']
