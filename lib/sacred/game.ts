@@ -343,9 +343,15 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
       const row = living(enemySide).filter(u => u.row === r)
       if (!row.length) continue
       const reachable = row.filter(u => Math.abs(u.slot - actor.slot) <= 1)
-      if (reachable.length) return reachable.map(u => u.id)
-      const nearest = row.sort((a, b) => Math.abs(a.slot - actor.slot) - Math.abs(b.slot - actor.slot))[0]
-      return [nearest.id]
+      const targets = reachable.length
+        ? reachable
+        : [row.slice().sort((a, b) => Math.abs(a.slot - actor.slot) - Math.abs(b.slot - actor.slot))[0]]
+      // Taunt: front-row attacker must target taunted unit if reachable
+      if (actor.row === 0) {
+        const taunted = targets.filter(u => u.buffs.some(b => b.type === 'taunt'))
+        if (taunted.length) return taunted.map(u => u.id)
+      }
+      return targets.map(u => u.id)
     }
     return []
   }
@@ -441,12 +447,19 @@ export function executeAction(
     case 'consecration': {
       if (!target) break
       const tgt = getUnit(target.id)
-      const cleansed = { ...tgt, buffs: tgt.buffs.filter(b => b.type !== 'armor_break') }
-      const healed = Math.min(cleansed.maxHp, cleansed.hp + 15)
-      const amt = healed - cleansed.hp
-      update({ ...cleansed, hp: healed })
-      newLogs.push(log(`✨ ${actor.name} — Освячення! ${target.name} +${amt} HP, очищено від дебафів`, 'heal'))
+      const healed = Math.min(tgt.maxHp, tgt.hp + 25)
+      const amt = healed - tgt.hp
+      update({ ...tgt, hp: healed })
+      newLogs.push(log(`✨ ${actor.name} — Освячення! ${target.name} +${amt} HP`, 'heal'))
       newEvents.push(ev(target.id, `✨ +${amt}`, 'heal', actor.id))
+      break
+    }
+
+    case 'provoke': {
+      const a = getUnit(actor.id)
+      update({ ...a, buffs: [...a.buffs, makeBuff('taunt', 1, 2), makeBuff('defense_up', 0.20, 2)] })
+      newLogs.push(log(`🗣 ${actor.name} — Провокація! Вороги переднього ряду б'ють тільки його, +20% броні на 1 хід`, 'buff'))
+      newEvents.push(ev(actor.id, '🗣 Провокація!', 'buff'))
       break
     }
 
@@ -1001,10 +1014,20 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
       if (!allyCried && Math.random() < 0.35) return { action: 'battle_cry', targetId: null }
     }
 
+    if (lvl >= 2) {
+      // Provoke: use if not already taunting and player has front-row units
+      const alreadyTaunting = actor.buffs.some(b => b.type === 'taunt')
+      const playerFront = playerUnits.filter(u => u.row === 0)
+      if (!alreadyTaunting && playerFront.length > 0 && Math.random() < 0.30) {
+        return { action: 'provoke', targetId: null }
+      }
+    }
+
     if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.50) return { action: 'shield', targetId: null }
-    const front = playerUnits.filter(u => u.row === 0)
-    const target = (front.length ? front : playerUnits).sort((a, b) => a.hp - b.hp)[0]
     const strikeAction: ActionKey = lvl >= 4 ? 'sacred_strike' : 'strike'
+    const validIds = getValidTargets(actor, strikeAction, state.units)
+    const validUnits = state.units.filter(u => validIds.includes(u.id) && u.hp > 0)
+    const target = validUnits.sort((a, b) => a.hp - b.hp)[0]
     return { action: strikeAction, targetId: target?.id ?? null }
   }
 
@@ -1088,7 +1111,8 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   shield:          { key: 'shield',          label: 'Щит',               desc: '+50% броні цей хід',                       needsTarget: false, targetSide: null   },
   battle_cry:      { key: 'battle_cry',      label: 'Бойовий клич',      desc: '+15 моралі всім союзникам на 2 ходи',      needsTarget: false, targetSide: null   },
   sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: 'Удар + -10% броні цілі на 1 хід',          needsTarget: true,  targetSide: 'ai'   },
-  consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+15 HP та знімає дебафи з союзника',        needsTarget: true,  targetSide: 'ally' },
+  consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+25 HP союзнику',                           needsTarget: true,  targetSide: 'ally' },
+  provoke:         { key: 'provoke',         label: 'Провокація',        desc: 'Вороги переднього ряду б\'ють тільки тебе + +20% броні на 1 хід', needsTarget: false, targetSide: null },
   shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога',                  needsTarget: true,  targetSide: 'ai'   },
   aim:             { key: 'aim',             label: 'Прицілення',        desc: '+25–40% точн. та крит на 2 ходи',           needsTarget: false, targetSide: null   },
   poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },

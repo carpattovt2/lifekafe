@@ -15,6 +15,7 @@ export type BuffType =
   | 'wind_shield'   // air lv4: +X% evasion
   | 'fortress_buff' // earth lv5: +X% defense (party)
   | 'thorns'        // stone skin lv3: attacker takes X dmg on hit
+  | 'taunt'         // warrior lv2 provoke: front-row enemies must target this unit
 
 export interface Buff {
   id: string
@@ -90,6 +91,7 @@ export type ActionKey =
   | 'gust'            // air lv2-4: accuracy_down debuff (stronger at higher levels)
   | 'thunder_storm'   // air lv5: lightning_bolt hits ALL enemies
   | 'hurricane'       // air lv5: massive single-target + frozen (skip turn)
+  | 'provoke'         // warrior lv2: front-row enemies must target this unit + +20% defense
   | 'barrage'         // catapult: area strike, adjacents get 25–50% damage
   | 'grapeshot'       // catapult: all enemies in same row, -40% damage
 
@@ -262,30 +264,30 @@ export interface WarriorLevelData {
 export const WARRIOR_LEVELS: Record<number, WarriorLevelData> = {
   1: {
     name: 'Зброєносець',
-    hp: 80, minDmg: 10, maxDmg: 15, accuracy: 0.80, defense: 0,    evasion: 0.15,
-    initiative: 50, critChance: 0,    critMult: 2.0, morale: 50,
+    hp: 80, minDmg: 10, maxDmg: 15, accuracy: 0.80, defense: 0.10, evasion: 0.15,
+    initiative: 50, critChance: 0, critMult: 2.0, morale: 50,
     actions: ['strike', 'shield'],
     frontLineBonus: 0.20, xpToNext: 100,
   },
   2: {
     name: 'Солдат',
-    hp: 110, minDmg: 14, maxDmg: 20, accuracy: 0.85, defense: 0.10, evasion: 0.12,
-    initiative: 52, critChance: 0.05, critMult: 1.5, morale: 55,
-    actions: ['strike', 'shield'],
+    hp: 110, minDmg: 14, maxDmg: 20, accuracy: 0.80, defense: 0.10, evasion: 0.12,
+    initiative: 50, critChance: 0, critMult: 2.0, morale: 55,
+    actions: ['strike', 'shield', 'provoke'],
     frontLineBonus: 0.20, xpToNext: 200,
   },
   3: {
     name: 'Лицар',
-    hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.88, defense: 0.20, evasion: 0.10,
-    initiative: 55, critChance: 0.12, critMult: 1.75, morale: 65,
-    actions: ['strike', 'shield', 'battle_cry'],
+    hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.80, defense: 0.20, evasion: 0.10,
+    initiative: 50, critChance: 0, critMult: 2.0, morale: 65,
+    actions: ['strike', 'shield', 'battle_cry', 'provoke'],
     frontLineBonus: 0.25, xpToNext: 350,
   },
   4: {
     name: 'Паладін',
-    hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.92, defense: 0.35, evasion: 0.08,
-    initiative: 60, critChance: 0.18, critMult: 2.0, morale: 80,
-    actions: ['sacred_strike', 'shield', 'consecration'],
+    hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08,
+    initiative: 50, critChance: 0, critMult: 2.0, morale: 80,
+    actions: ['sacred_strike', 'shield', 'consecration', 'battle_cry'],
     frontLineBonus: 0.30, xpToNext: Infinity,
   },
 }

@@ -24,6 +24,7 @@ const BUFF_ICON: Record<string, string> = {
   wind_shield: '💨',
   fortress_buff: '🏰',
   thorns: '🌿',
+  taunt: '🗣',
 }
 
 const MAGE_PATH_ICON: Record<MagePath, string> = { fire: '🔥', water: '💧', earth: '🌿', air: '💨' }
@@ -484,18 +485,20 @@ function BattleLog({ entries }: { entries: LogEntry[] }) {
 }
 
 // ── Action button ──────────────────────────────────────────────────────────────
-function ActionBtn({ actionKey, selected, onSelect }: {
-  actionKey: ActionKey; selected: boolean; onSelect: () => void
+function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
+  actionKey: ActionKey; selected: boolean; onSelect: () => void; disabled?: boolean
 }) {
   const def = ACTIONS[actionKey]
   return (
     <button
-      onClick={onSelect}
+      onClick={disabled ? undefined : onSelect}
+      disabled={disabled}
       style={{
         flex: '1 1 0', padding: '10px 12px', borderRadius: 8, textAlign: 'left',
         background: selected ? 'rgba(176,120,80,0.12)' : '#fff',
         border: `1px solid ${selected ? '#b07850' : 'rgba(0,0,0,0.1)'}`,
-        color: 'var(--text)', cursor: 'pointer', transition: 'all 0.12s',
+        color: 'var(--text)', cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1, transition: 'all 0.12s',
       }}
     >
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{def.label}</div>
@@ -1134,10 +1137,17 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
             </div>
             {!state.needsTarget ? (
               <div style={{ display: 'flex', gap: 8 }}>
-                {mainActions.map(a => (
-                  <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
-                    onSelect={() => handleSelectAction(a)} />
-                ))}
+                {mainActions.map(a => {
+                  let disabled = false
+                  if (a === 'provoke' && actor) {
+                    const enemySide = actor.side === 'player' ? 'ai' : 'player'
+                    disabled = !state.units.some(u => u.side === enemySide && u.hp > 0 && u.row === 0)
+                  }
+                  return (
+                    <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
+                      onSelect={() => handleSelectAction(a)} disabled={disabled} />
+                  )
+                })}
               </div>
             ) : (
               <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
