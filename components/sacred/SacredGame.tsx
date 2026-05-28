@@ -773,10 +773,15 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
 
 // ── Landing screen ─────────────────────────────────────────────────────────────
 const LANDING_SHOWCASE = [
-  { src: '/sacred/warriors/level4.jpg',         name: 'Паладін',         role: 'Воїни' },
-  { src: '/sacred/archers/level3.jpg',          name: 'Рейнджер',        role: 'Лучники' },
-  { src: '/sacred/mages/fire/level5.jpg',       name: "Архонт Полум'я",  role: 'Маги' },
-  { src: '/sacred/catapults/ballista/level3.jpg', name: 'Скорпіон',      role: 'Облога' },
+  { src: '/sacred/warriors/level4.jpg',           name: 'Паладін',           role: 'Воїни' },
+  { src: '/sacred/archers/level3.jpg',            name: 'Рейнджер',          role: 'Лучники' },
+  { src: '/sacred/mages/fire/level5.jpg',         name: "Архонт Полум'я",    role: 'Маги' },
+  { src: '/sacred/catapults/ballista/level3.jpg', name: 'Скорпіон',          role: 'Облога' },
+  { src: '/sacred/warriors/level3.jpg',           name: 'Рицар',             role: 'Воїни' },
+  { src: '/sacred/mages/air/level5.jpg',          name: 'Архонт Вітру',      role: 'Маги' },
+  { src: '/sacred/catapults/trebuchet/level3.jpg',name: 'Чумний Требюше',    role: 'Облога' },
+  { src: '/sacred/warriors/level2.jpg',           name: 'Гвардієць',         role: 'Воїни' },
+  { src: '/sacred/archers/level2.jpg',            name: 'Розвідник',         role: 'Лучники' },
 ]
 
 function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: {
@@ -807,9 +812,13 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
         {/* Logo centered in hero */}
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -56%)',
-          filter: 'drop-shadow(0 0 32px rgba(212,168,90,0.55)) drop-shadow(0 2px 8px rgba(0,0,0,0.8))',
+          filter: [
+            'drop-shadow(0 0 48px rgba(212,168,90,0.7))',
+            'drop-shadow(0 0 20px rgba(212,168,90,0.45))',
+            'drop-shadow(0 4px 12px rgba(0,0,0,0.9))',
+          ].join(' '),
         }}>
-          <SeraphLogo size={140} color="#d4a85a" />
+          <SeraphLogo size={168} color="#d4a85a" />
         </div>
       </div>
 
@@ -824,10 +833,7 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
       </div>
 
       {/* Horizontal scroll showcase */}
-      <div style={{ padding: '16px 0 4px', flexShrink: 0 }}>
-        <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', color: 'rgba(240,232,216,0.3)', textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>
-          Юніти
-        </div>
+      <div style={{ padding: '14px 0 4px', flexShrink: 0 }}>
         <div style={{
           display: 'flex', gap: 10, overflowX: 'auto', padding: '0 20px 4px',
           scrollbarWidth: 'none', msOverflowStyle: 'none',
@@ -861,7 +867,7 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
           color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
           boxShadow: '0 4px 20px rgba(176,120,80,0.4)',
         }}>
-          ⚔ Одиночний бій
+          Одиночний бій
         </button>
 
         {savedTowerFloor ? (
@@ -872,7 +878,7 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
               color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
               boxShadow: '0 4px 20px rgba(74,122,90,0.4)',
             }}>
-              🗼 Продовжити тауер ({savedTowerFloor}/{TOWER_FLOORS.length})
+              Продовжити тауер ({savedTowerFloor}/{TOWER_FLOORS.length})
             </button>
             <button onClick={onStartTower} style={{
               padding: '11px 0', fontSize: 13, fontWeight: 600,
@@ -889,9 +895,12 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
             color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
             boxShadow: '0 4px 20px rgba(74,122,90,0.4)',
           }}>
-            🗼 Тауер
+            Тауер
           </button>
         )}
+        <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
+          v0.7
+        </div>
       </div>
     </div>
   )
@@ -1190,7 +1199,9 @@ function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[])
     .filter(u => u.side === 'player')
     .map(u => {
       if (u.hp > 0) return { ...u, hp: u.maxHp, buffs: [], hasActed: false }
-      return freshArmy.find(f => f.class === u.class && f.slot === u.slot && f.row === u.row) ?? u
+      const fresh = freshArmy.find(f => f.class === u.class && f.slot === u.slot && f.row === u.row)
+        ?? freshArmy.find(f => f.class === u.class)
+      return fresh ? { ...fresh, row: u.row, slot: u.slot, xp: u.xp, level: u.level, magePath: u.magePath, catapultPath: u.catapultPath } : { ...u, hp: u.maxHp, buffs: [], hasActed: false }
     })
 }
 
