@@ -2,8 +2,9 @@ import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
   ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
   ArmyCounts, BattleEvent, WarriorLevelData, ArcherLevelData, MagePath, MageLevelData,
+  CatapultPath, CatapultLevelData,
 } from './types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS } from './types'
+import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_BASE, CATAPULT_PATHS } from './types'
 
 // ── Unit templates ─────────────────────────────────────────────────────────────
 type Template = Omit<GameUnit, 'id' | 'side' | 'row' | 'slot' | 'name' | 'buffs' | 'hasActed' | 'level' | 'xp' | 'xpToNext'>
@@ -28,9 +29,9 @@ const TEMPLATES: Record<UnitClass, Template> = {
     critChance: 0, critMult: 2.0, counter: 0, evasion: 0.10,
   },
   catapult: {
-    class: 'catapult', hp: 95, maxHp: 95,
-    minDmg: 15, maxDmg: 18, accuracy: 0.60, defense: 0,
-    initiative: 10, morale: 50,
+    class: 'catapult', hp: 120, maxHp: 120,
+    minDmg: 22, maxDmg: 24, accuracy: 0.75, defense: 0,
+    initiative: 20, morale: 50,
     critChance: 0, critMult: 2.0, counter: 0, evasion: 0,
   },
 }
@@ -51,9 +52,10 @@ function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number): GameUnit 
     ...TEMPLATES[cls], maxHp: TEMPLATES[cls].hp, id: uid(), side, row, slot, hasActed: false, buffs: [], name,
     fireRes: 0, waterRes: 0, earthRes: 0, airRes: 0,
   }
-  if (cls === 'warrior') return { ...base, level: 1, xp: 0, xpToNext: WARRIOR_LEVELS[1].xpToNext }
-  if (cls === 'archer')  return { ...base, level: 1, xp: 0, xpToNext: ARCHER_LEVELS[1].xpToNext }
-  if (cls === 'mage')    return { ...base, level: 1, xp: 0, xpToNext: MAGE_BASE.xpToNext }
+  if (cls === 'warrior')  return { ...base, level: 1, xp: 0, xpToNext: WARRIOR_LEVELS[1].xpToNext }
+  if (cls === 'archer')   return { ...base, level: 1, xp: 0, xpToNext: ARCHER_LEVELS[1].xpToNext }
+  if (cls === 'mage')     return { ...base, level: 1, xp: 0, xpToNext: MAGE_BASE.xpToNext }
+  if (cls === 'catapult') return { ...base, level: 1, xp: 0, xpToNext: CATAPULT_BASE.xpToNext }
   return base
 }
 
@@ -169,6 +171,45 @@ function grantMageXp(
     const nextLevel = curLevel + 1
     const leveled = applyMageLevel({ ...unit, xp: newXp }, nextLevel)
     newLogs.push(log(`⭐ ${unit.name} — рівень ${nextLevel} (${MAGE_PATHS[unit.magePath!][nextLevel].name})!`, 'buff'))
+    newEvents.push(ev(unit.id, `⭐ Рівень ${nextLevel}!`, 'buff'))
+    return { unit: leveled, pendingChoice: false }
+  }
+  return { unit: { ...unit, xp: newXp }, pendingChoice: false }
+}
+
+// ── Catapult level-up helpers ──────────────────────────────────────────────────
+function applyCatapultPath(unit: GameUnit, path: CatapultPath, newLevel: number): GameUnit {
+  const data: CatapultLevelData = CATAPULT_PATHS[path][newLevel]
+  if (!data) return unit
+  const hpPct = unit.hp / unit.maxHp
+  return {
+    ...unit,
+    catapultPath: path, level: newLevel, xp: 0,
+    xpToNext: data.xpToNext === Infinity ? Infinity : data.xpToNext,
+    maxHp: data.hp, hp: Math.max(1, Math.round(hpPct * data.hp)),
+    minDmg: data.minDmg, maxDmg: data.maxDmg,
+    accuracy: data.accuracy, defense: data.defense,
+    evasion: data.evasion, initiative: data.initiative,
+    critChance: data.critChance, critMult: data.critMult,
+    morale: data.morale,
+  }
+}
+
+function grantCatapultXp(
+  unit: GameUnit, amount: number,
+  newLogs: LogEntry[], newEvents: BattleEvent[],
+): { unit: GameUnit; pendingChoice: boolean } {
+  if (unit.class !== 'catapult' || amount <= 0) return { unit, pendingChoice: false }
+  const curLevel = unit.level ?? 1
+  if (curLevel >= 3) return { unit, pendingChoice: false }
+  const newXp = (unit.xp ?? 0) + amount
+  if (newXp >= (unit.xpToNext ?? Infinity)) {
+    if (curLevel === 1) {
+      return { unit: { ...unit, xp: newXp }, pendingChoice: true }
+    }
+    const nextLevel = curLevel + 1
+    const leveled = applyCatapultPath({ ...unit, xp: newXp }, unit.catapultPath!, nextLevel)
+    newLogs.push(log(`⭐ ${unit.name} — рівень ${nextLevel} (${CATAPULT_PATHS[unit.catapultPath!][nextLevel].name})!`, 'buff'))
     newEvents.push(ev(unit.id, `⭐ Рівень ${nextLevel}!`, 'buff'))
     return { unit: leveled, pendingChoice: false }
   }
@@ -400,7 +441,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'hurricane', 'barrage', 'grapeshot'].includes(action)) {
+  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'hurricane', 'barrage', 'grapeshot', 'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 
@@ -414,7 +455,8 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
 // ── Execute one action ─────────────────────────────────────────────────────────
 export function executeAction(
   state: BattleState, actor: GameUnit, action: ActionKey, targetId: string | null,
-): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingMageLevelUp?: string } {
+  secondTargetId?: string | null,
+): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingMageLevelUp?: string; pendingCatapultLevelUp?: string } {
   let units = state.units.map(u => ({ ...u }))
   const newLogs: LogEntry[] = []
   const newEvents: BattleEvent[] = []
@@ -748,6 +790,106 @@ export function executeAction(
       break
     }
 
+    case 'ballista_shot': {
+      if (!target) break
+      newLogs.push(log(`🏹 ${actor.name} — Прицільний постріл!`, 'attack'))
+      const res = resolveAttack(actor, target, units)
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) hitLanded = true
+      break
+    }
+
+    case 'twin_bolt': {
+      if (!target) break
+      // secondTargetId comes from the caller (reducer pendingFirstTarget flow)
+      const twinTargetId = secondTargetId ?? target.id
+      newLogs.push(log(`⚡ ${actor.name} — Подвійний болт!`, 'attack'))
+      for (const tid of [target.id, twinTargetId]) {
+        const tgt = getUnit(tid)
+        if (tgt.hp === 0) continue
+        const res = resolveAttack(actor, tgt, units)
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...tgt, hp: Math.max(0, tgt.hp - res.damage) })
+          if (getUnit(tgt.id).hp === 0) newLogs.push(log(`☠ ${tgt.name} гине!`, 'death'))
+        }
+        if (res.hit && !res.evaded) hitLanded = true
+      }
+      break
+    }
+
+    case 'trebuchet_volley': {
+      if (!target) break
+      const splashAcc = 0.75
+      newLogs.push(log(`💥 ${actor.name} — Залп Требюше!`, 'attack'))
+      const res = resolveAttack(actor, target, units)
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        hitLanded = true
+        for (const adjSnap of getAdjacentEnemies(target, units, enemySide)) {
+          const adj = getUnit(adjSnap.id)
+          if (adj.hp === 0) continue
+          const adjRes = resolveAttack(actor, adj, units, { dmgMult: 0.60, accBonus: splashAcc - actor.accuracy })
+          newLogs.push(...adjRes.logs); newEvents.push(...adjRes.events)
+          if (adjRes.damage > 0) {
+            update({ ...adj, hp: Math.max(0, adj.hp - adjRes.damage) })
+            if (getUnit(adj.id).hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
+          }
+        }
+      }
+      break
+    }
+
+    case 'plague_volley': {
+      if (!target) break
+      const splashAcc2 = 0.80
+      const poisonChance = 0.60
+      const poisonDmg = 15
+      newLogs.push(log(`☠ ${actor.name} — Чумний залп!`, 'attack'))
+      const res = resolveAttack(actor, target, units)
+      newLogs.push(...res.logs); newEvents.push(...res.events)
+      if (res.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res.hit && !res.evaded) {
+        hitLanded = true
+        const tgt = getUnit(target.id)
+        if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'poison') && Math.random() < poisonChance) {
+          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('poison', poisonDmg, 3)] })
+          newLogs.push(log(`🧪 ${target.name} отруєний! ${poisonDmg} урону/хід на 3 ходи`, 'debuff'))
+          newEvents.push(ev(target.id, '🧪 Отрута!', 'debuff', actor.id))
+        }
+        for (const adjSnap of getAdjacentEnemies(target, units, enemySide)) {
+          const adj = getUnit(adjSnap.id)
+          if (adj.hp === 0) continue
+          const adjRes = resolveAttack(actor, adj, units, { dmgMult: 0.60, accBonus: splashAcc2 - actor.accuracy })
+          newLogs.push(...adjRes.logs); newEvents.push(...adjRes.events)
+          if (adjRes.damage > 0) {
+            update({ ...adj, hp: Math.max(0, adj.hp - adjRes.damage) })
+            if (getUnit(adj.id).hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
+          }
+          if (adjRes.hit && !adjRes.evaded) {
+            const adjNow = getUnit(adj.id)
+            if (adjNow.hp > 0 && !adjNow.buffs.some(b => b.type === 'poison') && Math.random() < poisonChance) {
+              update({ ...adjNow, buffs: [...adjNow.buffs, makeBuff('poison', poisonDmg, 3)] })
+              newLogs.push(log(`🧪 ${adj.name} отруєний!`, 'debuff'))
+              newEvents.push(ev(adj.id, '🧪 Отрута!', 'debuff', actor.id))
+            }
+          }
+        }
+      }
+      break
+    }
+
     // ── Mage fire path (handled above as 'fireball', 'fire_orb', 'armageddon') ──
 
     // ── Mage water path ───────────────────────────────────────────────────────
@@ -1064,7 +1206,8 @@ export function executeAction(
   }
 
   // ── XP: per kill (+50) and per hit (+10) ──────────────────────────────────
-  if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage') {
+  let pendingCatapultLevelUp: string | undefined
+  if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage' || actor.class === 'catapult') {
     const kills = units.filter(u => {
       const prev = prevUnitMap.get(u.id)
       return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
@@ -1074,7 +1217,7 @@ export function executeAction(
       const fresh = getUnit(actor.id)
       if (actor.class === 'warrior') update(grantWarriorXp(fresh, xpGain, newLogs, newEvents))
       else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
-      else {
+      else if (actor.class === 'mage') {
         const { unit: updatedMage, pendingChoice } = grantMageXp(fresh, xpGain, newLogs, newEvents)
         update(updatedMage)
         if (pendingChoice) {
@@ -1082,15 +1225,23 @@ export function executeAction(
           newEvents.push(ev(fresh.id, '⭐ Вибір шляху!', 'buff'))
           pendingMageLevelUp = fresh.id
         }
+      } else {
+        const { unit: updatedCat, pendingChoice } = grantCatapultXp(fresh, xpGain, newLogs, newEvents)
+        update(updatedCat)
+        if (pendingChoice) {
+          newLogs.push(log(`⭐ ${fresh.name} готова до еволюції!`, 'buff'))
+          newEvents.push(ev(fresh.id, '⭐ Еволюція!', 'buff'))
+          pendingCatapultLevelUp = fresh.id
+        }
       }
     }
   }
 
-  return { units, newLogs, newEvents, pendingMageLevelUp }
+  return { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp }
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
-function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; targetId: string | null } {
+function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; targetId: string | null; secondTargetId?: string | null } {
   const playerUnits = state.units.filter(u => u.hp > 0 && u.side === 'player')
   const aiAllies    = state.units.filter(u => u.hp > 0 && u.side === 'ai' && u.id !== actor.id)
   const weakest     = [...playerUnits].sort((a, b) => a.hp - b.hp)[0]
@@ -1201,6 +1352,27 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
 
   if (actor.class === 'catapult') {
     if (!playerUnits.length) return { action: 'barrage', targetId: null }
+    const path = actor.catapultPath
+    const lvl = actor.level ?? 1
+
+    if (path === 'ballista') {
+      if (lvl >= 3) {
+        const t1 = weakest
+        const t2 = playerUnits.find(u => u.id !== t1?.id) ?? t1
+        return { action: 'twin_bolt', targetId: t1?.id ?? null, secondTargetId: t2?.id ?? null }
+      }
+      return { action: 'ballista_shot', targetId: weakest?.id ?? null }
+    }
+
+    if (path === 'trebuchet') {
+      const bestTarget = [...playerUnits].sort((a, b) =>
+        getAdjacentEnemies(b, state.units, actor.side as Side).length -
+        getAdjacentEnemies(a, state.units, actor.side as Side).length
+      )[0]
+      return { action: lvl >= 3 ? 'plague_volley' : 'trebuchet_volley', targetId: bestTarget?.id ?? weakest?.id ?? null }
+    }
+
+    // lv1: original logic
     const rowCounts = ([0, 1, 2] as Row[]).map(r => ({
       row: r, units: playerUnits.filter(u => u.row === r),
     }))
@@ -1251,11 +1423,15 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   tailwind:        { key: 'tailwind',        label: 'Попутний вітер',    desc: '+ініціатива і +точність всім союзникам',  needsTarget: false, targetSide: null   },
   thunder_storm:   { key: 'thunder_storm',   label: 'Гроза',             desc: 'Блискавка ×2 по ВСІХ ворогах',            needsTarget: false, targetSide: null   },
   hurricane:       { key: 'hurricane',       label: 'Ураган',            desc: '30-40 урон + область 50% + Дезорієнтація (кд 2 ходи)', needsTarget: true,  targetSide: 'ai' },
-  barrage:         { key: 'barrage',         label: 'Удар по площі',     desc: 'Ціль + сусіди отримують 25–50% урону',    needsTarget: true,  targetSide: 'ai'   },
-  grapeshot:       { key: 'grapeshot',       label: 'Картеч',            desc: 'Весь ряд цілі з -40% урону',              needsTarget: true,  targetSide: 'ai'   },
+  barrage:          { key: 'barrage',          label: 'Удар по площі',     desc: 'Ціль + сусіди отримують 25–50% урону',        needsTarget: true,  targetSide: 'ai' },
+  grapeshot:        { key: 'grapeshot',        label: 'Картеч',            desc: 'Весь ряд цілі з -40% урону',                  needsTarget: true,  targetSide: 'ai' },
+  ballista_shot:    { key: 'ballista_shot',    label: 'Прицільний постріл', desc: '32 урону, 95% точність',                     needsTarget: true,  targetSide: 'ai' },
+  twin_bolt:        { key: 'twin_bolt',        label: 'Подвійний болт',    desc: '2 постріли по 35 урону — обираєш 2 цілі',     needsTarget: true,  targetSide: 'ai' },
+  trebuchet_volley: { key: 'trebuchet_volley', label: 'Залп Требюше',      desc: '45 урону + 60% урону сусідам (75% точн.)',    needsTarget: true,  targetSide: 'ai' },
+  plague_volley:    { key: 'plague_volley',    label: 'Чумний залп',       desc: '60 урону + 60% по сусідах + 60% отруєння',   needsTarget: true,  targetSide: 'ai' },
 }
 
-export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePath): ActionKey[] {
+export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePath, catapultPath?: CatapultPath): ActionKey[] {
   if (cls === 'warrior') {
     const lvl = level ?? 1
     return WARRIOR_LEVELS[lvl]?.actions ?? ['strike', 'shield']
@@ -1269,7 +1445,11 @@ export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePa
     if (lvl === 1 || !magePath) return MAGE_BASE.actions as ActionKey[]
     return (MAGE_PATHS[magePath][lvl]?.actions ?? MAGE_BASE.actions) as ActionKey[]
   }
-  if (cls === 'catapult') return ['barrage', 'grapeshot']
+  if (cls === 'catapult') {
+    const lvl = level ?? 1
+    if (lvl === 1 || !catapultPath) return CATAPULT_BASE.actions as ActionKey[]
+    return (CATAPULT_PATHS[catapultPath][lvl]?.actions ?? CATAPULT_BASE.actions) as ActionKey[]
+  }
   return ['chain_lightning', 'fireball']
 }
 
@@ -1309,18 +1489,26 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || actor.hp === 0) return state
       if (!ACTIONS[a].needsTarget) {
-        const { units, newLogs, newEvents, pendingMageLevelUp } = executeAction(state, actor, a, null)
+        const { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, a, null)
         const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+        if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
         return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
       }
-      return { ...state, selectedAction: a, needsTarget: true, events: [] }
+      return { ...state, selectedAction: a, needsTarget: true, events: [], pendingFirstTarget: undefined }
     }
 
     case 'CONFIRM_TARGET': {
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || !state.selectedAction) return state
-      const { units, newLogs, newEvents, pendingMageLevelUp } = executeAction(state, actor, state.selectedAction, action.targetId)
-      const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      // Twin bolt: store first target, wait for second
+      if (state.selectedAction === 'twin_bolt' && state.pendingFirstTarget === undefined) {
+        return { ...state, pendingFirstTarget: action.targetId }
+      }
+      const mainTarget = state.pendingFirstTarget ?? action.targetId
+      const second     = state.pendingFirstTarget ? action.targetId : undefined
+      const { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, state.selectedAction, mainTarget, second)
+      const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined })
+      if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
     }
 
@@ -1333,6 +1521,19 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       return {
         ...state, units, pendingMageLevelUp: undefined,
         log: [...state.log, { id: ++_logId, text: `⭐ ${mage.name} обирає шлях ${pathNames[action.path]} — ${MAGE_PATHS[action.path][2].name}!`, type: 'buff' }],
+        events: [ev(action.unitId, `⭐ ${pathNames[action.path]}!`, 'buff')],
+      }
+    }
+
+    case 'CHOOSE_CATAPULT_PATH': {
+      const cat = state.units.find(u => u.id === action.unitId)
+      if (!cat || cat.class !== 'catapult') return state
+      const leveled = applyCatapultPath(cat, action.path, 2)
+      const units = state.units.map(u => u.id === action.unitId ? leveled : u)
+      const pathNames: Record<CatapultPath, string> = { ballista: 'Баліста', trebuchet: 'Требюше' }
+      return {
+        ...state, units, pendingCatapultLevelUp: undefined,
+        log: [...state.log, { id: ++_logId, text: `⭐ ${cat.name} → ${CATAPULT_PATHS[action.path][2].name}!`, type: 'buff' }],
         events: [ev(action.unitId, `⭐ ${pathNames[action.path]}!`, 'buff')],
       }
     }
@@ -1356,13 +1557,29 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
           })
         }
       }
+      // If AI catapult needs path choice, auto-pick
+      if (state.pendingCatapultLevelUp) {
+        const cat = state.units.find(u => u.id === state.pendingCatapultLevelUp)
+        if (cat && cat.side === 'ai') {
+          const paths: CatapultPath[] = ['ballista', 'trebuchet']
+          const picked = paths[Math.floor(Math.random() * paths.length)]
+          const leveled = applyCatapultPath(cat, picked, 2)
+          const units = state.units.map(u => u.id === cat.id ? leveled : u)
+          return advanceQueue({
+            ...state, units, pendingCatapultLevelUp: undefined,
+            log: [...state.log, { id: ++_logId, text: `⭐ ${cat.name} → ${CATAPULT_PATHS[picked][2].name}!`, type: 'buff' }],
+            events: [],
+          })
+        }
+      }
       const actorId = state.queue[state.queueIdx]
       const actor = state.units.find(u => u.id === actorId)
       if (!actor || actor.hp === 0 || actor.side !== 'ai') return advanceQueue(state)
-      const { action: act, targetId } = aiDecide(actor, state)
+      const { action: act, targetId, secondTargetId } = aiDecide(actor, state)
       if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
-      const { units, newLogs, newEvents, pendingMageLevelUp } = executeAction(state, actor, act, targetId)
+      const { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, act, targetId, secondTargetId)
       const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
     }
 
@@ -1395,7 +1612,7 @@ function advanceQueue(state: BattleState): BattleState {
     // Award round-survival XP to all living units
     const roundLogs: LogEntry[] = []
     const roundEvents: BattleEvent[] = []
-    for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage') && x.hp > 0)) {
+    for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
       if (u.class === 'warrior') {
         const updated = grantWarriorXp(u, 15, roundLogs, roundEvents)
         units = units.map(x => x.id === updated.id ? updated : x)
@@ -1403,9 +1620,11 @@ function advanceQueue(state: BattleState): BattleState {
         const updated = grantArcherXp(u, 15, roundLogs, roundEvents)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'mage') {
-        const { unit: updated, pendingChoice } = grantMageXp(u, 15, roundLogs, roundEvents)
+        const { unit: updated } = grantMageXp(u, 15, roundLogs, roundEvents)
         units = units.map(x => x.id === updated.id ? updated : x)
-        // pendingChoice from round XP handled after advanceQueue returns
+      } else if (u.class === 'catapult') {
+        const { unit: updated } = grantCatapultXp(u, 15, roundLogs, roundEvents)
+        units = units.map(x => x.id === updated.id ? updated : x)
       }
     }
     state = {

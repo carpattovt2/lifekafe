@@ -60,6 +60,8 @@ export interface GameUnit {
 
   // Mage-only
   magePath?: MagePath
+  // Catapult-only
+  catapultPath?: CatapultPath
 
   // Elemental resistances (0–1, default 0)
   fireRes?: number
@@ -69,6 +71,7 @@ export interface GameUnit {
 }
 
 export type MagePath = 'fire' | 'water' | 'earth' | 'air'
+export type CatapultPath = 'ballista' | 'trebuchet'
 
 export type ActionKey =
   | 'strike'          // warrior: melee attack (adjacent slots, same row)
@@ -101,8 +104,12 @@ export type ActionKey =
   | 'thunder_storm'   // air (legacy): lightning_bolt hits ALL enemies
   | 'hurricane'       // air lv5: area 30-40 dmg + Громова дезорієнтація + 2-turn cooldown
   | 'provoke'         // warrior lv2: front-row enemies must target this unit + +20% defense
-  | 'barrage'         // catapult: area strike, adjacents get 25–50% damage
-  | 'grapeshot'       // catapult: all enemies in same row, -40% damage
+  | 'barrage'          // catapult lv1: area strike, adjacents get 25–50% damage
+  | 'grapeshot'        // catapult lv1: all enemies in same row, -40% damage
+  | 'ballista_shot'    // ballista lv2: single high-acc shot
+  | 'twin_bolt'        // scorpion lv3: two shots, player picks 2 targets separately
+  | 'trebuchet_volley' // trebuchet lv2: 45 dmg primary + 60% splash (75% adj acc)
+  | 'plague_volley'    // plague trebuchet lv3: 60 dmg + 60% splash + 60% poison
 
 export interface ActionDef {
   key: ActionKey
@@ -141,7 +148,9 @@ export interface BattleState {
   needsTarget: boolean
   events: BattleEvent[]
 
-  pendingMageLevelUp?: string  // unitId of mage awaiting path choice
+  pendingMageLevelUp?: string      // unitId of mage awaiting path choice
+  pendingCatapultLevelUp?: string  // unitId of catapult awaiting path choice
+  pendingFirstTarget?: string      // first target for twin_bolt two-step selection
 }
 
 export type BattleAction =
@@ -151,6 +160,7 @@ export type BattleAction =
   | { type: 'AI_TAKE_TURN' }
   | { type: 'ADVANCE_QUEUE' }
   | { type: 'CHOOSE_MAGE_PATH'; unitId: string; path: MagePath }
+  | { type: 'CHOOSE_CATAPULT_PATH'; unitId: string; path: CatapultPath }
 
 export interface ArmyCounts {
   warriors: number   // 0–4, row 0
@@ -298,5 +308,34 @@ export const WARRIOR_LEVELS: Record<number, WarriorLevelData> = {
     initiative: 50, critChance: 0, critMult: 2.0, morale: 80,
     actions: ['sacred_strike', 'shield', 'consecration', 'battle_cry'],
     frontLineBonus: 0.30, xpToNext: Infinity,
+  },
+}
+
+// ── Catapult level data ────────────────────────────────────────────────────────
+export interface CatapultLevelData {
+  name: string
+  hp: number; minDmg: number; maxDmg: number
+  accuracy: number; defense: number; evasion: number
+  initiative: number; critChance: number; critMult: number; morale: number
+  actions: ActionKey[]
+  xpToNext: number
+}
+
+export const CATAPULT_BASE: CatapultLevelData = {
+  name: 'Катапульта',
+  hp: 120, minDmg: 22, maxDmg: 24, accuracy: 0.75, defense: 0, evasion: 0,
+  initiative: 20, critChance: 0, critMult: 2.0, morale: 50,
+  actions: ['barrage', 'grapeshot'],
+  xpToNext: 170,
+}
+
+export const CATAPULT_PATHS: Record<CatapultPath, Record<number, CatapultLevelData>> = {
+  ballista: {
+    2: { name: 'Баліста',  hp: 180, minDmg: 32, maxDmg: 32, accuracy: 0.95, defense: 0, evasion: 0, initiative: 20, critChance: 0, critMult: 2.0, morale: 50, actions: ['ballista_shot'], xpToNext: 370 },
+    3: { name: 'Скорпіон', hp: 240, minDmg: 35, maxDmg: 35, accuracy: 0.90, defense: 0, evasion: 0, initiative: 20, critChance: 0, critMult: 2.0, morale: 50, actions: ['twin_bolt'],     xpToNext: Infinity },
+  },
+  trebuchet: {
+    2: { name: 'Требюше',         hp: 210, minDmg: 45, maxDmg: 45, accuracy: 0.75, defense: 0, evasion: 0, initiative: 20, critChance: 0, critMult: 2.0, morale: 50, actions: ['trebuchet_volley'], xpToNext: 370 },
+    3: { name: 'Чумний Требюше', hp: 300, minDmg: 60, maxDmg: 60, accuracy: 0.75, defense: 0, evasion: 0, initiative: 20, critChance: 0, critMult: 2.0, morale: 50, actions: ['plague_volley'],    xpToNext: Infinity },
   },
 }

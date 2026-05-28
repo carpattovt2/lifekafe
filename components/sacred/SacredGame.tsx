@@ -5,8 +5,8 @@ import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
   generateRecruitOptions, addUnitToArmy,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass } from '@/lib/sacred/types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass, CatapultPath } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 
@@ -246,6 +246,10 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
                         : undefined
   const portraitSrc = unit.level
     ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
+     : unit.class === 'catapult'
+       ? (unit.level === 1 || !unit.catapultPath
+           ? `/sacred/catapults/level1.jpg`
+           : `/sacred/catapults/${unit.catapultPath}/level${unit.level}.jpg`)
      : unit.class === 'archer'  ? `/sacred/archers/level${unit.level}.jpg`
      : unit.class === 'mage'
        ? (unit.level === 1 || !unit.magePath
@@ -877,6 +881,53 @@ function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: Ma
   )
 }
 
+// ── Catapult path choice modal ────────────────────────────────────────────────
+function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: CatapultPath) => void }) {
+  const paths: CatapultPath[] = ['ballista', 'trebuchet']
+  const pathIcon: Record<CatapultPath, string> = { ballista: '🏹', trebuchet: '⚙' }
+  const pathColor: Record<CatapultPath, string> = { ballista: '#4a86a8', trebuchet: '#8060a8' }
+  const pathDesc: Record<CatapultPath, string> = {
+    ballista:  'Точність і швидкість. Прицільний постріл (95% точн.), Скорпіон б\'є двічі по різних цілях.',
+    trebuchet: 'Важка артилерія. Залп по площі + 60% урону сусідам. Чумний Требюше отруює всіх уражених.',
+  }
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }} />
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 560, background: '#faf8f5',
+        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 20px 32px',
+        fontFamily: "'Inter', sans-serif",
+      }}>
+        <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 16px' }} />
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#b07850', textAlign: 'center', marginBottom: 4 }}>
+          ⭐ {unit.name} — Еволюція!
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginBottom: 18 }}>
+          Обери напрямок розвитку — це вплине на всі наступні рівні
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {paths.map(path => (
+            <button key={path} onClick={() => onChoose(path)} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
+              borderRadius: 12, border: `1.5px solid ${pathColor[path]}44`,
+              background: `${pathColor[path]}08`, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+            }}>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>{pathIcon[path]}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: pathColor[path], marginBottom: 2 }}>
+                  {pathIcon[path]} {CATAPULT_PATHS[path][2].name}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Recruitment screen ─────────────────────────────────────────────────────────
 const CLASS_LABEL_UA: Record<UnitClass, string> = {
   warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта',
@@ -1007,6 +1058,7 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
                       const portrait = unit.class === 'warrior' ? `/sacred/warriors/level${unit.level ?? 1}.jpg`
                         : unit.class === 'archer' ? `/sacred/archers/level${unit.level ?? 1}.jpg`
                         : unit.class === 'mage' ? (unit.level === 1 || !unit.magePath ? `/sacred/mages/level1.jpg` : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
+                        : unit.class === 'catapult' ? (unit.level === 1 || !unit.catapultPath ? `/sacred/catapults/level1.jpg` : `/sacred/catapults/${unit.catapultPath}/level${unit.level}.jpg`)
                         : null
                       const unitName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                         : unit.class === 'archer' ? ARCHER_LEVELS[unit.level ?? 1]?.name
@@ -1099,7 +1151,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
-  const mainActions = actor ? getMainActions(actor.class, actor.level, actor.magePath) : []
+  const mainActions = actor ? getMainActions(actor.class, actor.level, actor.magePath, actor.catapultPath) : []
 
   const targetIds = actor && state.selectedAction
     ? getValidTargets(actor, state.selectedAction, state.units)
@@ -1158,6 +1210,9 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
 
   const pendingMage = state.pendingMageLevelUp
     ? state.units.find(u => u.id === state.pendingMageLevelUp && u.side === 'player') ?? null
+    : null
+  const pendingCatapult = state.pendingCatapultLevelUp
+    ? state.units.find(u => u.id === state.pendingCatapultLevelUp && u.side === 'player') ?? null
     : null
 
   return (
@@ -1323,7 +1378,9 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
               </div>
               {state.needsTarget && (
                 <div style={{ marginLeft: 'auto', fontSize: 12, color: '#b07850', fontWeight: 500 }}>
-                  Обери ціль →
+                  {state.selectedAction === 'twin_bolt' && state.pendingFirstTarget
+                    ? 'Обери другу ціль →'
+                    : 'Обери ціль →'}
                 </div>
               )}
             </div>
@@ -1374,6 +1431,12 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
         <MagePathModal
           unit={pendingMage}
           onChoose={path => dispatch({ type: 'CHOOSE_MAGE_PATH', unitId: pendingMage.id, path })}
+        />
+      )}
+      {pendingCatapult && (
+        <CatapultPathModal
+          unit={pendingCatapult}
+          onChoose={path => dispatch({ type: 'CHOOSE_CATAPULT_PATH', unitId: pendingCatapult.id, path })}
         />
       )}
     </div>
