@@ -1526,6 +1526,13 @@ function aiCompositionText(counts: ArmyCounts): string {
   return parts.join(', ') || 'немає'
 }
 
+const ENEMY_CHIPS: { key: keyof ArmyCounts; icon: string; label: string; color: string }[] = [
+  { key: 'warriors',  icon: '⚔',  label: 'воїн',      color: '#c07070' },
+  { key: 'archers',   icon: '🏹', label: 'лучник',     color: '#c4a040' },
+  { key: 'mages',     icon: '✨', label: 'маг',        color: '#7ea8c4' },
+  { key: 'catapults', icon: '⚙',  label: 'катапульта', color: '#8060a8' },
+]
+
 function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
   floorIdx: number
   playerUnits: GameUnit[]
@@ -1541,84 +1548,117 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
       display: 'flex', flexDirection: 'column',
     }}>
       {/* Header */}
-      <div style={{ padding: '16px 20px 0', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f', flexShrink: 0 }}>
+      <div style={{ padding: '14px 20px 0', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <button onClick={onBackToMenu} style={{
-            padding: '6px 10px', fontSize: 12, color: 'rgba(240,232,216,0.45)',
-            background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, cursor: 'pointer',
-            fontFamily: 'inherit',
+            padding: '6px 12px', fontSize: 12, color: 'rgba(240,232,216,0.5)',
+            background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.1)',
+            borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
           }}>← Меню</button>
-          <div style={{ flex: 1, fontSize: 17, fontWeight: 800, color: '#b07850', textAlign: 'center' }}>🗼 Тауер Серафітів</div>
+          <div style={{ flex: 1, fontSize: 16, fontWeight: 800, color: '#d4a85a', textAlign: 'center' }}>🗼 Тауер Серафітів</div>
           <div style={{ width: 56 }} />
         </div>
-        {/* Floor progress bar */}
+        {/* Progress bar */}
         <div style={{ display: 'flex', gap: 3, paddingBottom: 14 }}>
           {TOWER_FLOORS.map((_, i) => (
             <div key={i} style={{
-              flex: 1, height: 5, borderRadius: 3,
-              background: i < floorIdx ? '#7aaa82' : i === floorIdx ? '#b07850' : 'rgba(0,0,0,0.1)',
+              flex: 1, height: 7, borderRadius: 4,
+              background: i < floorIdx
+                ? 'linear-gradient(90deg, #5a9a6a, #7aaa82)'
+                : i === floorIdx
+                  ? 'linear-gradient(90deg, #b07850, #d4a85a)'
+                  : 'rgba(240,232,216,0.08)',
               transition: 'background 0.3s',
+              boxShadow: i === floorIdx ? '0 0 6px rgba(176,120,80,0.5)' : 'none',
             }} />
           ))}
         </div>
       </div>
 
       {/* Scrollable body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 24px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 24px' }}>
 
-        {/* Current floor info */}
-        <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(176,120,80,0.07)', border: '1px solid rgba(176,120,80,0.22)', marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-            Поверх {currentFloor.floor} з {TOWER_FLOORS.length}
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#f0e8d8', marginBottom: 6 }}>{currentFloor.name}</div>
-          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>
-            ⚔ Вороги: {aiCompositionText(currentFloor.aiCounts)}
+        {/* Current floor hero card */}
+        <div style={{
+          borderRadius: 14, marginBottom: 16, overflow: 'hidden',
+          border: '1px solid rgba(176,120,80,0.35)',
+          background: 'linear-gradient(135deg, rgba(176,120,80,0.12) 0%, rgba(176,120,80,0.05) 100%)',
+        }}>
+          <div style={{ padding: '16px 18px 14px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#d4a85a', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+              ⚡ Поточний поверх · {currentFloor.floor} з {TOWER_FLOORS.length}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#f0e8d8', marginBottom: 10, lineHeight: 1.15 }}>
+              {currentFloor.name}
+            </div>
+            {/* Enemy chips */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {ENEMY_CHIPS.filter(c => currentFloor.aiCounts[c.key] > 0).map(c => (
+                <div key={c.key} style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '4px 10px', borderRadius: 20,
+                  background: `${c.color}18`, border: `1px solid ${c.color}44`,
+                }}>
+                  <span style={{ fontSize: 11 }}>{c.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: c.color }}>
+                    {currentFloor.aiCounts[c.key]} {c.label}{(currentFloor.aiCounts[c.key] ?? 0) > 1 ? 'и' : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Floor list */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
             Поверхи тауера
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {TOWER_FLOORS.map((floor, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9,
-                background: i === floorIdx ? 'rgba(176,120,80,0.08)' : '#fff',
-                border: `1px solid ${i === floorIdx ? 'rgba(176,120,80,0.3)' : 'rgba(0,0,0,0.07)'}`,
-              }}>
-                <div style={{
-                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                  background: i < floorIdx ? '#7aaa82' : i === floorIdx ? '#b07850' : 'rgba(0,0,0,0.07)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 700, color: i <= floorIdx ? '#fff' : 'rgba(240,232,216,0.35)',
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {TOWER_FLOORS.map((floor, i) => {
+              const isDone    = i < floorIdx
+              const isCurrent = i === floorIdx
+              const isLocked  = i > floorIdx
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10,
+                  background: isCurrent ? 'rgba(176,120,80,0.1)' : isDone ? 'rgba(122,170,130,0.07)' : 'rgba(240,232,216,0.03)',
+                  border: `1px solid ${isCurrent ? 'rgba(176,120,80,0.4)' : isDone ? 'rgba(122,170,130,0.2)' : 'rgba(240,232,216,0.07)'}`,
+                  opacity: isLocked ? 0.55 : 1,
                 }}>
-                  {i < floorIdx ? '✓' : floor.floor}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: i === floorIdx ? 700 : 500, color: i === floorIdx ? '#b07850' : '#f0e8d8' }}>
-                    {floor.name}
+                  <div style={{
+                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                    background: isDone ? '#5a9a6a' : isCurrent ? '#b07850' : 'rgba(240,232,216,0.08)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700,
+                    color: isDone || isCurrent ? '#fff' : 'rgba(240,232,216,0.3)',
+                    boxShadow: isCurrent ? '0 0 8px rgba(176,120,80,0.4)' : 'none',
+                  }}>
+                    {isDone ? '✓' : floor.floor}
                   </div>
-                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.45)' }}>
-                    {aiCompositionText(floor.aiCounts)}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: isCurrent ? 700 : 500, color: isCurrent ? '#d4a85a' : isDone ? '#7aaa82' : '#f0e8d8' }}>
+                      {floor.name}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.38)', marginTop: 1 }}>
+                      {aiCompositionText(floor.aiCounts)}
+                    </div>
                   </div>
+                  {isLocked && <span style={{ fontSize: 12, color: 'rgba(240,232,216,0.2)' }}>🔒</span>}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
-        {/* Player units summary */}
+        {/* Player army */}
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
             Твоя армія
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {playerUnits.map(u => {
-              const AvatarSVG = CLASS_SVG[u.class]
-              const color = SIDE_COLOR.player
+              const portrait = getPortraitSrc(u)
               const levelName = u.class === 'warrior' ? WARRIOR_LEVELS[u.level ?? 1]?.name
                               : u.class === 'archer'  ? ARCHER_LEVELS[u.level ?? 1]?.name
                               : u.class === 'mage' && u.level && u.level > 1 && u.magePath
@@ -1628,19 +1668,31 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
               const maxLevel = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : u.class === 'mage' ? 5 : 0
               const xpPct = maxLevel > 0 && (u.level ?? 1) < maxLevel
                 ? Math.min(100, ((u.xp ?? 0) / (u.xpToNext ?? 1)) * 100) : 0
+              const AvatarSVG = CLASS_SVG[u.class]
               return (
                 <div key={u.id} style={{
-                  width: 58, borderRadius: 8, padding: '7px 6px 6px',
-                  background: '#17150f', border: `1.5px solid ${color}44`,
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  width: 62, borderRadius: 10, overflow: 'hidden', position: 'relative',
+                  border: '1.5px solid rgba(122,170,130,0.3)',
                 }}>
-                  <AvatarSVG color={color} size={22} />
-                  <div style={{ fontSize: 8, fontWeight: 700, color: '#b07850', textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 52 }}>
-                    {levelName ?? u.name}
+                  {/* Portrait */}
+                  <div style={{ height: 68, position: 'relative', background: '#17150f' }}>
+                    {portrait
+                      ? <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <AvatarSVG color="#7aaa82" size={26} />
+                        </div>
+                    }
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 50%, rgba(0,0,0,0.75) 100%)' }} />
+                    <div style={{ position: 'absolute', bottom: 3, left: 0, right: 0, padding: '0 4px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 7, fontWeight: 700, color: '#f0e8d8', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {levelName ?? u.name}
+                      </div>
+                    </div>
                   </div>
+                  {/* XP bar */}
                   {xpPct > 0 && (
-                    <div style={{ width: '100%', height: 3, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
-                      <div style={{ width: `${xpPct}%`, height: '100%', background: '#b07850', borderRadius: 2 }} />
+                    <div style={{ height: 3, background: 'rgba(176,120,80,0.2)' }}>
+                      <div style={{ width: `${xpPct}%`, height: '100%', background: '#b07850' }} />
                     </div>
                   )}
                 </div>
@@ -1651,11 +1703,12 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
       </div>
 
       {/* Enter battle */}
-      <div style={{ padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0 }}>
+      <div style={{ padding: '12px 16px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0 }}>
         <button onClick={onEnterBattle} style={{
           width: '100%', padding: '15px 0', fontSize: 16, fontWeight: 700,
-          background: '#b07850', color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
-          boxShadow: '0 2px 14px rgba(176,120,80,0.3)', fontFamily: 'inherit',
+          background: 'linear-gradient(135deg, #b07850, #8c5a38)',
+          color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(176,120,80,0.4)', fontFamily: 'inherit',
         }}>
           ⚔ Вступити в бій
         </button>
