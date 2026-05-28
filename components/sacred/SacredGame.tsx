@@ -110,30 +110,32 @@ const CLASS_SVG: Record<string, AvatarComponent> = {
 }
 
 // ── Seraph Logo ────────────────────────────────────────────────────────────────
-function SeraphLogo() {
-  const c = '#b07850'
+function SeraphLogo({ size = 108, color = '#b07850' }: { size?: number; color?: string }) {
+  const c = color
+  const cx = size / 2, cy = size / 2, r = size * 0.463
   const spokes = [0, 45, 90, 135, 180, 225, 270, 315]
+  const scale = size / 108
   return (
-    <svg width={108} height={108} viewBox="0 0 108 108" fill="none">
-      <circle cx="54" cy="54" r="50" stroke={c} strokeWidth="1" opacity="0.25"/>
-      <circle cx="54" cy="54" r="42" stroke={c} strokeWidth="0.5" opacity="0.12"/>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none">
+      <circle cx={cx} cy={cy} r={r} stroke={c} strokeWidth={1.5 * scale} opacity="0.4"/>
+      <circle cx={cx} cy={cy} r={r * 0.84} stroke={c} strokeWidth={scale} opacity="0.18"/>
       {spokes.map((deg, i) => {
         const rad = (deg * Math.PI) / 180
         const isPrimary = i % 2 === 0
-        const r1 = isPrimary ? 38 : 40, r2 = isPrimary ? 50 : 46
+        const r1 = (isPrimary ? 38 : 40) * scale, r2 = (isPrimary ? 50 : 46) * scale
         return (
           <line key={deg}
-            x1={54 + r1 * Math.sin(rad)} y1={54 - r1 * Math.cos(rad)}
-            x2={54 + r2 * Math.sin(rad)} y2={54 - r2 * Math.cos(rad)}
-            stroke={c} strokeWidth={isPrimary ? 2 : 1}
-            opacity={isPrimary ? 0.65 : 0.35} strokeLinecap="round"/>
+            x1={cx + r1 * Math.sin(rad)} y1={cy - r1 * Math.cos(rad)}
+            x2={cx + r2 * Math.sin(rad)} y2={cy - r2 * Math.cos(rad)}
+            stroke={c} strokeWidth={isPrimary ? 2.5 * scale : 1.2 * scale}
+            opacity={isPrimary ? 0.9 : 0.5} strokeLinecap="round"/>
         )
       })}
-      <path d="M54 27L69 33V49Q69 64 54 69Q39 64 39 49V33Z"
-        fill={c} opacity="0.1" stroke={c} strokeWidth="1.5"/>
-      <line x1="54" y1="34" x2="54" y2="59" stroke={c} strokeWidth="2.5" strokeLinecap="round"/>
-      <line x1="48" y1="44" x2="60" y2="44" stroke={c} strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M51 34L54 29L57 34Z" fill={c}/>
+      <path d={`M${cx} ${27*scale+cy-54*scale}L${69*scale+cx-54*scale} ${33*scale+cy-54*scale}V${49*scale+cy-54*scale}Q${69*scale+cx-54*scale} ${64*scale+cy-54*scale} ${cx} ${69*scale+cy-54*scale}Q${39*scale+cx-54*scale} ${64*scale+cy-54*scale} ${39*scale+cx-54*scale} ${49*scale+cy-54*scale}V${33*scale+cy-54*scale}Z`}
+        fill={c} opacity="0.15" stroke={c} strokeWidth={2 * scale}/>
+      <line x1={cx} y1={34*scale+cy-54*scale} x2={cx} y2={59*scale+cy-54*scale} stroke={c} strokeWidth={3 * scale} strokeLinecap="round"/>
+      <line x1={(48*scale+cx-54*scale)} y1={44*scale+cy-54*scale} x2={(60*scale+cx-54*scale)} y2={44*scale+cy-54*scale} stroke={c} strokeWidth={2 * scale} strokeLinecap="round"/>
+      <path d={`M${51*scale+cx-54*scale} ${34*scale+cy-54*scale}L${cx} ${29*scale+cy-54*scale}L${57*scale+cx-54*scale} ${34*scale+cy-54*scale}Z`} fill={c}/>
     </svg>
   )
 }
@@ -753,6 +755,13 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
 }
 
 // ── Landing screen ─────────────────────────────────────────────────────────────
+const LANDING_SHOWCASE = [
+  { src: '/sacred/warriors/level4.jpg',         name: 'Паладін',         role: 'Воїни' },
+  { src: '/sacred/archers/level3.jpg',          name: 'Рейнджер',        role: 'Лучники' },
+  { src: '/sacred/mages/fire/level5.jpg',       name: "Архонт Полум'я",  role: 'Маги' },
+  { src: '/sacred/catapults/ballista/level3.jpg', name: 'Скорпіон',      role: 'Облога' },
+]
+
 function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: {
   onNewGame: () => void
   onStartTower: () => void
@@ -761,27 +770,79 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
 }) {
   return (
     <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
-      color: 'var(--text)', fontFamily: "'Inter', sans-serif",
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: '40px 24px', textAlign: 'center',
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#111008',
+      color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+      display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden',
     }}>
-      <div style={{ marginBottom: 20, filter: 'drop-shadow(0 0 18px rgba(176,120,80,0.35))' }}>
-        <SeraphLogo />
-      </div>
-      <div style={{ fontSize: 30, fontWeight: 800, color: '#b07850', letterSpacing: '-0.02em', marginBottom: 8 }}>
-        Серафити
-      </div>
-      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300, marginBottom: 36 }}>
-        Тактична покрокова битва. Обирай армію і веди її до перемоги.
+
+      {/* Hero image section */}
+      <div style={{ position: 'relative', height: '52vh', minHeight: 260, flexShrink: 0, overflow: 'hidden' }}>
+        <img
+          src="/sacred/warriors/level4.jpg"
+          alt="Паладін"
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
+        />
+        {/* top fade */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(17,16,8,0.15) 0%, transparent 30%, transparent 55%, rgba(17,16,8,0.85) 85%, #111008 100%)' }} />
+        {/* vignette sides */}
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, transparent 40%, rgba(17,16,8,0.5) 100%)' }} />
+
+        {/* Logo centered in hero */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -56%)',
+          filter: 'drop-shadow(0 0 32px rgba(212,168,90,0.55)) drop-shadow(0 2px 8px rgba(0,0,0,0.8))',
+        }}>
+          <SeraphLogo size={140} color="#d4a85a" />
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
+      {/* Title + subtitle */}
+      <div style={{ textAlign: 'center', padding: '4px 24px 0', flexShrink: 0 }}>
+        <div style={{ fontSize: 34, fontWeight: 800, color: '#d4a85a', letterSpacing: '-0.02em', lineHeight: 1.1, textShadow: '0 2px 16px rgba(212,168,90,0.3)' }}>
+          Серафити
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5, marginTop: 6 }}>
+          Тактична покрокова битва священних земель
+        </div>
+      </div>
+
+      {/* Horizontal scroll showcase */}
+      <div style={{ padding: '16px 0 4px', flexShrink: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', color: 'rgba(240,232,216,0.3)', textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>
+          Юніти
+        </div>
+        <div style={{
+          display: 'flex', gap: 10, overflowX: 'auto', padding: '0 20px 4px',
+          scrollbarWidth: 'none', msOverflowStyle: 'none',
+        } as React.CSSProperties}>
+          {LANDING_SHOWCASE.map(u => (
+            <div key={u.name} style={{
+              flexShrink: 0, width: 100,
+              borderRadius: 12, overflow: 'hidden',
+              border: '1px solid rgba(212,168,90,0.18)',
+              background: 'rgba(255,255,255,0.04)',
+              position: 'relative',
+            }}>
+              <img src={u.src} alt={u.name} style={{ width: '100%', height: 122, objectFit: 'cover', objectPosition: 'center top', display: 'block' }} />
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(17,16,8,0.92))', padding: '18px 8px 8px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#f0e8d8', textAlign: 'center' }}>{u.name}</div>
+                <div style={{ fontSize: 8, color: 'rgba(212,168,90,0.7)', textAlign: 'center', marginTop: 1 }}>{u.role}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
+
+      {/* Buttons */}
+      <div style={{ padding: '12px 20px 32px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
         <button onClick={onNewGame} style={{
-          padding: '14px 0', fontSize: 15, fontWeight: 700,
-          background: '#b07850', color: '#fff',
-          border: 'none', borderRadius: 12, cursor: 'pointer',
-          boxShadow: '0 2px 12px rgba(176,120,80,0.3)',
+          padding: '15px 0', fontSize: 15, fontWeight: 700, letterSpacing: '0.01em',
+          background: 'linear-gradient(135deg, #b07850, #8c5a38)',
+          color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(176,120,80,0.4)',
         }}>
           ⚔ Одиночний бій
         </button>
@@ -789,46 +850,31 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
         {savedTowerFloor ? (
           <>
             <button onClick={onContinueTower} style={{
-              padding: '14px 0', fontSize: 15, fontWeight: 700,
-              background: '#4a7a5a', color: '#fff',
-              border: 'none', borderRadius: 12, cursor: 'pointer',
-              boxShadow: '0 2px 12px rgba(74,122,90,0.3)',
+              padding: '15px 0', fontSize: 15, fontWeight: 700,
+              background: 'linear-gradient(135deg, #4a7a5a, #2e5c3e)',
+              color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
+              boxShadow: '0 4px 20px rgba(74,122,90,0.4)',
             }}>
               🗼 Продовжити тауер ({savedTowerFloor}/{TOWER_FLOORS.length})
             </button>
             <button onClick={onStartTower} style={{
-              padding: '10px 0', fontSize: 13, fontWeight: 600,
-              background: 'transparent', color: 'var(--muted)',
-              border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, cursor: 'pointer',
+              padding: '11px 0', fontSize: 13, fontWeight: 600,
+              background: 'transparent', color: 'rgba(240,232,216,0.45)',
+              border: '1px solid rgba(240,232,216,0.12)', borderRadius: 10, cursor: 'pointer',
             }}>
               Новий тауер
             </button>
           </>
         ) : (
           <button onClick={onStartTower} style={{
-            padding: '14px 0', fontSize: 15, fontWeight: 700,
-            background: '#4a7a5a', color: '#fff',
-            border: 'none', borderRadius: 12, cursor: 'pointer',
-            boxShadow: '0 2px 12px rgba(74,122,90,0.3)',
+            padding: '15px 0', fontSize: 15, fontWeight: 700,
+            background: 'linear-gradient(135deg, #4a7a5a, #2e5c3e)',
+            color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(74,122,90,0.4)',
           }}>
             🗼 Тауер
           </button>
         )}
-      </div>
-
-      <div style={{ marginTop: 44, display: 'flex', gap: 24, fontSize: 11, color: 'var(--muted)' }}>
-        {(['warrior', 'archer', 'mage', 'catapult'] as const).map(cls => {
-          const labels: Record<string, string> = { warrior: 'Воїни', archer: 'Лучники', mage: 'Маги', catapult: 'Катапульта' }
-          const AvatarSVG = CLASS_SVG[cls]
-          return (
-            <div key={cls} style={{ textAlign: 'center' }}>
-              <div style={{ marginBottom: 6, display: 'flex', justifyContent: 'center' }}>
-                <AvatarSVG color="#b07850" size={28} />
-              </div>
-              {labels[cls]}
-            </div>
-          )
-        })}
       </div>
     </div>
   )
