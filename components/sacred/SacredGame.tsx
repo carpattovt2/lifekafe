@@ -109,6 +109,17 @@ const CLASS_SVG: Record<string, AvatarComponent> = {
   warrior: WarriorSVG, archer: ArcherSVG, mage: MageSVG, catapult: CatapultSVG,
 }
 
+function getPortraitSrc(unit: GameUnit): string | null {
+  const lvl = unit.level ?? 1
+  if (unit.class === 'warrior') return `/sacred/warriors/level${lvl}.jpg`
+  if (unit.class === 'archer')  return `/sacred/archers/level${lvl}.jpg`
+  if (unit.class === 'mage')
+    return lvl === 1 || !unit.magePath ? '/sacred/mages/level1.jpg' : `/sacred/mages/${unit.magePath}/level${lvl}.jpg`
+  if (unit.class === 'catapult')
+    return lvl === 1 || !unit.catapultPath ? '/sacred/catapults/level1.jpg' : `/sacred/catapults/${unit.catapultPath}/level${lvl}.jpg`
+  return null
+}
+
 // ── Seraph Logo ────────────────────────────────────────────────────────────────
 function SeraphLogo({ size = 108, color = '#b07850' }: { size?: number; color?: string }) {
   const c = color
@@ -238,7 +249,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
 
   const alive = unit.hp > 0
   const color  = SIDE_COLOR[unit.side]
-  const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(0,0,0,0.12)'
+  const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(240,232,216,0.14)'
   const AvatarSVG = CLASS_SVG[unit.class]
   const unitLevelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                       : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
@@ -274,14 +285,14 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     <div
       data-unit-id={unit.id}
       className={isShaking ? 'unit-shake' : ''}
-      style={{ flexShrink: 0, width: 76 }}
+      style={{ flexShrink: 0, width: 68 }}
     >
       <div
         onClick={handleClick}
         className={pulseClass}
         style={{
-          width: 76, height: 90,
-          background: portraitSrc ? 'transparent' : (alive ? '#ffffff' : 'rgba(0,0,0,0.04)'),
+          width: 68, height: 80,
+          background: portraitSrc ? 'transparent' : (alive ? 'rgba(240,232,216,0.06)' : 'rgba(240,232,216,0.02)'),
           border: `2px solid ${borderColor}`,
           borderRadius: 8,
           cursor: alive ? 'pointer' : 'default',
@@ -374,17 +385,17 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
                 {isTargetable && !isActive && <span style={{ fontSize: 9, color, fontWeight: 700 }}>➜</span>}
               </div>
             </div>
-            <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.45)', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {unit.name}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.45)', fontVariantNumeric: 'tabular-nums' }}>
               {unit.hp}/{unit.maxHp}
             </div>
             <HpBar hp={unit.hp} maxHp={unit.maxHp} />
             {unit.buffs.length > 0 && (
               <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
                 {unit.buffs.map(b => (
-                  <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(0,0,0,0.07)', color: 'var(--muted)' }}>
+                  <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(240,232,216,0.08)', color: 'rgba(240,232,216,0.5)' }}>
                     {BUFF_ICON[b.type] ?? '✦'}{b.turnsLeft}
                   </span>
                 ))}
@@ -408,27 +419,27 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
   const sideColor = SIDE_COLOR[side]
 
   return (
-    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', minHeight: 96 }}>
+    <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', minHeight: 82 }}>
       {Array.from({ length: maxSlots }, (_, i) => {
         if (catapult && i === 2) {
           const alive = catapult.hp > 0
           return (
             <div key={i} style={{
-              width: 76, minHeight: 86, flexShrink: 0,
-              border: `2px dashed ${alive ? sideColor + '44' : 'rgba(0,0,0,0.1)'}`,
+              width: 68, minHeight: 76, flexShrink: 0,
+              border: `2px dashed ${alive ? sideColor + '44' : 'rgba(240,232,216,0.1)'}`,
               borderRadius: 8,
-              background: alive ? `${sideColor}06` : 'rgba(0,0,0,0.02)',
+              background: alive ? `${sideColor}06` : 'rgba(240,232,216,0.02)',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
               gap: 4, opacity: alive ? 1 : 0.35,
             }}>
-              <CatapultBaseSVG color={alive ? sideColor : '#aaa'} size={28} />
-              <span style={{ fontSize: 7, color: 'var(--muted)', fontWeight: 600 }}>База</span>
+              <CatapultBaseSVG color={alive ? sideColor : '#888'} size={24} />
+              <span style={{ fontSize: 7, color: 'rgba(240,232,216,0.35)', fontWeight: 600 }}>База</span>
             </div>
           )
         }
         const unit = rowUnits.find(u => u.slot === i)
         if (!unit) return (
-          <div key={i} style={{ width: 76, height: 86, border: '1px dashed rgba(0,0,0,0.1)', borderRadius: 8, flexShrink: 0 }} />
+          <div key={i} style={{ width: 68, height: 76, border: '1px dashed rgba(240,232,216,0.08)', borderRadius: 8, flexShrink: 0 }} />
         )
         return (
           <UnitCard key={unit.id} unit={unit}
@@ -447,24 +458,30 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
 // ── Turn queue ─────────────────────────────────────────────────────────────────
 function TurnQueue({ queue, units, currentIdx }: { queue: string[]; units: GameUnit[]; currentIdx: number }) {
   return (
-    <div style={{ overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
-      <div style={{ display: 'flex', gap: 5, padding: '0 4px', width: 'max-content' }}>
+    <div style={{ overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' } as React.CSSProperties}>
+      <div style={{ display: 'flex', gap: 4, padding: '0 4px', width: 'max-content' }}>
         {queue.map((id, i) => {
           const u = units.find(x => x.id === id)
           if (!u || u.hp === 0) return null
           const isCurrent = i === currentIdx
+          const portrait  = getPortraitSrc(u)
           const AvatarSVG = CLASS_SVG[u.class]
           return (
             <div key={`${id}-${i}`} style={{
-              width: 34, height: 34, borderRadius: 7, flexShrink: 0,
-              background: isCurrent ? '#b07850' : 'rgba(0,0,0,0.06)',
-              border: `1.5px solid ${isCurrent ? '#b07850' : SIDE_COLOR[u.side] + '88'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: isCurrent ? 1 : 0.6,
+              width: 32, height: 32, borderRadius: 7, flexShrink: 0,
+              border: `2px solid ${isCurrent ? '#b07850' : SIDE_COLOR[u.side] + '66'}`,
+              overflow: 'hidden',
+              opacity: isCurrent ? 1 : 0.55,
               transform: isCurrent ? 'scale(1.2)' : 'scale(1)',
               transition: 'transform 0.2s',
+              background: 'rgba(240,232,216,0.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: isCurrent ? '0 0 8px rgba(176,120,80,0.5)' : 'none',
             }}>
-              <AvatarSVG color={isCurrent ? '#fff' : SIDE_COLOR[u.side]} size={18} />
+              {portrait
+                ? <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                : <AvatarSVG color={isCurrent ? '#fff' : SIDE_COLOR[u.side]} size={16} />
+              }
             </div>
           )
         })}
@@ -479,14 +496,14 @@ function BattleLog({ entries }: { entries: LogEntry[] }) {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [entries.length])
 
   const typeColor: Record<LogEntry['type'], string> = {
-    attack: 'var(--text)', miss: 'var(--muted)', evade: '#4a86a8', crit: '#b07850',
-    heal: '#5a9a6a', buff: '#8060a8', debuff: '#c07070', death: '#c0392b', info: 'rgba(0,0,0,0.3)',
+    attack: '#f0e8d8', miss: 'rgba(240,232,216,0.4)', evade: '#6aaed8', crit: '#d4a85a',
+    heal: '#7aaa82', buff: '#a080c8', debuff: '#c07070', death: '#c0392b', info: 'rgba(240,232,216,0.28)',
   }
 
   return (
-    <div style={{ height: 130, overflowY: 'auto', padding: '8px 14px', background: '#f2efe9', borderTop: '1px solid var(--border)' }}>
+    <div style={{ height: 110, overflowY: 'auto', padding: '6px 14px', background: '#0a0906', borderTop: '1px solid rgba(240,232,216,0.08)' }}>
       {entries.slice(-40).map(e => (
-        <div key={e.id} style={{ fontSize: 12, color: typeColor[e.type], lineHeight: 1.6, marginBottom: 1 }}>
+        <div key={e.id} style={{ fontSize: 11, color: typeColor[e.type], lineHeight: 1.55, marginBottom: 1 }}>
           {e.text}
         </div>
       ))}
@@ -505,15 +522,15 @@ function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
       style={{
-        flex: '1 1 0', padding: '10px 12px', borderRadius: 8, textAlign: 'left',
-        background: selected ? 'rgba(176,120,80,0.12)' : '#fff',
-        border: `1px solid ${selected ? '#b07850' : 'rgba(0,0,0,0.1)'}`,
-        color: 'var(--text)', cursor: disabled ? 'not-allowed' : 'pointer',
+        flex: '1 1 0', padding: '9px 11px', borderRadius: 8, textAlign: 'left',
+        background: selected ? 'rgba(176,120,80,0.22)' : 'rgba(240,232,216,0.05)',
+        border: `1px solid ${selected ? '#b07850' : 'rgba(240,232,216,0.1)'}`,
+        color: '#f0e8d8', cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1, transition: 'all 0.12s',
       }}
     >
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{def.label}</div>
-      <div style={{ fontSize: 10, color: 'var(--muted)', lineHeight: 1.4 }}>{def.desc}</div>
+      <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.45)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{def.desc}</div>
     </button>
   )
 }
@@ -601,14 +618,14 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 560, maxHeight: '88vh',
-        background: '#faf8f5', borderRadius: '16px 16px 0 0',
-        border: `1px solid ${color}55`, borderBottom: 'none',
+        background: '#17150f', borderRadius: '16px 16px 0 0',
+        border: `1px solid ${color}44`, borderBottom: 'none',
         zIndex: 51, display: 'flex', flexDirection: 'column',
         fontFamily: "'Inter', sans-serif",
       }}>
         {/* Drag handle + header — fixed */}
         <div style={{ padding: '14px 20px 0', flexShrink: 0 }}>
-          <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 14px' }} />
+          <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 14px' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             <div style={{
               width: 44, height: 44, borderRadius: 10, flexShrink: 0,
@@ -630,7 +647,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginTop: 1 }}>
                 {unit.side === 'player' ? 'Твій юніт' : 'Ворожий юніт'} · {ROW_LABEL[unit.row]} ряд
               </div>
             </div>
@@ -639,8 +656,8 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
             </div>
             <button onClick={onClose} style={{
               width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-              background: 'rgba(0,0,0,0.05)', border: '1px solid rgba(0,0,0,0.1)',
-              color: 'var(--muted)', cursor: 'pointer', fontSize: 14,
+              background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.12)',
+              color: 'rgba(240,232,216,0.5)', cursor: 'pointer', fontSize: 14,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>✕</button>
           </div>
@@ -651,7 +668,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
 
           {/* HP */}
           <div style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(240,232,216,0.45)', marginBottom: 4 }}>
               <span>HP</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{unit.hp} / {unit.maxHp}</span>
             </div>
             <HpBar hp={unit.hp} maxHp={unit.maxHp} />
@@ -660,7 +677,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           {/* XP (warriors and archers) */}
           {maxLevel > 0 && (unit.level ?? 1) < maxLevel && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(240,232,216,0.45)', marginBottom: 4 }}>
                 <span>XP → {nextLevelName ?? '—'}</span>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{unit.xp ?? 0} / {unit.xpToNext ?? '?'}</span>
               </div>
@@ -681,9 +698,9 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 14 }}>
             {stats.map(([label, value]) => (
-              <div key={label} style={{ padding: '7px 10px', borderRadius: 8, background: '#fff', border: '1px solid rgba(0,0,0,0.08)' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>{label}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginTop: 1 }}>{value}</div>
+              <div key={label} style={{ padding: '7px 10px', borderRadius: 8, background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.09)' }}>
+                <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)' }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#f0e8d8', marginTop: 1 }}>{value}</div>
               </div>
             ))}
           </div>
@@ -691,7 +708,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           {/* Actions */}
           {actionsForSheet.length > 0 && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
                 Дії
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -700,11 +717,11 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                   return (
                     <div key={key} style={{
                       padding: '9px 12px', borderRadius: 9,
-                      background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+                      background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.09)',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: extra ? 3 : 0 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{def.label}</span>
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{def.desc}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#f0e8d8' }}>{def.label}</span>
+                        <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>{def.desc}</span>
                       </div>
                       {extra && (
                         <div style={{ fontSize: 10, color: color, opacity: 0.8 }}>{extra}</div>
@@ -720,7 +737,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
           {/* Active buffs */}
           {unit.buffs.length > 0 && (
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
                 Активні ефекти
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -728,10 +745,10 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                   <div key={b.id} style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '6px 10px', borderRadius: 8,
-                    background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+                    background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.09)',
                   }}>
                     <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>
+                    <span style={{ fontSize: 12, color: '#f0e8d8', flex: 1 }}>
                       {b.type === 'aimed'
                         ? `Прицілення +${Math.round(b.value * 100)}% точн.`
                         : b.type === 'morale_up'
@@ -742,7 +759,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                               ? `Отрута: -${b.value} HP/хід`
                               : (BUFF_LABEL[b.type] ?? b.type)}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.turnsLeft} хід.</span>
+                    <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>{b.turnsLeft} хід.</span>
                   </div>
                 ))}
               </div>
@@ -894,15 +911,15 @@ function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: Ma
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }} />
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 560, background: '#faf8f5',
+        width: '100%', maxWidth: 560, background: '#17150f',
         borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 20px 32px',
         fontFamily: "'Inter', sans-serif",
       }}>
-        <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 16px' }} />
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#b07850', textAlign: 'center', marginBottom: 4 }}>
+        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 16px' }} />
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 4 }}>
           ⭐ {unit.name} готовий до еволюції!
         </div>
-        <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginBottom: 18 }}>
+        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', textAlign: 'center', marginBottom: 18 }}>
           Обери шлях мага — це вплине на всі наступні рівні
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -917,7 +934,7 @@ function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: Ma
                 <div style={{ fontSize: 14, fontWeight: 700, color: MAGE_PATH_COLOR[path], marginBottom: 2 }}>
                   {MAGE_PATH_ICON[path]} {MAGE_PATH_NAME[path]} — {MAGE_PATHS[path][2].name}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
               </div>
             </button>
           ))}
@@ -941,15 +958,15 @@ function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }} />
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 560, background: '#faf8f5',
+        width: '100%', maxWidth: 560, background: '#17150f',
         borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 20px 32px',
         fontFamily: "'Inter', sans-serif",
       }}>
-        <div style={{ width: 36, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2, margin: '0 auto 16px' }} />
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#b07850', textAlign: 'center', marginBottom: 4 }}>
+        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 16px' }} />
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 4 }}>
           ⭐ {unit.name} — Еволюція!
         </div>
-        <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginBottom: 18 }}>
+        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', textAlign: 'center', marginBottom: 18 }}>
           Обери напрямок розвитку — це вплине на всі наступні рівні
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -964,7 +981,7 @@ function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path
                 <div style={{ fontSize: 14, fontWeight: 700, color: pathColor[path], marginBottom: 2 }}>
                   {pathIcon[path]} {CATAPULT_PATHS[path][2].name}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
               </div>
             </button>
           ))}
@@ -990,13 +1007,13 @@ function RecruitmentScreen({ options, onPick, onSkip }: {
 }) {
   return (
     <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
       fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', padding: '32px 24px',
     }}>
       <div style={{ fontSize: 28, marginBottom: 8 }}>🎖</div>
       <div style={{ fontSize: 20, fontWeight: 800, color: '#b07850', marginBottom: 6 }}>Нове поповнення!</div>
-      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 28, textAlign: 'center' }}>
+      <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 28, textAlign: 'center' }}>
         Після перемоги до тебе приєднується новий боєць. Обери одного:
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320 }}>
@@ -1013,14 +1030,14 @@ function RecruitmentScreen({ options, onPick, onSkip }: {
               </div>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>{CLASS_LABEL_UA[u.class]}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{CLASS_DESC_UA[u.class]}</div>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5 }}>{CLASS_DESC_UA[u.class]}</div>
               </div>
             </button>
           )
         })}
       </div>
       <button onClick={onSkip} style={{
-        marginTop: 20, padding: '10px 24px', fontSize: 13, color: 'var(--muted)',
+        marginTop: 20, padding: '10px 24px', fontSize: 13, color: 'rgba(240,232,216,0.45)',
         background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, cursor: 'pointer',
         fontFamily: 'inherit',
       }}>Пропустити</button>
@@ -1060,17 +1077,17 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
 
   return (
     <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
       fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
     }}>
-      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>✦ Розстановка армії</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>Натисни юніта, потім інший слот у тому ж ряду щоб поміняти</div>
+        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>Натисни юніта, потім інший слот у тому ж ряду щоб поміняти</div>
       </div>
       <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
         {([0, 1, 2] as Row[]).map(row => (
           <div key={row} style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
               {rowLabel[row]}
             </div>
             <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
@@ -1122,7 +1139,7 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
                       ) : (
                         <>
                           <CLASS_SVG_Component cls={unit.class} color={isSel ? '#6fa67a' : SIDE_COLOR.player} size={22} />
-                          <span style={{ fontSize: 8, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{unitName}</span>
+                          <span style={{ fontSize: 8, color: 'rgba(240,232,216,0.45)', textAlign: 'center', lineHeight: 1.2 }}>{unitName}</span>
                           {isSel && <span style={{ fontSize: 7, color: '#6fa67a', fontWeight: 700 }}>ОБРАНИЙ</span>}
                         </>
                       )
@@ -1143,7 +1160,7 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
           </div>
         )}
       </div>
-      <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: '#fff' }}>
+      <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
         <button onClick={() => onDone(arranged)} style={{
           width: '100%', padding: '14px', borderRadius: 10, border: 'none',
           background: '#b07850', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
@@ -1264,7 +1281,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column',
-      minHeight: '100vh', background: '#faf8f5', color: 'var(--text)',
+      minHeight: '100vh', background: '#0f0e09', color: '#f0e8d8',
       fontFamily: "'Inter', sans-serif",
     }}>
 
@@ -1282,13 +1299,13 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
       )}
 
       {/* Header */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850' }}>✦ Серафити</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a' }}>✦ Серафити</div>
             {towerFloor && <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, opacity: 0.8 }}>🗼 {towerFloor.floor}/{TOWER_FLOORS.length}</div>}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)' }}>
             {towerFloor ? `${towerFloor.name} · ` : ''}Раунд {state.round}
           </div>
         </div>
@@ -1299,11 +1316,11 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
       <div
         ref={battlefieldRef}
         style={{
-          flex: 1, padding: '10px 16px 270px', display: 'flex', flexDirection: 'column', gap: 2,
+          flex: 1, padding: '8px 12px 260px', display: 'flex', flexDirection: 'column', gap: 2,
           position: 'relative',
           backgroundImage: [
-            'repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(176,120,80,0.04) 23px, rgba(176,120,80,0.04) 24px)',
-            'repeating-linear-gradient(0deg,  transparent, transparent 23px, rgba(176,120,80,0.04) 23px, rgba(176,120,80,0.04) 24px)',
+            'repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(212,168,90,0.025) 23px, rgba(212,168,90,0.025) 24px)',
+            'repeating-linear-gradient(0deg,  transparent, transparent 23px, rgba(212,168,90,0.025) 23px, rgba(212,168,90,0.025) 24px)',
           ].join(','),
         }}
       >
@@ -1312,28 +1329,32 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
         {/* AI side: rows 2→1→0 */}
         <div style={{
           borderRadius: 8, padding: '6px 4px 4px',
-          background: 'rgba(192,112,112,0.05)',
-          border: '1px solid rgba(192,112,112,0.08)',
+          background: 'rgba(192,112,112,0.04)',
+          border: '1px solid rgba(192,112,112,0.1)',
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: '#c07070', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingLeft: 2 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(192,112,112,0.8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingLeft: 2 }}>
             Ворог
           </div>
-          {([2, 1, 0] as Row[]).map(row => (
-            <div key={row}>
-              <div style={{ fontSize: 9, color: 'rgba(192,112,112,0.6)', marginBottom: 2, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
-              <UnitRow
-                units={state.units} side="ai" row={row}
-                activeId={actor?.side === 'ai' ? actorId : null}
-                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-              />
-            </div>
-          ))}
+          {([2, 1, 0] as Row[]).map(row => {
+            const hasUnits = state.units.some(u => u.side === 'ai' && u.row === row)
+            if (!hasUnits) return null
+            return (
+              <div key={row}>
+                <div style={{ fontSize: 9, color: 'rgba(192,112,112,0.5)', marginBottom: 1, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
+                <UnitRow
+                  units={state.units} side="ai" row={row}
+                  activeId={actor?.side === 'ai' ? actorId : null}
+                  targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+                />
+              </div>
+            )
+          })}
         </div>
 
         {/* Divider */}
-        <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 16, background: '#faf8f5', padding: '0 8px', color: 'var(--muted)' }}>
+        <div style={{ borderTop: '1px solid rgba(240,232,216,0.1)', margin: '2px 0', position: 'relative' }}>
+          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 16, background: '#0f0e09', padding: '0 8px', color: 'rgba(240,232,216,0.3)' }}>
             ⚔
           </div>
         </div>
@@ -1341,21 +1362,25 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
         {/* Player side: rows 0→1→2 */}
         <div style={{
           borderRadius: 8, padding: '4px 4px 6px',
-          background: 'rgba(111,166,122,0.05)',
-          border: '1px solid rgba(111,166,122,0.08)',
+          background: 'rgba(111,166,122,0.04)',
+          border: '1px solid rgba(111,166,122,0.1)',
         }}>
-          {([0, 1, 2] as Row[]).map(row => (
-            <div key={row}>
-              <div style={{ fontSize: 9, color: 'rgba(111,166,122,0.7)', marginBottom: 2, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
-              <UnitRow
-                units={state.units} side="player" row={row}
-                activeId={actor?.side === 'player' ? actorId : null}
-                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-              />
-            </div>
-          ))}
-          <div style={{ fontSize: 10, fontWeight: 600, color: '#7aaa82', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, paddingLeft: 2 }}>
+          {([0, 1, 2] as Row[]).map(row => {
+            const hasUnits = state.units.some(u => u.side === 'player' && u.row === row)
+            if (!hasUnits) return null
+            return (
+              <div key={row}>
+                <div style={{ fontSize: 9, color: 'rgba(111,166,122,0.6)', marginBottom: 1, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
+                <UnitRow
+                  units={state.units} side="player" row={row}
+                  activeId={actor?.side === 'player' ? actorId : null}
+                  targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+                />
+              </div>
+            )
+          })}
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(111,166,122,0.8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, paddingLeft: 2 }}>
             Твоя армія
           </div>
         </div>
@@ -1365,8 +1390,8 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 560, zIndex: 20,
-        background: '#fff', borderTop: '1px solid var(--border)',
-        boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
+        background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)',
+        boxShadow: '0 -4px 24px rgba(0,0,0,0.4)',
       }}>
         {/* Action area */}
         <div style={{
@@ -1378,7 +1403,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
               <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 4 }}>
                 {state.winner === 'player' ? '🏆 Поверх пройдено!' : '💀 Поразка'}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', marginBottom: 12 }}>
                 {state.winner === 'player' ? towerFloor.name : 'Тауер завершено. Починай спочатку.'}
               </div>
               {state.winner === 'player' ? (
@@ -1410,17 +1435,19 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <div style={{
                 width: 34, height: 34, borderRadius: 8, flexShrink: 0,
-                background: `${SIDE_COLOR[actor.side]}18`, border: `1.5px solid ${SIDE_COLOR[actor.side]}55`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: `1.5px solid ${SIDE_COLOR[actor.side]}55`,
+                overflow: 'hidden',
               }}>
-                {CLASS_SVG[actor.class] && (() => {
+                {(() => {
+                  const src = getPortraitSrc(actor)
+                  if (src) return <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
                   const AvatarSVG = CLASS_SVG[actor.class]
-                  return <AvatarSVG color={SIDE_COLOR[actor.side]} size={20} />
+                  return AvatarSVG ? <AvatarSVG color={SIDE_COLOR[actor.side]} size={20} /> : null
                 })()}
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{actor.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>HP {actor.hp}/{actor.maxHp}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#f0e8d8' }}>{actor.name}</div>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>HP {actor.hp}/{actor.maxHp}</div>
               </div>
               {state.needsTarget && (
                 <div style={{ marginLeft: 'auto', fontSize: 12, color: '#b07850', fontWeight: 500 }}>
@@ -1455,14 +1482,14 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
               </div>
             ) : (
               <button onClick={() => dispatch({ type: 'CANCEL_ACTION' })}
-                style={{ padding: '10px 20px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>
+                style={{ padding: '10px 20px', background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.1)', borderRadius: 8, color: 'rgba(240,232,216,0.45)', cursor: 'pointer', fontSize: 13 }}>
                 Скасувати
               </button>
             )}
           </div>
 
         ) : (
-          <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', color: 'rgba(240,232,216,0.35)', fontSize: 13 }}>
             {state.phase === 'ai-thinking' ? `${actor?.name ?? 'Ворог'} думає...` : ''}
           </div>
         )}
@@ -1509,15 +1536,15 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
 
   return (
     <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#faf8f5',
-      color: 'var(--text)', fontFamily: "'Inter', sans-serif",
+      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+      color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
       display: 'flex', flexDirection: 'column',
     }}>
       {/* Header */}
-      <div style={{ padding: '16px 20px 0', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
+      <div style={{ padding: '16px 20px 0', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <button onClick={onBackToMenu} style={{
-            padding: '6px 10px', fontSize: 12, color: 'var(--muted)',
+            padding: '6px 10px', fontSize: 12, color: 'rgba(240,232,216,0.45)',
             background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, cursor: 'pointer',
             fontFamily: 'inherit',
           }}>← Меню</button>
@@ -1544,15 +1571,15 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
           <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
             Поверх {currentFloor.floor} з {TOWER_FLOORS.length}
           </div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{currentFloor.name}</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#f0e8d8', marginBottom: 6 }}>{currentFloor.name}</div>
+          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>
             ⚔ Вороги: {aiCompositionText(currentFloor.aiCounts)}
           </div>
         </div>
 
         {/* Floor list */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
             Поверхи тауера
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1566,15 +1593,15 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
                   width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
                   background: i < floorIdx ? '#7aaa82' : i === floorIdx ? '#b07850' : 'rgba(0,0,0,0.07)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 700, color: i <= floorIdx ? '#fff' : 'var(--muted)',
+                  fontSize: 10, fontWeight: 700, color: i <= floorIdx ? '#fff' : 'rgba(240,232,216,0.35)',
                 }}>
                   {i < floorIdx ? '✓' : floor.floor}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: i === floorIdx ? 700 : 500, color: i === floorIdx ? '#b07850' : 'var(--text)' }}>
+                  <div style={{ fontSize: 12, fontWeight: i === floorIdx ? 700 : 500, color: i === floorIdx ? '#b07850' : '#f0e8d8' }}>
                     {floor.name}
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.45)' }}>
                     {aiCompositionText(floor.aiCounts)}
                   </div>
                 </div>
@@ -1585,7 +1612,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
 
         {/* Player units summary */}
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
             Твоя армія
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -1604,7 +1631,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
               return (
                 <div key={u.id} style={{
                   width: 58, borderRadius: 8, padding: '7px 6px 6px',
-                  background: '#fff', border: `1.5px solid ${color}44`,
+                  background: '#17150f', border: `1.5px solid ${color}44`,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 }}>
                   <AvatarSVG color={color} size={22} />
@@ -1624,7 +1651,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
       </div>
 
       {/* Enter battle */}
-      <div style={{ padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: '#fff', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+      <div style={{ padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0 }}>
         <button onClick={onEnterBattle} style={{
           width: '100%', padding: '15px 0', fontSize: 16, fontWeight: 700,
           background: '#b07850', color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
