@@ -983,11 +983,16 @@ export function executeAction(
     case 'rock_throw': {
       if (!target) break
       const lvl = actor.level ?? 2
-      const mult = lvl >= 4 ? 3 : lvl >= 3 ? 2.5 : 2
-      const accDownVal = lvl >= 3 ? 0.15 : 0
-      const stun = lvl >= 4
+      const flatDmg = lvl >= 5 ? 25 : lvl >= 4 ? 22 : lvl >= 3 ? 18 : 15
+      const passiveChance = lvl >= 5 ? 0.70 : lvl >= 3 ? 0.65 : 0.60
+      const accDownVal = lvl >= 5 ? 0.15 : lvl >= 4 ? 0.10 : lvl >= 3 ? 0.07 : 0.05
       newLogs.push(log(`🪨 ${actor.name} — Кидок каменю!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { dmgMult: mult, ignoreEvasion: true, elemPath: 'earth' })
+      const res = resolveAttack(actor, target, units, {
+        accBonus: 0.80 - actor.accuracy,
+        dmgMin: flatDmg, dmgMax: flatDmg,
+        ignoreEvasion: true,
+        elemPath: 'earth',
+      })
       newLogs.push(...res.logs); newEvents.push(...res.events)
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
@@ -996,16 +1001,10 @@ export function executeAction(
       if (res.hit) {
         hitLanded = true
         const tgt = getUnit(target.id)
-        if (tgt.hp > 0) {
-          if (stun) {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
-            newLogs.push(log(`🪨 ${target.name} оглушений! Пропускає хід`, 'debuff'))
-            newEvents.push(ev(target.id, '🪨 Оглушено!', 'debuff', actor.id))
-          } else if (accDownVal > 0) {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', accDownVal, 3)] })
-            newLogs.push(log(`🪨 ${target.name} -${Math.round(accDownVal*100)}% точн. 2 ходи`, 'debuff'))
-            newEvents.push(ev(target.id, `🪨 -${Math.round(accDownVal*100)}% точн.`, 'debuff', actor.id))
-          }
+        if (tgt.hp > 0 && Math.random() < passiveChance) {
+          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', accDownVal, 3)] })
+          newLogs.push(log(`🪨 ${target.name} дезорієнтований! -${Math.round(accDownVal*100)}% точн. на 3 ходи`, 'debuff'))
+          newEvents.push(ev(target.id, `🪨 -${Math.round(accDownVal*100)}% точн.`, 'debuff', actor.id))
         }
       }
       break
@@ -1013,54 +1012,61 @@ export function executeAction(
 
     case 'stone_skin': {
       if (!target) break
-      const lvl = actor.level ?? 2
-      const defBonus = lvl >= 4 ? 0.40 : lvl >= 3 ? 0.35 : 0.25
-      const regenAmt = lvl >= 4 ? 5 : lvl >= 3 ? 3 : 0
-      const thornsAmt = lvl >= 3 ? 3 : 0
-      const a = getUnit(target.id)
-      const newBuffs = [...a.buffs, makeBuff('defense_up', defBonus, 4)]
-      if (regenAmt > 0) newBuffs.push(makeBuff('regen', regenAmt, 4))
-      if (thornsAmt > 0) newBuffs.push(makeBuff('thorns', thornsAmt, 4))
-      update({ ...a, buffs: newBuffs })
-      newLogs.push(log(`🪨 ${actor.name} — Кам'яна шкіра на ${target.name}! +${Math.round(defBonus*100)}% захист${regenAmt ? ` + ${regenAmt} HP/хід` : ''}${thornsAmt ? ` + тернії ${thornsAmt} урону` : ''}`, 'buff'))
+      const tgtSnap = getUnit(target.id)
+      if (tgtSnap.buffs.some(b => b.type === 'defense_up' && b.actionKey === 'stone_skin')) {
+        newLogs.push(log(`🪨 ${target.name} вже під захистом кам'яної шкіри!`, 'info'))
+        break
+      }
+      const lvl = actor.level ?? 3
+      const defBonus = lvl >= 5 ? 0.40 : lvl >= 4 ? 0.30 : 0.25
+      update({ ...tgtSnap, buffs: [...tgtSnap.buffs, makeBuff('defense_up', defBonus, 2, 'stone_skin')] })
+      newLogs.push(log(`🪨 ${actor.name} — Кам'яна шкіра на ${target.name}! +${Math.round(defBonus*100)}% захист на 2 ходи`, 'buff'))
       newEvents.push(ev(target.id, `🪨 +${Math.round(defBonus*100)}% захист`, 'buff', actor.id))
       break
     }
 
     case 'earthquake': {
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'earthquake')) break
       const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
       if (!enemies.length) break
       newLogs.push(log(`🪨 ${actor.name} — Землетрус!`, 'attack'))
+      hitLanded = true
       for (const snap of enemies) {
         const e = getUnit(snap.id)
         if (e.hp === 0) continue
-        const res = resolveAttack(actor, e, units, { dmgMult: 1.5, ignoreEvasion: true, elemPath: 'earth' })
-        newLogs.push(...res.logs); newEvents.push(...res.events)
-        if (res.damage > 0) {
-          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
-          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
-        }
-        if (res.hit) {
-          hitLanded = true
-          const tgt = getUnit(e.id)
-          if (tgt.hp > 0) {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', 0.25, 3)] })
+        const flatDmg = Math.floor(25 + Math.random() * 11)
+        update({ ...e, hp: Math.max(0, e.hp - flatDmg) })
+        newLogs.push(log(`🪨 ${e.name} -${flatDmg} урону`, 'attack'))
+        newEvents.push(ev(e.id, `🪨 -${flatDmg}`, 'damage', actor.id))
+        if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
+        if (Math.random() < 0.70) {
+          const eNow = getUnit(e.id)
+          if (eNow.hp > 0) {
+            const accDown = 0.25 + Math.random() * 0.10
+            const dur = 1 + Math.floor(Math.random() * 3)
+            update({ ...eNow, buffs: [...eNow.buffs, makeBuff('accuracy_down', accDown, dur)] })
+            newLogs.push(log(`🪨 ${e.name} дезорієнтований! -${Math.round(accDown*100)}% точн. на ${dur} хід${dur === 1 ? '' : 'и'}`, 'debuff'))
+            newEvents.push(ev(e.id, `🪨 -${Math.round(accDown*100)}% точн.`, 'debuff', actor.id))
           }
         }
       }
-      newLogs.push(log(`🪨 Усі вороги дезорієнтовані! -25% точн.`, 'debuff'))
+      const actorAfterEq = getUnit(actor.id)
+      update({ ...actorAfterEq, buffs: [...actorAfterEq.buffs, makeBuff('cooldown', 0, 5, 'earthquake')] })
       break
     }
 
     case 'fortress_aura': {
-      if (!target) break
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'fortress_aura')) break
       const allies = units.filter(u => u.side === actor.side && u.hp > 0)
-      newLogs.push(log(`🪨 ${actor.name} — Фортеця! Усі союзники +50% захист на 2 ходи`, 'buff'))
+      newLogs.push(log(`🪨 ${actor.name} — Фортеця! Кожен союзник отримує +33% захист`, 'buff'))
       for (const snap of allies) {
         const a = getUnit(snap.id)
-        update({ ...a, buffs: [...a.buffs, makeBuff('fortress_buff', 0.50, 3)] })
+        const dur = 1 + Math.floor(Math.random() * 3)
+        update({ ...a, buffs: [...a.buffs, makeBuff('fortress_buff', 0.33, dur)] })
       }
       newEvents.push(ev(actor.id, '🪨 Фортеця!', 'buff'))
+      const actorAfterFort = getUnit(actor.id)
+      update({ ...actorAfterFort, buffs: [...actorAfterFort.buffs, makeBuff('cooldown', 0, 5, 'fortress_aura')] })
       break
     }
 
@@ -1308,6 +1314,27 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     const actions = getMainActions('mage', lvl, path)
     const onCooldown = (a: ActionKey) => actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
 
+    // Earth mage: dedicated logic
+    if (path === 'earth') {
+      const canEarthquake = actions.includes('earthquake') && !onCooldown('earthquake')
+      const canFortress   = actions.includes('fortress_aura') && !onCooldown('fortress_aura')
+      const canStoneSkin  = actions.includes('stone_skin')
+      if (canEarthquake && playerUnits.length >= 2 && Math.random() < 0.65) {
+        return { action: 'earthquake', targetId: null }
+      }
+      if (canFortress && Math.random() < 0.40) {
+        const allyNeedsHelp = [...aiAllies, actor].some(u => u.hp < u.maxHp * 0.70)
+        if (allyNeedsHelp) return { action: 'fortress_aura', targetId: actor.id }
+      }
+      if (canStoneSkin && Math.random() < 0.35) {
+        const unbuffedAlly = [...aiAllies, actor]
+          .filter(u => !u.buffs.some(b => b.type === 'defense_up' && b.actionKey === 'stone_skin'))
+          .sort((a, b) => a.hp - b.hp)[0]
+        if (unbuffedAlly) return { action: 'stone_skin', targetId: unbuffedAlly.id }
+      }
+      return { action: 'rock_throw', targetId: weakest?.id ?? playerUnits[0]?.id ?? null }
+    }
+
     // Air mage: dedicated logic
     if (path === 'air') {
       const allyHasTailwind = [...aiAllies, actor].some(u => u.buffs.some(b => b.type === 'accuracy_up'))
@@ -1414,10 +1441,10 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   ice_shield:      { key: 'ice_shield',      label: 'Крижаний щит',      desc: '+захист союзнику (+ регенерація на lv3+)', needsTarget: true,  targetSide: 'ally' },
   blizzard:        { key: 'blizzard',        label: 'Заметіль',          desc: 'Льодяна стріла ×2 по ВСІХ + заморожує',   needsTarget: false, targetSide: null   },
   tidal_heal:      { key: 'tidal_heal',      label: 'Цілюща хвиля',      desc: 'Лікує +20 HP всій команді',               needsTarget: false, targetSide: null   },
-  rock_throw:      { key: 'rock_throw',      label: 'Кидок каменю',      desc: 'Ігнорує ухилення (оглушує на lv4)',        needsTarget: true,  targetSide: 'ai'   },
-  stone_skin:      { key: 'stone_skin',      label: 'Кам\'яна шкіра',    desc: '+захист союзнику (+ тернії/регенер.)',     needsTarget: true,  targetSide: 'ally' },
-  earthquake:      { key: 'earthquake',      label: 'Землетрус',         desc: 'Кидок каменю ×1.5 по ВСІХ + -25% точн.', needsTarget: false, targetSide: null   },
-  fortress_aura:   { key: 'fortress_aura',   label: 'Фортеця',           desc: 'Всі союзники +50% захист на 2 ходи',      needsTarget: true,  targetSide: 'ally' },
+  rock_throw:      { key: 'rock_throw',      label: 'Кидок каменю',      desc: '80% влучн. Ігнорує ухил. 60–70% шанс -точн. ворогу',  needsTarget: true,  targetSide: 'ai'   },
+  stone_skin:      { key: 'stone_skin',      label: 'Кам\'яна шкіра',    desc: '+25–40% захист союзнику на 2 ходи (не стакується)',    needsTarget: true,  targetSide: 'ally' },
+  earthquake:      { key: 'earthquake',      label: 'Землетрус',          desc: '25–35 урон по всіх + 70% дезорієнтація (кд 4 ходи)', needsTarget: false, targetSide: null   },
+  fortress_aura:   { key: 'fortress_aura',   label: 'Фортеця',            desc: '+33% захист всій команді на 1–3 ходи (кд 4 ходи)',   needsTarget: false, targetSide: null   },
   lightning_bolt:  { key: 'lightning_bolt',  label: 'Блискавка',         desc: 'Висока крит. шанс, ланцюгується на lv3+', needsTarget: true,  targetSide: 'ai'   },
   gust:            { key: 'gust',            label: 'Порив вітру',       desc: 'Урон + 50% шанс -ініціативи ворогу',     needsTarget: true,  targetSide: 'ai'   },
   tailwind:        { key: 'tailwind',        label: 'Попутний вітер',    desc: '+ініціатива і +точність всім союзникам',  needsTarget: false, targetSide: null   },

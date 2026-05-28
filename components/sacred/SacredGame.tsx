@@ -1479,7 +1479,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
                   if (a === 'aim' && actor) {
                     disabled = actor.buffs.some(b => b.type === 'aimed')
                   }
-                  if ((a === 'hurricane' || a === 'armageddon') && actor) {
+                  if ((a === 'hurricane' || a === 'armageddon' || a === 'earthquake' || a === 'fortress_aura') && actor) {
                     disabled = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
                   }
                   if (a === 'tailwind' && actor) {

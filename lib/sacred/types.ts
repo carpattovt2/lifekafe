@@ -217,10 +217,10 @@ export const MAGE_PATHS: Record<MagePath, Record<number, MageLevelData>> = {
     5: { name: 'Морський Архонт', hp: 145, minDmg: 18, maxDmg: 27, accuracy: 0.82, defense: 0.20, evasion: 0.12, initiative: 42, critChance: 0.15, critMult: 2.0, morale: 75, actions: ['blizzard', 'tidal_heal'],    xpToNext: Infinity },
   },
   earth: {
-    2: { name: 'Маг Каменю',      hp:  90, minDmg: 11, maxDmg: 17, accuracy: 0.72, defense: 0.08, evasion: 0.08, initiative: 32, critChance: 0,    critMult: 2.0, morale: 60, actions: ['rock_throw', 'stone_skin'],  xpToNext: 200 },
-    3: { name: 'Геомант',         hp: 110, minDmg: 14, maxDmg: 21, accuracy: 0.76, defense: 0.15, evasion: 0.08, initiative: 34, critChance: 0.05, critMult: 2.0, morale: 65, actions: ['rock_throw', 'stone_skin'],  xpToNext: 350 },
-    4: { name: 'Майстер Землі',   hp: 135, minDmg: 17, maxDmg: 25, accuracy: 0.80, defense: 0.22, evasion: 0.08, initiative: 36, critChance: 0.08, critMult: 2.0, morale: 70, actions: ['rock_throw', 'stone_skin'],  xpToNext: 500 },
-    5: { name: 'Архонт Землі',    hp: 165, minDmg: 20, maxDmg: 30, accuracy: 0.84, defense: 0.30, evasion: 0.08, initiative: 38, critChance: 0.10, critMult: 2.0, morale: 80, actions: ['earthquake', 'fortress_aura'], xpToNext: Infinity },
+    2: { name: 'Маг Каменю',      hp: 100, minDmg: 11, maxDmg: 17, accuracy: 0.72, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0,    critMult: 2.0, morale: 60, actions: ['rock_throw'],                                   xpToNext: 200 },
+    3: { name: 'Геомант',         hp: 120, minDmg: 14, maxDmg: 21, accuracy: 0.76, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0.05, critMult: 2.0, morale: 65, actions: ['rock_throw', 'stone_skin'],                      xpToNext: 350 },
+    4: { name: 'Майстер Землі',   hp: 140, minDmg: 17, maxDmg: 25, accuracy: 0.80, defense: 0.10, evasion: 0,    initiative: 30, critChance: 0.08, critMult: 2.0, morale: 70, actions: ['rock_throw', 'stone_skin'],                      xpToNext: 500 },
+    5: { name: 'Архонт Землі',    hp: 165, minDmg: 20, maxDmg: 30, accuracy: 0.84, defense: 0.15, evasion: 0,    initiative: 30, critChance: 0.10, critMult: 2.0, morale: 80, actions: ['rock_throw', 'stone_skin', 'earthquake', 'fortress_aura'], xpToNext: Infinity },
   },
   air: {
     2: { name: 'Вітровий Маг',    hp:  70, minDmg: 13, maxDmg: 19, accuracy: 0.72, defense: 0, evasion: 0.20, initiative: 75, critChance: 0, critMult: 2.0, morale: 55, actions: ['gust'],                         xpToNext: 200 },
