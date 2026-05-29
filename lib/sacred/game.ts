@@ -458,7 +458,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'hurricane', 'barrage', 'grapeshot', 'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley'].includes(action)) {
+  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'hurricane', 'barrage', 'grapeshot', 'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley', 'freeze'].includes(action)) {
     return living(enemySide).map(u => u.id)
   }
 

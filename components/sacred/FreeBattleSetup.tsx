@@ -59,7 +59,6 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
   const [playerUnits, setPlayerUnits] = useState<GameUnit[]>([])
   const [aiUnits, setAiUnits]         = useState<GameUnit[]>([])
   const [phase, setPhase]             = useState<Phase>('player')
-  const [selected, setSelected]       = useState<string | null>(null)
   const [configMode, setConfigMode]   = useState<ConfigMode | null>(null)
   const [cfgLevel, setCfgLevel]       = useState(1)
   const [cfgMagePath, setCfgMagePath]         = useState<MagePath>('fire')
@@ -71,7 +70,6 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
   const sideLabel    = phase === 'player' ? 'Твоя армія' : 'Армія бота'
 
   function openAddConfig(cls: UnitClass) {
-    setSelected(null)
     setCfgLevel(1)
     setCfgMagePath('fire')
     setCfgCatapultPath('ballista')
@@ -81,7 +79,6 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
   function openEditConfig(unitId: string) {
     const unit = sideUnits.find(u => u.id === unitId)
     if (!unit) return
-    setSelected(null)
     setCfgLevel(unit.level ?? 1)
     if (unit.magePath) setCfgMagePath(unit.magePath)
     if (unit.catapultPath) setCfgCatapultPath(unit.catapultPath)
@@ -90,26 +87,7 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
 
   function handleGridUnitClick(unitId: string) {
     if (configMode) return
-    if (selected === unitId) {
-      openEditConfig(unitId)
-    } else if (selected) {
-      const selUnit = sideUnits.find(u => u.id === selected)!
-      const tgtUnit = sideUnits.find(u => u.id === unitId)!
-      setSideUnits(prev => prev.map(u => {
-        if (u.id === selected) return { ...u, row: tgtUnit.row, slot: tgtUnit.slot }
-        if (u.id === unitId)   return { ...u, row: selUnit.row, slot: selUnit.slot }
-        return u
-      }))
-      setSelected(null)
-    } else {
-      setSelected(unitId)
-    }
-  }
-
-  function handleGridEmptySlotClick(row: Row, slot: number) {
-    if (configMode || !selected) return
-    setSideUnits(prev => prev.map(u => u.id === selected ? { ...u, row, slot } : u))
-    setSelected(null)
+    openEditConfig(unitId)
   }
 
   function handleConfigConfirm() {
@@ -143,7 +121,6 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
     if (phase === 'player') {
       if (playerUnits.length === 0) return
       setPhase('ai')
-      setSelected(null)
       setConfigMode(null)
     } else {
       if (aiUnits.length === 0) return
@@ -154,7 +131,6 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
   function handleBack() {
     if (phase === 'ai') {
       setPhase('player')
-      setSelected(null)
       setConfigMode(null)
     } else {
       onBack()
@@ -220,18 +196,14 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
         {/* Grid */}
         <div>
           <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.4)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            {selected
-              ? 'Обрано — натисни слот щоб перемістити · ще раз юніта щоб налаштувати'
-              : 'Натисни юніта двічі щоб налаштувати'}
+            Натисни юніта щоб налаштувати або видалити
           </div>
           {([0, 1, 2] as Row[]).map(row => (
             <div key={row} style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.25)', marginBottom: 4 }}>{ROW_LABEL[row]}</div>
               <div style={{ display: 'flex', gap: GAP }}>
                 {Array.from({ length: ROW_SLOTS }, (_, slot) => {
-                  const unit       = sideUnits.find(u => u.row === row && u.slot === slot)
-                  const isSelected = unit?.id === selected
-                  const isTarget   = !!selected && !unit
+                  const unit = sideUnits.find(u => u.row === row && u.slot === slot)
 
                   if (unit) {
                     return (
@@ -241,21 +213,15 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
                         style={{
                           width: CARD, height: CARD + 8, borderRadius: 8, flexShrink: 0,
                           cursor: 'pointer', overflow: 'hidden', position: 'relative',
-                          border: `2px solid ${isSelected ? sideColor : 'rgba(240,232,216,0.15)'}`,
-                          boxShadow: isSelected ? `0 0 0 2px ${sideColor}44` : 'none',
+                          border: '2px solid rgba(240,232,216,0.18)',
                           transition: 'all 0.12s',
                         }}
                       >
                         <img src={getPortraitSrc(unit.class, unit.level ?? 1, unit.magePath, unit.catapultPath)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                        <div style={{ position: 'absolute', inset: 0, background: isSelected ? `${sideColor}44` : 'linear-gradient(transparent 38%, rgba(0,0,0,0.8) 100%)' }} />
+                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 38%, rgba(0,0,0,0.8) 100%)' }} />
                         <div style={{ position: 'absolute', bottom: 2, left: 0, right: 0, textAlign: 'center' }}>
                           <span style={{ fontSize: 7, fontWeight: 700, color: '#f0e8d8', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>lv{unit.level ?? 1}</span>
                         </div>
-                        {isSelected && (
-                          <div style={{ position: 'absolute', top: 2, left: 0, right: 0, textAlign: 'center' }}>
-                            <span style={{ fontSize: 6, color: '#fff', fontWeight: 700 }}>●</span>
-                          </div>
-                        )}
                       </div>
                     )
                   }
@@ -263,18 +229,14 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
                   return (
                     <div
                       key={slot}
-                      onClick={() => handleGridEmptySlotClick(row, slot)}
                       style={{
                         width: CARD, height: CARD + 8, borderRadius: 8, flexShrink: 0,
-                        cursor: selected ? 'pointer' : 'default',
-                        background: isTarget ? 'rgba(176,120,80,0.08)' : 'rgba(240,232,216,0.02)',
-                        border: `1.5px ${isTarget ? 'dashed' : 'solid'} ${isTarget ? 'rgba(176,120,80,0.45)' : 'rgba(240,232,216,0.06)'}`,
+                        background: 'rgba(240,232,216,0.02)',
+                        border: '1.5px solid rgba(240,232,216,0.06)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
                     >
-                      <span style={{ fontSize: selected ? 18 : 12, color: selected ? 'rgba(176,120,80,0.45)' : 'rgba(240,232,216,0.08)' }}>
-                        {selected ? '+' : '·'}
-                      </span>
+                      <span style={{ fontSize: 12, color: 'rgba(240,232,216,0.08)' }}>·</span>
                     </div>
                   )
                 })}

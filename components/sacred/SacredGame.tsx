@@ -523,7 +523,7 @@ function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
       style={{
-        flex: '1 1 0', padding: '9px 11px', borderRadius: 8, textAlign: 'left',
+        flex: '1 1 calc(50% - 4px)', padding: '9px 11px', borderRadius: 8, textAlign: 'left',
         background: selected ? 'rgba(176,120,80,0.22)' : 'rgba(240,232,216,0.05)',
         border: `1px solid ${selected ? '#b07850' : 'rgba(240,232,216,0.1)'}`,
         color: '#f0e8d8', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -805,13 +805,13 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor, onFreeBattle }: {
-  onNewGame: () => void
+function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle }: {
   onStartTower: () => void
   onContinueTower: () => void
   savedTowerFloor: number | null
   onFreeBattle: () => void
 }) {
+  const [heroSrc, setHeroSrc] = useState('/sacred/warriors/level4.jpg')
   const portraits = useMemo(() => {
     const arr = [...ALL_PORTRAITS]
     for (let i = arr.length - 1; i > 0; i--) {
@@ -831,7 +831,7 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor, on
       {/* Hero image section */}
       <div style={{ position: 'relative', height: '52vh', minHeight: 260, flexShrink: 0, overflow: 'hidden' }}>
         <img
-          src="/sacred/warriors/level4.jpg"
+          src={heroSrc}
           alt=""
           style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
         />
@@ -859,11 +859,17 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor, on
           scrollbarWidth: 'none', msOverflowStyle: 'none',
         } as React.CSSProperties}>
           {portraits.map((src, i) => (
-            <div key={i} style={{
-              flexShrink: 0, width: 88,
-              borderRadius: 10, overflow: 'hidden',
-              border: '1px solid rgba(212,168,90,0.13)',
-            }}>
+            <div
+              key={i}
+              onClick={() => setHeroSrc(src)}
+              style={{
+                flexShrink: 0, width: 88,
+                borderRadius: 10, overflow: 'hidden',
+                border: `1px solid ${heroSrc === src ? 'rgba(212,168,90,0.6)' : 'rgba(212,168,90,0.13)'}`,
+                cursor: 'pointer', transition: 'border-color 0.15s',
+                boxShadow: heroSrc === src ? '0 0 0 2px rgba(212,168,90,0.3)' : 'none',
+              }}
+            >
               <img src={src} alt="" style={{ width: '100%', height: 112, objectFit: 'cover', objectPosition: 'center top', display: 'block' }} />
             </div>
           ))}
@@ -875,15 +881,6 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor, on
 
       {/* Buttons */}
       <div style={{ padding: '12px 20px 32px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
-        <button onClick={onNewGame} style={{
-          padding: '15px 0', fontSize: 15, fontWeight: 700, letterSpacing: '0.01em',
-          background: 'linear-gradient(135deg, #b07850, #8c5a38)',
-          color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(176,120,80,0.4)',
-        }}>
-          Одиночний бій
-        </button>
-
         <button onClick={onFreeBattle} style={{
           padding: '15px 0', fontSize: 15, fontWeight: 700,
           background: 'linear-gradient(135deg, #5a6aa8, #3a4a80)',
@@ -1492,7 +1489,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
               )}
             </div>
             {!state.needsTarget ? (
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {mainActions.map(a => {
                   let disabled = false
                   if (a === 'provoke' && actor) {
@@ -1896,7 +1893,6 @@ export default function SacredGame() {
 
   if (screen === 'landing') return (
     <Landing
-      onNewGame={handleNewGame}
       onStartTower={handleStartTower}
       onContinueTower={handleContinueTower}
       savedTowerFloor={savedTowerFloor}
