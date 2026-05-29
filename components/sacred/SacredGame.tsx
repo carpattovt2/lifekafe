@@ -899,7 +899,7 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
           </button>
         )}
         <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
-          v0.7
+          v0.8
         </div>
       </div>
     </div>
@@ -1479,7 +1479,7 @@ function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowe
                   if (a === 'aim' && actor) {
                     disabled = actor.buffs.some(b => b.type === 'aimed')
                   }
-                  if ((a === 'hurricane' || a === 'armageddon' || a === 'earthquake' || a === 'fortress_aura') && actor) {
+                  if ((a === 'hurricane' || a === 'armageddon' || a === 'earthquake' || a === 'fortress_aura' || a === 'blizzard') && actor) {
                     disabled = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
                   }
                   if (a === 'tailwind' && actor) {

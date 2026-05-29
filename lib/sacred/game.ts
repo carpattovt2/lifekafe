@@ -893,91 +893,60 @@ export function executeAction(
     // ── Mage fire path (handled above as 'fireball', 'fire_orb', 'armageddon') ──
 
     // ── Mage water path ───────────────────────────────────────────────────────
-    case 'frost_bolt': {
+    case 'freeze': {
       if (!target) break
       const lvl = actor.level ?? 2
-      const mult = lvl >= 4 ? 3 : lvl >= 3 ? 2.5 : 2
-      const accDown = lvl >= 3 ? 0.30 : 0.20
-      const freeze = lvl >= 4
-      newLogs.push(log(`❄ ${actor.name} — Льодяна стріла!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { dmgMult: mult, elemPath: 'water' })
-      newLogs.push(...res.logs); newEvents.push(...res.events)
-      if (res.damage > 0) {
-        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
-        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-      }
-      if (res.hit && !res.evaded) {
-        hitLanded = true
-        const tgt = getUnit(target.id)
-        if (tgt.hp > 0) {
-          if (freeze) {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
-            newLogs.push(log(`❄ ${target.name} заморожений! Пропускає хід`, 'debuff'))
-            newEvents.push(ev(target.id, '❄ Заморожено!', 'debuff', actor.id))
-          } else {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', accDown, 3)] })
-            newLogs.push(log(`❄ ${target.name} охолоджений! -${Math.round(accDown*100)}% точн. 2 ходи`, 'debuff'))
-            newEvents.push(ev(target.id, `❄ -${Math.round(accDown*100)}% точн.`, 'debuff', actor.id))
-          }
+      const acc = lvl >= 4 ? 0.80 : 0.75
+      const dur = lvl >= 4 ? 2 : 1
+      newLogs.push(log(`❄ ${actor.name} — Заморожування!`, 'attack'))
+      const res = resolveAttack(actor, target, units, {
+        accBonus: acc - actor.accuracy,
+        dmgMin: 0, dmgMax: 0,
+        ignoreEvasion: false,
+        elemPath: 'water',
+      })
+      if (!res.hit) { newLogs.push(...res.logs); newEvents.push(...res.events); break }
+      if (res.evaded) { newLogs.push(...res.logs); newEvents.push(...res.events); break }
+      hitLanded = true
+      const tgt = getUnit(target.id)
+      if (tgt.hp > 0) {
+        if (tgt.buffs.some(b => b.type === 'frozen')) {
+          newLogs.push(log(`❄ ${target.name} вже заморожений!`, 'info'))
+        } else {
+          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, dur + 1)] })
+          newLogs.push(log(`❄ ${target.name} заморожений на ${dur} хід${dur > 1 ? 'и' : ''}!`, 'debuff'))
+          newEvents.push(ev(target.id, `❄ Заморожено!`, 'debuff', actor.id))
         }
       }
-      break
-    }
-
-    case 'ice_shield': {
-      if (!target) break
-      const lvl = actor.level ?? 2
-      const defBonus = lvl >= 4 ? 0.35 : lvl >= 3 ? 0.30 : 0.20
-      const regenAmt = lvl >= 4 ? 5 : lvl >= 3 ? 3 : 0
-      const a = getUnit(target.id)
-      const newBuffs = [...a.buffs, makeBuff('defense_up', defBonus, 3)]
-      if (regenAmt > 0) newBuffs.push(makeBuff('regen', regenAmt, 4))
-      update({ ...a, buffs: newBuffs })
-      newLogs.push(log(`❄ ${actor.name} — Крижаний щит на ${target.name}! +${Math.round(defBonus*100)}% захист${regenAmt ? ` + ${regenAmt} HP/хід` : ''}`, 'buff'))
-      newEvents.push(ev(target.id, `❄ +${Math.round(defBonus*100)}% захист`, 'buff', actor.id))
       break
     }
 
     case 'blizzard': {
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'blizzard')) break
       const enemies = units.filter(u => u.side === enemySide && u.hp > 0)
       if (!enemies.length) break
-      newLogs.push(log(`❄ ${actor.name} — Заметіль!`, 'attack'))
+      newLogs.push(log(`❄ ${actor.name} — Пурга!`, 'attack'))
+      hitLanded = true
       for (const snap of enemies) {
         const e = getUnit(snap.id)
         if (e.hp === 0) continue
-        const res = resolveAttack(actor, e, units, { dmgMult: 2, elemPath: 'water' })
-        newLogs.push(...res.logs); newEvents.push(...res.events)
-        if (res.damage > 0) {
-          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
-          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
-        }
-        if (res.hit && !res.evaded) {
-          hitLanded = true
-          const tgt = getUnit(e.id)
-          if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'frozen')) {
-            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('frozen', 1, 2)] })
+        if (Math.random() < 0.45) {
+          if (!e.buffs.some(b => b.type === 'frozen')) {
+            const dur = 1 + Math.floor(Math.random() * 3)
+            update({ ...e, buffs: [...e.buffs, makeBuff('frozen', 1, dur + 1)] })
+            newLogs.push(log(`❄ ${e.name} заморожений на ${dur} хід${dur > 1 ? 'и' : ''}!`, 'debuff'))
+            newEvents.push(ev(e.id, `❄ Заморожено!`, 'debuff', actor.id))
           }
         }
       }
-      newLogs.push(log(`❄ Усіх ворогів заморожено!`, 'debuff'))
+      const actorAfterBlizzard = getUnit(actor.id)
+      update({ ...actorAfterBlizzard, buffs: [...actorAfterBlizzard.buffs, makeBuff('cooldown', 0, 4, 'blizzard')] })
       break
     }
 
-    case 'tidal_heal': {
-      const allies = units.filter(u => u.side === actor.side && u.hp > 0)
-      newLogs.push(log(`💧 ${actor.name} — Цілюща хвиля!`, 'heal'))
-      for (const snap of allies) {
-        const a = getUnit(snap.id)
-        const healed = Math.min(a.maxHp, a.hp + 20)
-        const amt = healed - a.hp
-        update({ ...a, hp: healed })
-        if (amt > 0) {
-          newLogs.push(log(`💧 ${a.name} +${amt} HP`, 'heal'))
-          newEvents.push(ev(a.id, `💧 +${amt}`, 'heal', actor.id))
-        }
-      }
-      break
-    }
+    case 'frost_bolt': break
+    case 'ice_shield': break
+    case 'tidal_heal': break
 
     // ── Mage earth path ───────────────────────────────────────────────────────
     case 'rock_throw': {
@@ -1314,6 +1283,17 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     const actions = getMainActions('mage', lvl, path)
     const onCooldown = (a: ActionKey) => actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
 
+    // Water mage: dedicated logic
+    if (path === 'water') {
+      const canBlizzard = actions.includes('blizzard') && !onCooldown('blizzard')
+      if (canBlizzard && playerUnits.length >= 2 && Math.random() < 0.60) {
+        return { action: 'blizzard', targetId: null }
+      }
+      const notFrozen = playerUnits.filter(u => !u.buffs.some(b => b.type === 'frozen'))
+      const freezeTarget = notFrozen.sort((a, b) => b.initiative - a.initiative)[0] ?? weakest
+      return { action: 'freeze', targetId: freezeTarget?.id ?? playerUnits[0]?.id ?? null }
+    }
+
     // Earth mage: dedicated logic
     if (path === 'earth') {
       const canEarthquake = actions.includes('earthquake') && !onCooldown('earthquake')
@@ -1437,9 +1417,10 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   armageddon:      { key: 'armageddon',      label: 'Армагедон',         desc: '40-45 урон по всіх ворогах (75% точн., кд 2 ходи)', needsTarget: false, targetSide: null },
   ignite:          { key: 'ignite',          label: 'Підпал',            desc: 'Удар + підпал (X урону/хід N ходів)',      needsTarget: true,  targetSide: 'ai'   },
   inferno:         { key: 'inferno',         label: 'Інферно',           desc: 'Фаєрбол ×4 по ВСІХ ворогах + підпал',     needsTarget: false, targetSide: null   },
+  freeze:          { key: 'freeze',          label: 'Заморожування',     desc: '75–80% влучн. Ціль пропускає 1–2 ходи',  needsTarget: true,  targetSide: 'ai'   },
+  blizzard:        { key: 'blizzard',        label: 'Пурга',             desc: '45% шанс заморозки кожного на 1–3 ходи (кд 3 ходи)', needsTarget: false, targetSide: null },
   frost_bolt:      { key: 'frost_bolt',      label: 'Льодяна стріла',    desc: 'Урон + зменшення точності / заморожує',    needsTarget: true,  targetSide: 'ai'   },
   ice_shield:      { key: 'ice_shield',      label: 'Крижаний щит',      desc: '+захист союзнику (+ регенерація на lv3+)', needsTarget: true,  targetSide: 'ally' },
-  blizzard:        { key: 'blizzard',        label: 'Заметіль',          desc: 'Льодяна стріла ×2 по ВСІХ + заморожує',   needsTarget: false, targetSide: null   },
   tidal_heal:      { key: 'tidal_heal',      label: 'Цілюща хвиля',      desc: 'Лікує +20 HP всій команді',               needsTarget: false, targetSide: null   },
   rock_throw:      { key: 'rock_throw',      label: 'Кидок каменю',      desc: '80% влучн. Ігнорує ухил. 60–70% шанс -точн. ворогу',  needsTarget: true,  targetSide: 'ai'   },
   stone_skin:      { key: 'stone_skin',      label: 'Кам\'яна шкіра',    desc: '+25–40% захист союзнику на 2 ходи (не стакується)',    needsTarget: true,  targetSide: 'ally' },

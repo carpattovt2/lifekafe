@@ -34,16 +34,32 @@ export default function PlacementScreen({ counts, onStart, onBack }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
 
   const hasCatapult = playerUnits.some(u => u.class === 'catapult')
+  const catSlot = playerUnits.find(u => u.class === 'catapult')?.slot ?? 2
 
   function handlePlayerSlotClick(row: Row, slot: number) {
-    if (row === 2 && slot === 2 && hasCatapult) return
+    if (row === 2 && slot === catSlot && hasCatapult) return
 
     const occupant = playerUnits.find(u => u.row === row && u.slot === slot)
-    if (occupant?.class === 'catapult') return
 
     if (selected) {
       const selUnit = playerUnits.find(u => u.id === selected)!
-      if (!occupant && row === 1 && slot === 2 && hasCatapult) { setSelected(null); return }
+
+      if (selUnit.class === 'catapult') {
+        if (row !== 1) { setSelected(null); return }
+        if (occupant) {
+          setPlayerUnits(prev => prev.map(u => {
+            if (u.id === selUnit.id) return { ...u, slot: occupant.slot }
+            if (u.id === occupant.id) return { ...u, row: selUnit.row, slot: selUnit.slot }
+            return u
+          }))
+        } else {
+          setPlayerUnits(prev => prev.map(u => u.id === selUnit.id ? { ...u, slot } : u))
+        }
+        setSelected(null)
+        return
+      }
+
+      if (!occupant && row === 1 && slot === catSlot && hasCatapult) { setSelected(null); return }
       if (occupant) {
         setPlayerUnits(prev => prev.map(u => {
           if (u.id === selUnit.id) return { ...u, row: occupant.row, slot: occupant.slot }
@@ -144,8 +160,8 @@ export default function PlacementScreen({ counts, onStart, onBack }: Props) {
                 <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.25)', marginBottom: 3 }}>{ROW_LABEL[row]}</div>
                 <div style={{ display: 'flex', gap: GAP, justifyContent: 'center' }}>
                   {Array.from({ length: ROW_SLOTS[row] }, (_, i) => {
-                    const isCatBase  = row === 2 && i === 2 && hasCatapult
-                    const isCatSlot  = row === 1 && i === 2 && hasCatapult
+                    const isCatBase  = row === 2 && i === catSlot && hasCatapult
+                    const isCatSlot  = row === 1 && i === catSlot && hasCatapult
                     const unit       = rowUnits.find(u => u.slot === i)
                     const isSelected = unit?.id === selected
                     const isTarget   = selected != null && !unit && !isCatBase && !isCatSlot
@@ -170,7 +186,7 @@ export default function PlacementScreen({ counts, onStart, onBack }: Props) {
                         onClick={() => handlePlayerSlotClick(row as Row, i)}
                         style={{
                           width: CARD, height: CARD + 8, borderRadius: 8, flexShrink: 0,
-                          cursor: isCatSlot ? 'default' : 'pointer',
+                          cursor: 'pointer',
                           background: isSelected ? 'rgba(111,166,122,0.15)' : isTarget ? 'rgba(176,120,80,0.08)' : 'rgba(240,232,216,0.03)',
                           border: `2px solid ${
                             isSelected ? '#6fa67a'
