@@ -1,6 +1,6 @@
 'use client'
 
-import { useReducer, useEffect, useRef, useState } from 'react'
+import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
   generateRecruitOptions, addUnitToArmy,
@@ -9,6 +9,7 @@ import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent,
 import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
+import FreeBattleSetup from './FreeBattleSetup'
 
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
 const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Дальній', 2: 'Підтримка' }
@@ -772,24 +773,54 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
 }
 
 // ── Landing screen ─────────────────────────────────────────────────────────────
-const LANDING_SHOWCASE = [
-  { src: '/sacred/warriors/level4.jpg',           name: 'Паладін',           role: 'Воїни' },
-  { src: '/sacred/archers/level3.jpg',            name: 'Рейнджер',          role: 'Лучники' },
-  { src: '/sacred/mages/fire/level5.jpg',         name: "Архонт Полум'я",    role: 'Маги' },
-  { src: '/sacred/catapults/ballista/level3.jpg', name: 'Скорпіон',          role: 'Облога' },
-  { src: '/sacred/warriors/level3.jpg',           name: 'Рицар',             role: 'Воїни' },
-  { src: '/sacred/mages/air/level5.jpg',          name: 'Архонт Вітру',      role: 'Маги' },
-  { src: '/sacred/catapults/trebuchet/level3.jpg',name: 'Чумний Требюше',    role: 'Облога' },
-  { src: '/sacred/warriors/level2.jpg',           name: 'Гвардієць',         role: 'Воїни' },
-  { src: '/sacred/archers/level2.jpg',            name: 'Розвідник',         role: 'Лучники' },
+const ALL_PORTRAITS = [
+  '/sacred/warriors/level1.jpg',
+  '/sacred/warriors/level2.jpg',
+  '/sacred/warriors/level3.jpg',
+  '/sacred/warriors/level4.jpg',
+  '/sacred/archers/level1.jpg',
+  '/sacred/archers/level2.jpg',
+  '/sacred/archers/level3.jpg',
+  '/sacred/mages/level1.jpg',
+  '/sacred/mages/fire/level2.jpg',
+  '/sacred/mages/fire/level3.jpg',
+  '/sacred/mages/fire/level4.jpg',
+  '/sacred/mages/fire/level5.jpg',
+  '/sacred/mages/air/level2.jpg',
+  '/sacred/mages/air/level3.jpg',
+  '/sacred/mages/air/level4.jpg',
+  '/sacred/mages/air/level5.jpg',
+  '/sacred/mages/earth/level2.jpg',
+  '/sacred/mages/earth/level3.jpg',
+  '/sacred/mages/earth/level4.jpg',
+  '/sacred/mages/earth/level5.jpg',
+  '/sacred/mages/water/level2.jpg',
+  '/sacred/mages/water/level3.jpg',
+  '/sacred/mages/water/level4.jpg',
+  '/sacred/mages/water/level5.jpg',
+  '/sacred/catapults/level1.jpg',
+  '/sacred/catapults/ballista/level2.jpg',
+  '/sacred/catapults/ballista/level3.jpg',
+  '/sacred/catapults/trebuchet/level2.jpg',
+  '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: {
+function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor, onFreeBattle }: {
   onNewGame: () => void
   onStartTower: () => void
   onContinueTower: () => void
   savedTowerFloor: number | null
+  onFreeBattle: () => void
 }) {
+  const portraits = useMemo(() => {
+    const arr = [...ALL_PORTRAITS]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    return arr
+  }, [])
+
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#111008',
@@ -801,56 +832,39 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
       <div style={{ position: 'relative', height: '52vh', minHeight: 260, flexShrink: 0, overflow: 'hidden' }}>
         <img
           src="/sacred/warriors/level4.jpg"
-          alt="Паладін"
+          alt=""
           style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
         />
-        {/* top fade */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(17,16,8,0.15) 0%, transparent 30%, transparent 55%, rgba(17,16,8,0.85) 85%, #111008 100%)' }} />
-        {/* vignette sides */}
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, transparent 40%, rgba(17,16,8,0.5) 100%)' }} />
 
-        {/* Logo centered in hero */}
+        {/* Logo — top right */}
         <div style={{
-          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -56%)',
+          position: 'absolute', top: 16, right: 16,
           filter: [
-            'drop-shadow(0 0 48px rgba(212,168,90,0.7))',
-            'drop-shadow(0 0 20px rgba(212,168,90,0.45))',
-            'drop-shadow(0 4px 12px rgba(0,0,0,0.9))',
+            'drop-shadow(0 0 72px rgba(212,168,90,0.95))',
+            'drop-shadow(0 0 32px rgba(212,168,90,0.7))',
+            'drop-shadow(0 0 14px rgba(212,168,90,0.55))',
+            'drop-shadow(0 5px 18px rgba(0,0,0,0.98))',
           ].join(' '),
         }}>
-          <SeraphLogo size={168} color="#d4a85a" />
+          <SeraphLogo size={118} color="#d4a85a" />
         </div>
       </div>
 
-      {/* Title + subtitle */}
-      <div style={{ textAlign: 'center', padding: '4px 24px 0', flexShrink: 0 }}>
-        <div style={{ fontSize: 34, fontWeight: 800, color: '#d4a85a', letterSpacing: '-0.02em', lineHeight: 1.1, textShadow: '0 2px 16px rgba(212,168,90,0.3)' }}>
-          Серафити
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5, marginTop: 6 }}>
-          Тактична покрокова битва священних земель
-        </div>
-      </div>
-
-      {/* Horizontal scroll showcase */}
+      {/* Horizontal scroll showcase — all portraits, no labels */}
       <div style={{ padding: '14px 0 4px', flexShrink: 0 }}>
         <div style={{
-          display: 'flex', gap: 10, overflowX: 'auto', padding: '0 20px 4px',
+          display: 'flex', gap: 8, overflowX: 'auto', padding: '0 20px 4px',
           scrollbarWidth: 'none', msOverflowStyle: 'none',
         } as React.CSSProperties}>
-          {LANDING_SHOWCASE.map(u => (
-            <div key={u.name} style={{
-              flexShrink: 0, width: 100,
-              borderRadius: 12, overflow: 'hidden',
-              border: '1px solid rgba(212,168,90,0.18)',
-              background: 'rgba(255,255,255,0.04)',
-              position: 'relative',
+          {portraits.map((src, i) => (
+            <div key={i} style={{
+              flexShrink: 0, width: 88,
+              borderRadius: 10, overflow: 'hidden',
+              border: '1px solid rgba(212,168,90,0.13)',
             }}>
-              <img src={u.src} alt={u.name} style={{ width: '100%', height: 122, objectFit: 'cover', objectPosition: 'center top', display: 'block' }} />
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(17,16,8,0.92))', padding: '18px 8px 8px' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#f0e8d8', textAlign: 'center' }}>{u.name}</div>
-                <div style={{ fontSize: 8, color: 'rgba(212,168,90,0.7)', textAlign: 'center', marginTop: 1 }}>{u.role}</div>
-              </div>
+              <img src={src} alt="" style={{ width: '100%', height: 112, objectFit: 'cover', objectPosition: 'center top', display: 'block' }} />
             </div>
           ))}
         </div>
@@ -868,6 +882,15 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
           boxShadow: '0 4px 20px rgba(176,120,80,0.4)',
         }}>
           Одиночний бій
+        </button>
+
+        <button onClick={onFreeBattle} style={{
+          padding: '15px 0', fontSize: 15, fontWeight: 700,
+          background: 'linear-gradient(135deg, #5a6aa8, #3a4a80)',
+          color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(90,106,168,0.4)',
+        }}>
+          Вільний бій
         </button>
 
         {savedTowerFloor ? (
@@ -899,7 +922,7 @@ function Landing({ onNewGame, onStartTower, onContinueTower, savedTowerFloor }: 
           </button>
         )}
         <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
-          v0.8
+          v0.9
         </div>
       </div>
     </div>
@@ -1208,14 +1231,14 @@ function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[])
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4, 2: 4 }
 
-function Battle({ counts, playerUnits, onRestart, towerFloor, onTowerWin, onTowerLose }: {
-  counts: ArmyCounts; playerUnits?: GameUnit[]; onRestart: () => void
+function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose }: {
+  counts: ArmyCounts; playerUnits?: GameUnit[]; prebuiltAiUnits?: GameUnit[]; onRestart: () => void
   towerFloor?: TowerFloor; onTowerWin?: (units: GameUnit[]) => void; onTowerLose?: () => void
 }) {
   const [state, dispatch] = useReducer(
     battleReducer,
     undefined as unknown as ArmyCounts,
-    () => createInitialState(counts, playerUnits, towerFloor?.aiCounts),
+    () => createInitialState(counts, playerUnits, towerFloor?.aiCounts, prebuiltAiUnits),
   )
   const [floats, setFloats]       = useState<BattleEvent[]>([])
   const [infoUnit, setInfoUnit]   = useState<GameUnit | null>(null)
@@ -1729,7 +1752,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
 }
 
 // ── Root component ─────────────────────────────────────────────────────────────
-type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange'
+type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange' | 'free-battle'
 
 export default function SacredGame() {
   const [screen, setScreen] = useState<RootScreen>('landing')
@@ -1741,6 +1764,7 @@ export default function SacredGame() {
   const [towerUnits, setTowerUnits] = useState<GameUnit[] | null>(null)
   const [savedTowerFloor, setSavedTowerFloor] = useState<number | null>(null)
   const [pendingRecruitmentOptions, setPendingRecruitmentOptions] = useState<GameUnit[] | null>(null)
+  const [freeBattleAiUnits, setFreeBattleAiUnits] = useState<GameUnit[] | null>(null)
 
   useEffect(() => {
     try {
@@ -1794,6 +1818,18 @@ export default function SacredGame() {
     } catch {
       handleStartTower()
     }
+  }
+
+  function handleFreeBattle() {
+    setIsTowerMode(false)
+    setScreen('free-battle')
+  }
+
+  function handleFreeBattleStart(pUnits: GameUnit[], aUnits: GameUnit[]) {
+    setPlayerUnits(pUnits)
+    setFreeBattleAiUnits(aUnits)
+    setCounts({ warriors: 0, archers: 0, mages: 0, catapults: 0 })
+    setScreen('battle')
   }
 
   function handleArmyBuilt(c: ArmyCounts) {
@@ -1864,6 +1900,13 @@ export default function SacredGame() {
       onStartTower={handleStartTower}
       onContinueTower={handleContinueTower}
       savedTowerFloor={savedTowerFloor}
+      onFreeBattle={handleFreeBattle}
+    />
+  )
+  if (screen === 'free-battle') return (
+    <FreeBattleSetup
+      onStart={handleFreeBattleStart}
+      onBack={() => setScreen('landing')}
     />
   )
   if (screen === 'army-builder') return (
@@ -1907,5 +1950,5 @@ export default function SacredGame() {
       onDone={handleArrangeComplete}
     />
   )
-  return <Battle counts={counts!} playerUnits={playerUnits ?? undefined} onRestart={() => setScreen('landing')} />
+  return <Battle counts={counts!} playerUnits={playerUnits ?? undefined} prebuiltAiUnits={freeBattleAiUnits ?? undefined} onRestart={() => setScreen('landing')} />
 }

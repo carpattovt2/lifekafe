@@ -268,6 +268,23 @@ export function buildDefaultAIArmy(): GameUnit[] {
   return buildCustomArmy({ warriors: 2, archers: 1, mages: 1, catapults: 1 }, 'ai')
 }
 
+export function buildFreeUnit(
+  cls: UnitClass, level: number, side: Side, row: Row, slot: number,
+  magePath?: MagePath, catapultPath?: CatapultPath,
+): GameUnit {
+  let unit = makeUnit(cls, side, row, slot)
+  if (cls === 'warrior') {
+    for (let l = 2; l <= level; l++) unit = applyWarriorLevel(unit, l)
+  } else if (cls === 'archer') {
+    for (let l = 2; l <= level; l++) unit = applyArcherLevel(unit, l)
+  } else if (cls === 'mage' && level >= 2 && magePath) {
+    unit = applyMagePath(unit, magePath, level)
+  } else if (cls === 'catapult' && level >= 2 && catapultPath) {
+    unit = applyCatapultPath(unit, catapultPath, level)
+  }
+  return unit
+}
+
 // ── Initiative queue ───────────────────────────────────────────────────────────
 function buildQueue(units: GameUnit[]): string[] {
   return [...units.filter(u => u.hp > 0)]
@@ -1470,10 +1487,10 @@ const TURN_RESET = {
   needsTarget: false,
 }
 
-export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[], aiCounts?: ArmyCounts): BattleState {
+export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[], aiCounts?: ArmyCounts, prebuiltAiUnits?: GameUnit[]): BattleState {
   const playerUnits = prebuiltPlayerUnits
     ?? (counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
-  const aiUnits = aiCounts ? buildCustomArmy(aiCounts, 'ai') : buildDefaultAIArmy()
+  const aiUnits = prebuiltAiUnits ?? (aiCounts ? buildCustomArmy(aiCounts, 'ai') : buildDefaultAIArmy())
   const units = [...playerUnits, ...aiUnits]
   const queue = buildQueue(units)
   const first = units.find(u => u.id === queue[0])!
