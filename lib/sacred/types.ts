@@ -206,28 +206,28 @@ export const MAGE_BASE: MageLevelData = {
 
 export const MAGE_PATHS: Record<MagePath, Record<number, MageLevelData>> = {
   fire: {
-    2: { name: 'Підпалювач',      hp:  75, minDmg: 20, maxDmg: 20, accuracy: 0.75, defense: 0,    evasion: 0.15, initiative: 35, critChance: 0, critMult: 2.0, morale: 55, actions: ['fireball'],                  xpToNext: 200 },
-    3: { name: 'Піромант',        hp:  95, minDmg: 25, maxDmg: 25, accuracy: 0.75, defense: 0.05, evasion: 0.12, initiative: 35, critChance: 0, critMult: 2.0, morale: 60, actions: ['fireball', 'fire_orb'],      xpToNext: 350 },
-    4: { name: 'Майстер Вогню',   hp: 115, minDmg: 30, maxDmg: 30, accuracy: 0.75, defense: 0.10, evasion: 0.10, initiative: 35, critChance: 0, critMult: 2.0, morale: 65, actions: ['fireball', 'fire_orb'],      xpToNext: 500 },
-    5: { name: 'Архонт Полум\'я', hp: 140, minDmg: 35, maxDmg: 35, accuracy: 0.75, defense: 0.10, evasion: 0.10, initiative: 35, critChance: 0, critMult: 2.0, morale: 75, actions: ['fireball', 'fire_orb', 'armageddon'], xpToNext: Infinity },
+    2: { name: 'Пірелія',   hp:  75, minDmg: 20, maxDmg: 20, accuracy: 0.75, defense: 0,    evasion: 0.15, initiative: 35, critChance: 0, critMult: 2.0, morale: 55, actions: ['fireball'],                  xpToNext: 200 },
+    3: { name: 'Агні',      hp:  95, minDmg: 25, maxDmg: 25, accuracy: 0.75, defense: 0.05, evasion: 0.12, initiative: 35, critChance: 0, critMult: 2.0, morale: 60, actions: ['fireball', 'fire_orb'],      xpToNext: 350 },
+    4: { name: 'Інфернала', hp: 115, minDmg: 30, maxDmg: 30, accuracy: 0.75, defense: 0.10, evasion: 0.10, initiative: 35, critChance: 0, critMult: 2.0, morale: 65, actions: ['fireball', 'fire_orb'],      xpToNext: 500 },
+    5: { name: 'Хаосара',   hp: 140, minDmg: 35, maxDmg: 35, accuracy: 0.75, defense: 0.10, evasion: 0.10, initiative: 35, critChance: 0, critMult: 2.0, morale: 75, actions: ['fireball', 'fire_orb', 'armageddon'], xpToNext: Infinity },
   },
   water: {
-    2: { name: 'Льодовий Маг',    hp:  80, minDmg: 10, maxDmg: 16, accuracy: 0.70, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.05, critMult: 2.0, morale: 55, actions: ['freeze'],          xpToNext: 200 },
-    3: { name: 'Кріомант',        hp: 100, minDmg: 13, maxDmg: 20, accuracy: 0.74, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.08, critMult: 2.0, morale: 60, actions: ['freeze'],          xpToNext: 350 },
-    4: { name: 'Майстер Води',    hp: 120, minDmg: 15, maxDmg: 23, accuracy: 0.78, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.12, critMult: 2.0, morale: 65, actions: ['freeze'],          xpToNext: 500 },
-    5: { name: 'Морський Архонт', hp: 145, minDmg: 18, maxDmg: 27, accuracy: 0.82, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.15, critMult: 2.0, morale: 75, actions: ['freeze', 'blizzard'], xpToNext: Infinity },
+    2: { name: 'Нерей',     hp:  80, minDmg: 10, maxDmg: 16, accuracy: 0.70, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.05, critMult: 2.0, morale: 55, actions: ['freeze'],          xpToNext: 200 },
+    3: { name: 'Хладомант', hp: 100, minDmg: 13, maxDmg: 20, accuracy: 0.74, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.08, critMult: 2.0, morale: 60, actions: ['freeze'],          xpToNext: 350 },
+    4: { name: 'Кріоліт',   hp: 120, minDmg: 15, maxDmg: 23, accuracy: 0.78, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.12, critMult: 2.0, morale: 65, actions: ['freeze'],          xpToNext: 500 },
+    5: { name: 'Абісаль',   hp: 145, minDmg: 18, maxDmg: 27, accuracy: 0.82, defense: 0, evasion: 0.15, initiative: 55, critChance: 0.15, critMult: 2.0, morale: 75, actions: ['freeze', 'blizzard'], xpToNext: Infinity },
   },
   earth: {
-    2: { name: 'Маг Каменю',      hp: 100, minDmg: 11, maxDmg: 17, accuracy: 0.72, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0,    critMult: 2.0, morale: 60, actions: ['rock_throw'],                                   xpToNext: 200 },
-    3: { name: 'Геомант',         hp: 120, minDmg: 14, maxDmg: 21, accuracy: 0.76, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0.05, critMult: 2.0, morale: 65, actions: ['rock_throw', 'stone_skin'],                      xpToNext: 350 },
-    4: { name: 'Майстер Землі',   hp: 140, minDmg: 17, maxDmg: 25, accuracy: 0.80, defense: 0.10, evasion: 0,    initiative: 30, critChance: 0.08, critMult: 2.0, morale: 70, actions: ['rock_throw', 'stone_skin'],                      xpToNext: 500 },
-    5: { name: 'Архонт Землі',    hp: 165, minDmg: 20, maxDmg: 30, accuracy: 0.84, defense: 0.15, evasion: 0,    initiative: 30, critChance: 0.10, critMult: 2.0, morale: 80, actions: ['rock_throw', 'stone_skin', 'earthquake', 'fortress_aura'], xpToNext: Infinity },
+    2: { name: 'Літос',  hp: 100, minDmg: 11, maxDmg: 17, accuracy: 0.72, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0,    critMult: 2.0, morale: 60, actions: ['rock_throw'],                                   xpToNext: 200 },
+    3: { name: 'Хтон',   hp: 120, minDmg: 14, maxDmg: 21, accuracy: 0.76, defense: 0,    evasion: 0.10, initiative: 35, critChance: 0.05, critMult: 2.0, morale: 65, actions: ['rock_throw', 'stone_skin'],                      xpToNext: 350 },
+    4: { name: 'Геон',   hp: 140, minDmg: 17, maxDmg: 25, accuracy: 0.80, defense: 0.10, evasion: 0,    initiative: 30, critChance: 0.08, critMult: 2.0, morale: 70, actions: ['rock_throw', 'stone_skin'],                      xpToNext: 500 },
+    5: { name: 'Сейсміс', hp: 165, minDmg: 20, maxDmg: 30, accuracy: 0.84, defense: 0.15, evasion: 0,   initiative: 30, critChance: 0.10, critMult: 2.0, morale: 80, actions: ['rock_throw', 'stone_skin', 'earthquake', 'fortress_aura'], xpToNext: Infinity },
   },
   air: {
-    2: { name: 'Вітровий Маг',    hp:  70, minDmg: 13, maxDmg: 19, accuracy: 0.72, defense: 0, evasion: 0.20, initiative: 75, critChance: 0, critMult: 2.0, morale: 55, actions: ['gust'],                         xpToNext: 200 },
-    3: { name: 'Буревій',         hp:  85, minDmg: 16, maxDmg: 24, accuracy: 0.76, defense: 0, evasion: 0.22, initiative: 75, critChance: 0, critMult: 2.0, morale: 60, actions: ['gust', 'tailwind'],              xpToNext: 350 },
-    4: { name: 'Майстер Повітря', hp: 100, minDmg: 20, maxDmg: 29, accuracy: 0.80, defense: 0, evasion: 0.23, initiative: 75, critChance: 0, critMult: 2.0, morale: 65, actions: ['gust', 'tailwind'],              xpToNext: 500 },
-    5: { name: 'Архонт Повітря',  hp: 120, minDmg: 24, maxDmg: 35, accuracy: 0.84, defense: 0, evasion: 0.25, initiative: 75, critChance: 0, critMult: 2.0, morale: 75, actions: ['gust', 'tailwind', 'hurricane'], xpToNext: Infinity },
+    2: { name: 'Сальфа',   hp:  70, minDmg: 13, maxDmg: 19, accuracy: 0.72, defense: 0, evasion: 0.20, initiative: 75, critChance: 0, critMult: 2.0, morale: 55, actions: ['gust'],                         xpToNext: 200 },
+    3: { name: 'Аерона',   hp:  85, minDmg: 16, maxDmg: 24, accuracy: 0.76, defense: 0, evasion: 0.22, initiative: 75, critChance: 0, critMult: 2.0, morale: 60, actions: ['gust', 'tailwind'],              xpToNext: 350 },
+    4: { name: 'Темпеста', hp: 100, minDmg: 20, maxDmg: 29, accuracy: 0.80, defense: 0, evasion: 0.23, initiative: 75, critChance: 0, critMult: 2.0, morale: 65, actions: ['gust', 'tailwind'],              xpToNext: 500 },
+    5: { name: 'Торнада',  hp: 120, minDmg: 24, maxDmg: 35, accuracy: 0.84, defense: 0, evasion: 0.25, initiative: 75, critChance: 0, critMult: 2.0, morale: 75, actions: ['gust', 'tailwind', 'hurricane'], xpToNext: Infinity },
   },
 }
 

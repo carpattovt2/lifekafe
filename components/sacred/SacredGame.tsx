@@ -891,7 +891,7 @@ function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle,
           color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
           boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
         }}>
-          ✦ Карта світу
+          ✦ Кампанія
         </button>
         <button onClick={onFreeBattle} style={{
           padding: '15px 0', fontSize: 15, fontWeight: 700,
@@ -941,41 +941,37 @@ function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle,
 // ── Mage path choice modal ────────────────────────────────────────────────────
 function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: MagePath) => void }) {
   const paths: MagePath[] = ['fire', 'water', 'earth', 'air']
-  const pathDesc: Record<MagePath, string> = {
-    fire:  'Сильний burst + підпал DoT. Фаєрбол посилюється, Інферно б\'є всіх.',
-    water: 'Контроль + підтримка. Заморозка, крижаний щит, лікування команди.',
-    earth: 'Незблокований урон + захист. Кам\'яна шкіра, тернії, Фортеця.',
-    air:   'Швидкий дезорієнтатор. Порив вітру (-ініціатива), Попутний вітер (+ініц. союзникам), Ураган (дезорієнтація).',
-  }
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }} />
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 60 }} />
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 560, background: '#17150f',
-        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 20px 32px',
+        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 16px 32px',
         fontFamily: "'Inter', sans-serif",
       }}>
-        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 16px' }} />
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 4 }}>
-          ⭐ {unit.name} готовий до еволюції!
+        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 14px' }} />
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 16 }}>
+          ⭐ {unit.name} — обери шлях
         </div>
-        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', textAlign: 'center', marginBottom: 18 }}>
-          Обери шлях мага — це вплине на всі наступні рівні
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           {paths.map(path => (
             <button key={path} onClick={() => onChoose(path)} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
-              borderRadius: 12, border: `1.5px solid ${MAGE_PATH_COLOR[path]}44`,
-              background: `${MAGE_PATH_COLOR[path]}08`, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+              flex: 1, height: 172, borderRadius: 12, overflow: 'hidden',
+              position: 'relative', padding: 0, cursor: 'pointer',
+              border: `1.5px solid ${MAGE_PATH_COLOR[path]}66`,
+              background: '#0f0e09',
             }}>
-              <span style={{ fontSize: 22, lineHeight: 1 }}>{MAGE_PATH_ICON[path]}</span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: MAGE_PATH_COLOR[path], marginBottom: 2 }}>
-                  {MAGE_PATH_ICON[path]} {MAGE_PATH_NAME[path]} — {MAGE_PATHS[path][2].name}
+              <img
+                src={`/sacred/mages/${path}/level2.jpg`}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+              />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.88) 100%)' }} />
+              <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, textAlign: 'center', padding: '0 4px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,1)', lineHeight: 1.3 }}>
+                  {MAGE_PATHS[path][2].name}
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
               </div>
             </button>
           ))}
@@ -1348,7 +1344,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
 
       {/* Header */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a' }}>✦ Серафити</div>
             {towerFloor && <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, opacity: 0.8 }}>🗼 {towerFloor.floor}/{TOWER_FLOORS.length}</div>}
@@ -1357,14 +1353,13 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
             {towerFloor ? `${towerFloor.name} · ` : ''}Раунд {state.round}
           </div>
         </div>
-        <TurnQueue queue={state.queue} units={state.units} currentIdx={state.queueIdx} />
       </div>
 
       {/* Battlefield */}
       <div
         ref={battlefieldRef}
         style={{
-          flex: 1, padding: '8px 12px 260px', display: 'flex', flexDirection: 'column', gap: 2,
+          flex: 1, padding: '8px 12px 300px', display: 'flex', flexDirection: 'column', gap: 2,
           position: 'relative',
           backgroundImage: [
             'repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(212,168,90,0.025) 23px, rgba(212,168,90,0.025) 24px)',
@@ -1549,6 +1544,11 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
             {state.phase === 'ai-thinking' ? `${actor?.name ?? 'Ворог'} думає...` : ''}
           </div>
         )}
+        </div>
+
+        {/* Turn queue */}
+        <div style={{ padding: '6px 12px 4px', borderTop: '1px solid rgba(240,232,216,0.07)' }}>
+          <TurnQueue queue={state.queue} units={state.units} currentIdx={state.queueIdx} />
         </div>
 
         {/* Compact battle log */}
@@ -1876,7 +1876,7 @@ export default function SacredGame() {
   }
 
   function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
-    setWorldPlayerUnits(units)
+    setWorldPlayerUnits(units.filter(u => u.hp > 0).map(u => ({ ...u, buffs: [] })))
     if (won && worldFightNodeId) {
       setWorldMapState(prev => ({
         ...prev,
