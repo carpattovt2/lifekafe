@@ -10,6 +10,9 @@ import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, T
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
+import WorldMap from './WorldMap'
+import { createInitialMapState, getPathCost, WORLD_NODES } from '@/lib/sacred/worldMap'
+import type { WorldMapState } from '@/lib/sacred/worldMap'
 
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
 const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Дальній', 2: 'Підтримка' }
@@ -470,7 +473,7 @@ function TurnQueue({ queue, units, currentIdx }: { queue: string[]; units: GameU
           return (
             <div key={`${id}-${i}`} style={{
               width: 32, height: 32, borderRadius: 7, flexShrink: 0,
-              border: `2px solid ${isCurrent ? '#b07850' : SIDE_COLOR[u.side] + '66'}`,
+              border: `2px solid ${isCurrent ? '#b07850' : u.side === 'player' ? '#6fa67a' : '#c07070'}`,
               overflow: 'hidden',
               opacity: isCurrent ? 1 : 0.55,
               transform: isCurrent ? 'scale(1.2)' : 'scale(1)',
@@ -805,11 +808,12 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle }: {
+function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle, onWorldMap }: {
   onStartTower: () => void
   onContinueTower: () => void
   savedTowerFloor: number | null
   onFreeBattle: () => void
+  onWorldMap: () => void
 }) {
   const [heroSrc, setHeroSrc] = useState('/sacred/warriors/level4.jpg')
   const portraits = useMemo(() => {
@@ -881,6 +885,14 @@ function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle 
 
       {/* Buttons */}
       <div style={{ padding: '12px 20px 32px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
+        <button onClick={onWorldMap} style={{
+          padding: '15px 0', fontSize: 15, fontWeight: 700,
+          background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
+          color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
+        }}>
+          ✦ Карта світу
+        </button>
         <button onClick={onFreeBattle} style={{
           padding: '15px 0', fontSize: 15, fontWeight: 700,
           background: 'linear-gradient(135deg, #5a6aa8, #3a4a80)',
@@ -919,7 +931,7 @@ function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle 
           </button>
         )}
         <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
-          v0.9
+          v0.9.2
         </div>
       </div>
     </div>
@@ -1228,9 +1240,10 @@ function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[])
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4, 2: 4 }
 
-function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose }: {
+function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose, onBattleEnd }: {
   counts: ArmyCounts; playerUnits?: GameUnit[]; prebuiltAiUnits?: GameUnit[]; onRestart: () => void
   towerFloor?: TowerFloor; onTowerWin?: (units: GameUnit[]) => void; onTowerLose?: () => void
+  onBattleEnd?: (units: GameUnit[], won: boolean) => void
 }) {
   const [state, dispatch] = useReducer(
     battleReducer,
@@ -1242,6 +1255,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
   const [bannerText, setBannerText] = useState<string | null>(null)
   const battlefieldRef = useRef<HTMLDivElement>(null)
   const prevPhase = useRef(state.phase)
+  const prevRound = useRef(state.round)
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
@@ -1268,14 +1282,17 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
 
   // Turn change banner
   useEffect(() => {
-    if (prevPhase.current !== state.phase && state.phase !== 'game-over') {
+    if (state.phase === 'game-over') { prevPhase.current = state.phase; prevRound.current = state.round; return }
+    const phaseChanged = prevPhase.current !== state.phase
+    const roundChanged = prevRound.current !== state.round
+    prevPhase.current = state.phase
+    prevRound.current = state.round
+    if (phaseChanged || roundChanged) {
       setBannerText(state.phase === 'player-turn' ? '🛡 Твоя черга' : '⚔ Хід ворога')
       const t = setTimeout(() => setBannerText(null), 1600)
-      prevPhase.current = state.phase
       return () => clearTimeout(t)
     }
-    prevPhase.current = state.phase
-  }, [state.phase])
+  }, [state.phase, state.round])
 
   // AI turn trigger
   useEffect(() => {
@@ -1302,10 +1319,10 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
   const bannerBg = state.phase === 'player-turn'
     ? 'rgba(111,166,122,0.95)' : 'rgba(192,112,112,0.95)'
 
-  const pendingMage = state.pendingMageLevelUp
+  const pendingMage = state.pendingMageLevelUp && state.phase !== 'game-over'
     ? state.units.find(u => u.id === state.pendingMageLevelUp && u.side === 'player') ?? null
     : null
-  const pendingCatapult = state.pendingCatapultLevelUp
+  const pendingCatapult = state.pendingCatapultLevelUp && state.phase !== 'game-over'
     ? state.units.find(u => u.id === state.pendingCatapultLevelUp && u.side === 'player') ?? null
     : null
 
@@ -1454,10 +1471,18 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
               <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 12 }}>
                 {state.winner === 'player' ? '🏆 Перемога!' : '💀 Поразка'}
               </div>
-              <button onClick={onRestart}
-                style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                Новий бій
-              </button>
+              {onBattleEnd ? (
+                <button
+                  onClick={() => onBattleEnd(state.units, state.winner === 'player')}
+                  style={{ padding: '10px 28px', background: state.winner === 'player' ? '#7aaa82' : '#c07070', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  ← На карту
+                </button>
+              ) : (
+                <button onClick={onRestart}
+                  style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Новий бій
+                </button>
+              )}
             </div>
           )
 
@@ -1749,7 +1774,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
 }
 
 // ── Root component ─────────────────────────────────────────────────────────────
-type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange' | 'free-battle'
+type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange' | 'free-battle' | 'world-map' | 'world-battle'
 
 export default function SacredGame() {
   const [screen, setScreen] = useState<RootScreen>('landing')
@@ -1762,6 +1787,9 @@ export default function SacredGame() {
   const [savedTowerFloor, setSavedTowerFloor] = useState<number | null>(null)
   const [pendingRecruitmentOptions, setPendingRecruitmentOptions] = useState<GameUnit[] | null>(null)
   const [freeBattleAiUnits, setFreeBattleAiUnits] = useState<GameUnit[] | null>(null)
+  const [worldMapState, setWorldMapState] = useState<WorldMapState>(createInitialMapState)
+  const [worldPlayerUnits, setWorldPlayerUnits] = useState<GameUnit[] | null>(null)
+  const [worldFightNodeId, setWorldFightNodeId] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -1827,6 +1855,64 @@ export default function SacredGame() {
     setFreeBattleAiUnits(aUnits)
     setCounts({ warriors: 0, archers: 0, mages: 0, catapults: 0 })
     setScreen('battle')
+  }
+
+  function handleWorldMap() {
+    if (!worldPlayerUnits) {
+      setWorldPlayerUnits(buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
+    }
+    setScreen('world-map')
+  }
+
+  function handleWorldMove(nodeId: string) {
+    const cost = getPathCost(worldMapState.heroNodeId, nodeId, worldMapState.statuses)
+    if (cost === 0 || cost > worldMapState.heroAP) return
+    setWorldMapState(prev => ({ ...prev, heroNodeId: nodeId, heroAP: prev.heroAP - cost }))
+  }
+
+  function handleWorldFight(nodeId: string) {
+    setWorldFightNodeId(nodeId)
+    setScreen('world-battle')
+  }
+
+  function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
+    setWorldPlayerUnits(units)
+    if (won && worldFightNodeId) {
+      setWorldMapState(prev => ({
+        ...prev,
+        statuses: { ...prev.statuses, [worldFightNodeId]: 'cleared' },
+        heroAP: 0,
+      }))
+    } else {
+      setWorldMapState(prev => ({ ...prev, heroAP: 0 }))
+    }
+    setWorldFightNodeId(null)
+    setScreen('world-map')
+  }
+
+  function handleWorldCollect(nodeId: string) {
+    const nodeDef = WORLD_NODES.find(n => n.id === nodeId)!
+    const goldGain = nodeDef.goldReward ?? 0
+    const xpGain   = nodeDef.xpReward ?? 0
+    setWorldMapState(prev => ({
+      ...prev,
+      gold: prev.gold + goldGain,
+      statuses: { ...prev.statuses, [nodeId]: 'collected' },
+    }))
+    if (xpGain > 0) {
+      setWorldPlayerUnits(prev => prev
+        ? prev.map(u => ({ ...u, xp: (u.xp ?? 0) + xpGain }))
+        : prev
+      )
+    }
+  }
+
+  function handleWorldRest() {
+    setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
+  }
+
+  function handleWorldEndTurn() {
+    setWorldMapState(prev => ({ ...prev, heroAP: prev.maxAP, turn: prev.turn + 1 }))
   }
 
   function handleArmyBuilt(c: ArmyCounts) {
@@ -1897,8 +1983,33 @@ export default function SacredGame() {
       onContinueTower={handleContinueTower}
       savedTowerFloor={savedTowerFloor}
       onFreeBattle={handleFreeBattle}
+      onWorldMap={handleWorldMap}
     />
   )
+  if (screen === 'world-map') return (
+    <WorldMap
+      mapState={worldMapState}
+      onMove={handleWorldMove}
+      onFight={handleWorldFight}
+      onCollect={handleWorldCollect}
+      onRest={handleWorldRest}
+      onEndTurn={handleWorldEndTurn}
+      onBack={() => setScreen('landing')}
+    />
+  )
+  if (screen === 'world-battle') {
+    const fightNode = worldFightNodeId ? WORLD_NODES.find(n => n.id === worldFightNodeId) : null
+    if (fightNode?.enemyCounts && worldPlayerUnits) return (
+      <Battle
+        counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
+        playerUnits={worldPlayerUnits}
+        prebuiltAiUnits={buildCustomArmy(fightNode.enemyCounts, 'ai')}
+        onRestart={() => handleWorldBattleEnd(worldPlayerUnits, false)}
+        onBattleEnd={handleWorldBattleEnd}
+      />
+    )
+    return null
+  }
   if (screen === 'free-battle') return (
     <FreeBattleSetup
       onStart={handleFreeBattleStart}
