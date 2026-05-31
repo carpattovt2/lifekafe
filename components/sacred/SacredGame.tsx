@@ -14,6 +14,8 @@ import WorldMap from './WorldMap'
 import { createInitialMapState, getPathCost, WORLD_NODES } from '@/lib/sacred/worldMap'
 import type { WorldMapState } from '@/lib/sacred/worldMap'
 
+type WorldBattleResult = { gold: number; levelUps: string[] }
+
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
 const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Дальній', 2: 'Підтримка' }
 const BUFF_ICON: Record<string, string> = {
@@ -1790,6 +1792,8 @@ export default function SacredGame() {
   const [worldMapState, setWorldMapState] = useState<WorldMapState>(createInitialMapState)
   const [worldPlayerUnits, setWorldPlayerUnits] = useState<GameUnit[] | null>(null)
   const [worldFightNodeId, setWorldFightNodeId] = useState<string | null>(null)
+  const [worldBattleResult, setWorldBattleResult] = useState<WorldBattleResult | null>(null)
+  const worldPreBattleUnits = useRef<GameUnit[] | null>(null)
 
   useEffect(() => {
     try {
@@ -1871,21 +1875,42 @@ export default function SacredGame() {
   }
 
   function handleWorldFight(nodeId: string) {
+    worldPreBattleUnits.current = worldPlayerUnits
     setWorldFightNodeId(nodeId)
     setScreen('world-battle')
   }
 
   function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
-    setWorldPlayerUnits(units.filter(u => u.hp > 0).map(u => ({ ...u, buffs: [] })))
+    const survived = units.filter(u => u.hp > 0).map(u => ({ ...u, buffs: [] }))
+    setWorldPlayerUnits(survived)
+
+    const fightNodeDef = worldFightNodeId ? WORLD_NODES.find(n => n.id === worldFightNodeId) : null
+    const goldGained = won ? (fightNodeDef?.goldReward ?? 0) : 0
+
+    const levelUps: string[] = []
+    if (won && worldPreBattleUnits.current) {
+      for (const u of survived) {
+        const prev = worldPreBattleUnits.current.find(p => p.id === u.id)
+        if (prev && (u.level ?? 1) > (prev.level ?? 1)) levelUps.push(u.name)
+      }
+    }
+
     if (won && worldFightNodeId) {
       setWorldMapState(prev => ({
         ...prev,
         statuses: { ...prev.statuses, [worldFightNodeId]: 'cleared' },
+        gold: prev.gold + goldGained,
         heroAP: 0,
       }))
     } else {
       setWorldMapState(prev => ({ ...prev, heroAP: 0 }))
     }
+
+    if (won && (goldGained > 0 || levelUps.length > 0)) {
+      setWorldBattleResult({ gold: goldGained, levelUps })
+    }
+
+    worldPreBattleUnits.current = null
     setWorldFightNodeId(null)
     setScreen('world-map')
   }
@@ -1909,10 +1934,11 @@ export default function SacredGame() {
 
   function handleWorldRest() {
     setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
+    setWorldMapState(prev => ({ ...prev, restedThisTurn: true }))
   }
 
   function handleWorldEndTurn() {
-    setWorldMapState(prev => ({ ...prev, heroAP: prev.maxAP, turn: prev.turn + 1 }))
+    setWorldMapState(prev => ({ ...prev, heroAP: prev.maxAP, turn: prev.turn + 1, restedThisTurn: false }))
   }
 
   function handleArmyBuilt(c: ArmyCounts) {
@@ -1989,6 +2015,9 @@ export default function SacredGame() {
   if (screen === 'world-map') return (
     <WorldMap
       mapState={worldMapState}
+      playerUnits={worldPlayerUnits ?? []}
+      battleResult={worldBattleResult}
+      onClearBattleResult={() => setWorldBattleResult(null)}
       onMove={handleWorldMove}
       onFight={handleWorldFight}
       onCollect={handleWorldCollect}

@@ -24,6 +24,7 @@ export interface WorldMapState {
   maxAP: number
   turn: number
   gold: number
+  restedThisTurn: boolean
 }
 
 // viewBox: 0 0 200 130
@@ -57,6 +58,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     desc: 'Колись велике місто. Тепер притулок для нечисті та скелетів.',
     difficulty: 'Легко',
     enemyCounts: { warriors: 2, archers: 1, mages: 0, catapults: 0 },
+    goldReward: 3,
   },
   {
     id: 'camp1', label: 'Табір найманців', type: 'camp',
@@ -64,6 +66,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     desc: "Озброєні найманці контролюють перехрестя. Хочуть плату кров'ю.",
     difficulty: 'Середньо',
     enemyCounts: { warriors: 2, archers: 1, mages: 1, catapults: 0 },
+    goldReward: 4,
   },
   {
     id: 'swamp', label: 'Мертве болото', type: 'camp',
@@ -71,6 +74,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     desc: 'Темні істоти у гнилих топях. Проходу не дадуть без бою.',
     difficulty: 'Важко',
     enemyCounts: { warriors: 3, archers: 1, mages: 1, catapults: 0 },
+    goldReward: 5,
   },
   {
     id: 'temple', label: 'Занедбаний храм', type: 'dungeon',
@@ -78,6 +82,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     desc: 'Темний культ оселився в руїнах давнього храму. Дуже небезпечно.',
     difficulty: 'Важко',
     enemyCounts: { warriors: 2, archers: 2, mages: 2, catapults: 0 },
+    goldReward: 6,
   },
   {
     id: 'necropolis', label: 'Некрополь', type: 'dungeon',
@@ -85,6 +90,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     desc: 'Місто мертвих. Некромант збирає сили для фінального удару.',
     difficulty: 'Дуже важко',
     enemyCounts: { warriors: 3, archers: 2, mages: 2, catapults: 1 },
+    goldReward: 10,
   },
   {
     id: 'boss', label: 'Цитадель Тьми', type: 'dungeon',
@@ -92,6 +98,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     desc: 'Серце темряви. Переможи Повелителя — і перемога за тобою.',
     difficulty: 'Фінальний бій',
     enemyCounts: { warriors: 4, archers: 3, mages: 2, catapults: 1 },
+    goldReward: 20,
   },
 ]
 
@@ -104,7 +111,7 @@ export function createInitialMapState(): WorldMapState {
     else if (n.type === 'resource' || n.type === 'artifact') statuses[n.id] = 'neutral'
     else statuses[n.id] = 'enemy'
   }
-  return { statuses, heroNodeId: 'town', heroAP: 3, maxAP: 3, turn: 1, gold: 0 }
+  return { statuses, heroNodeId: 'town', heroAP: 3, maxAP: 3, turn: 1, gold: 0, restedThisTurn: false }
 }
 
 function isBlocker(nodeId: string, statuses: Record<string, NodeStatus>): boolean {
@@ -135,6 +142,22 @@ export function getReachableNodes(
 
   costs.delete(heroNodeId)
   return costs
+}
+
+export function getVisibleNodeIds(heroNodeId: string, maxAP: number): Set<string> {
+  const visible = new Set<string>([heroNodeId])
+  const queue: Array<{ id: string; dist: number }> = [{ id: heroNodeId, dist: 0 }]
+  while (queue.length > 0) {
+    const { id, dist } = queue.shift()!
+    if (dist >= maxAP) continue
+    for (const connId of NODE_MAP.get(id)!.connections) {
+      if (!visible.has(connId)) {
+        visible.add(connId)
+        queue.push({ id: connId, dist: dist + 1 })
+      }
+    }
+  }
+  return visible
 }
 
 export function getPathCost(
