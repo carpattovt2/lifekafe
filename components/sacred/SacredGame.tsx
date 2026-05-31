@@ -810,12 +810,14 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle, onWorldMap }: {
+function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle, onWorldMap, onContinueCampaign, hasCampaignSave }: {
   onStartTower: () => void
   onContinueTower: () => void
   savedTowerFloor: number | null
   onFreeBattle: () => void
   onWorldMap: () => void
+  onContinueCampaign: () => void
+  hasCampaignSave: boolean
 }) {
   const [heroSrc, setHeroSrc] = useState('/sacred/warriors/level4.jpg')
   const portraits = useMemo(() => {
@@ -887,14 +889,34 @@ function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle,
 
       {/* Buttons */}
       <div style={{ padding: '12px 20px 32px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
-        <button onClick={onWorldMap} style={{
-          padding: '15px 0', fontSize: 15, fontWeight: 700,
-          background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
-          color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
-        }}>
-          ✦ Кампанія
-        </button>
+        {hasCampaignSave ? (
+          <>
+            <button onClick={onContinueCampaign} style={{
+              padding: '15px 0', fontSize: 15, fontWeight: 700,
+              background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
+              color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
+              boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
+            }}>
+              ✦ Продовжити кампанію
+            </button>
+            <button onClick={onWorldMap} style={{
+              padding: '11px 0', fontSize: 13, fontWeight: 600,
+              background: 'transparent', color: 'rgba(240,232,216,0.45)',
+              border: '1px solid rgba(240,232,216,0.12)', borderRadius: 10, cursor: 'pointer',
+            }}>
+              Нова кампанія
+            </button>
+          </>
+        ) : (
+          <button onClick={onWorldMap} style={{
+            padding: '15px 0', fontSize: 15, fontWeight: 700,
+            background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
+            color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
+          }}>
+            ✦ Кампанія
+          </button>
+        )}
         <button onClick={onFreeBattle} style={{
           padding: '15px 0', fontSize: 15, fontWeight: 700,
           background: 'linear-gradient(135deg, #5a6aa8, #3a4a80)',
@@ -1219,9 +1241,11 @@ function CLASS_SVG_Component({ cls, color, size }: { cls: string; color: string;
 }
 
 // ── Tower helpers ──────────────────────────────────────────────────────────────
-const LS_TOWER_FLOOR  = 'sacred_tower_floor'
-const LS_TOWER_UNITS  = 'sacred_tower_units'
-const LS_TOWER_COUNTS = 'sacred_tower_counts'
+const LS_TOWER_FLOOR    = 'sacred_tower_floor'
+const LS_TOWER_UNITS    = 'sacred_tower_units'
+const LS_TOWER_COUNTS   = 'sacred_tower_counts'
+const LS_CAMPAIGN_MAP   = 'sacred_campaign_map'
+const LS_CAMPAIGN_UNITS = 'sacred_campaign_units'
 
 function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[]): GameUnit[] {
   const freshArmy = buildCustomArmy(towerCounts, 'player')
@@ -1776,7 +1800,7 @@ function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
 }
 
 // ── Root component ─────────────────────────────────────────────────────────────
-type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange' | 'free-battle' | 'world-map' | 'world-battle'
+type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange' | 'free-battle' | 'world-map' | 'world-battle' | 'campaign-victory'
 
 export default function SacredGame() {
   const [screen, setScreen] = useState<RootScreen>('landing')
@@ -1793,14 +1817,48 @@ export default function SacredGame() {
   const [worldPlayerUnits, setWorldPlayerUnits] = useState<GameUnit[] | null>(null)
   const [worldFightNodeId, setWorldFightNodeId] = useState<string | null>(null)
   const [worldBattleResult, setWorldBattleResult] = useState<WorldBattleResult | null>(null)
+  const [worldReinforcement, setWorldReinforcement] = useState<string | null>(null)
+  const [hasCampaignSave, setHasCampaignSave] = useState(false)
   const worldPreBattleUnits = useRef<GameUnit[] | null>(null)
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LS_TOWER_FLOOR)
       setSavedTowerFloor(saved ? parseInt(saved) : null)
+      setHasCampaignSave(
+        !!localStorage.getItem(LS_CAMPAIGN_MAP) && !!localStorage.getItem(LS_CAMPAIGN_UNITS)
+      )
     } catch {}
   }, [])
+
+  useEffect(() => {
+    if (!worldPlayerUnits) return
+    try {
+      localStorage.setItem(LS_CAMPAIGN_MAP, JSON.stringify(worldMapState))
+      localStorage.setItem(LS_CAMPAIGN_UNITS, JSON.stringify(worldPlayerUnits))
+      setHasCampaignSave(true)
+    } catch {}
+  }, [worldMapState, worldPlayerUnits])
+
+  function clearCampaignSave() {
+    try {
+      localStorage.removeItem(LS_CAMPAIGN_MAP)
+      localStorage.removeItem(LS_CAMPAIGN_UNITS)
+    } catch {}
+    setHasCampaignSave(false)
+  }
+
+  function handleContinueCampaign() {
+    try {
+      const mapData   = JSON.parse(localStorage.getItem(LS_CAMPAIGN_MAP)   ?? '')
+      const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN_UNITS) ?? '')
+      setWorldMapState(mapData)
+      setWorldPlayerUnits(unitsData)
+      setScreen('world-map')
+    } catch {
+      handleWorldMap()
+    }
+  }
 
   function clearTowerSave() {
     try {
@@ -1862,9 +1920,9 @@ export default function SacredGame() {
   }
 
   function handleWorldMap() {
-    if (!worldPlayerUnits) {
-      setWorldPlayerUnits(buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
-    }
+    clearCampaignSave()
+    setWorldMapState(createInitialMapState())
+    setWorldPlayerUnits(buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
     setScreen('world-map')
   }
 
@@ -1912,7 +1970,12 @@ export default function SacredGame() {
 
     worldPreBattleUnits.current = null
     setWorldFightNodeId(null)
-    setScreen('world-map')
+
+    if (won && worldFightNodeId === 'boss') {
+      setScreen('campaign-victory')
+    } else {
+      setScreen('world-map')
+    }
   }
 
   function handleWorldCollect(nodeId: string) {
@@ -1938,7 +2001,31 @@ export default function SacredGame() {
   }
 
   function handleWorldEndTurn() {
-    setWorldMapState(prev => ({ ...prev, heroAP: prev.maxAP, turn: prev.turn + 1, restedThisTurn: false }))
+    const nextTurn = worldMapState.turn + 1
+    const newStatuses = { ...worldMapState.statuses }
+    let reinforcedLabel: string | null = null
+
+    if (nextTurn % 3 === 0) {
+      const eligible = WORLD_NODES.filter(n =>
+        (n.type === 'dungeon' || n.type === 'camp') &&
+        newStatuses[n.id] === 'cleared' &&
+        n.id !== 'boss'
+      )
+      if (eligible.length > 0) {
+        const picked = eligible[Math.floor(Math.random() * eligible.length)]
+        newStatuses[picked.id] = 'enemy'
+        reinforcedLabel = picked.label
+      }
+    }
+
+    setWorldMapState(prev => ({
+      ...prev,
+      statuses: newStatuses,
+      heroAP: prev.maxAP,
+      turn: nextTurn,
+      restedThisTurn: false,
+    }))
+    if (reinforcedLabel) setWorldReinforcement(reinforcedLabel)
   }
 
   function handleArmyBuilt(c: ArmyCounts) {
@@ -2010,6 +2097,8 @@ export default function SacredGame() {
       savedTowerFloor={savedTowerFloor}
       onFreeBattle={handleFreeBattle}
       onWorldMap={handleWorldMap}
+      onContinueCampaign={handleContinueCampaign}
+      hasCampaignSave={hasCampaignSave}
     />
   )
   if (screen === 'world-map') return (
@@ -2018,6 +2107,8 @@ export default function SacredGame() {
       playerUnits={worldPlayerUnits ?? []}
       battleResult={worldBattleResult}
       onClearBattleResult={() => setWorldBattleResult(null)}
+      reinforcement={worldReinforcement}
+      onClearReinforcement={() => setWorldReinforcement(null)}
       onMove={handleWorldMove}
       onFight={handleWorldFight}
       onCollect={handleWorldCollect}
@@ -2039,6 +2130,67 @@ export default function SacredGame() {
     )
     return null
   }
+  if (screen === 'campaign-victory') {
+    const nonTown = WORLD_NODES.filter(n => n.id !== 'town')
+    const cleared = nonTown.filter(n => worldMapState.statuses[n.id] === 'cleared' || worldMapState.statuses[n.id] === 'collected').length
+    const alive   = (worldPlayerUnits ?? []).length
+    return (
+      <div style={{
+        maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+        color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '32px 24px', textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 52, marginBottom: 12 }}>🏆</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: '#d4a85a', marginBottom: 6 }}>Кампанію завершено!</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 32 }}>
+          Цитадель Тьми повалена. Світ вільний.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%', maxWidth: 320, marginBottom: 32 }}>
+          {[
+            ['Ходів витрачено', worldMapState.turn],
+            ['Золото зібрано', `${worldMapState.gold} 💰`],
+            ['Вузлів зачищено', `${cleared}/${nonTown.length}`],
+            ['Юнітів вижило', alive],
+          ].map(([label, value]) => (
+            <div key={label as string} style={{
+              padding: '12px 14px', borderRadius: 10,
+              background: 'rgba(212,168,90,0.08)', border: '1px solid rgba(212,168,90,0.2)',
+            }}>
+              <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        {(worldPlayerUnits ?? []).length > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 32, justifyContent: 'center' }}>
+            {(worldPlayerUnits ?? []).map(u => {
+              const lvl = u.level ?? 1
+              const src = u.class === 'warrior' ? `/sacred/warriors/level${lvl}.jpg`
+                : u.class === 'archer' ? `/sacred/archers/level${lvl}.jpg`
+                : u.class === 'mage' && u.magePath && lvl > 1 ? `/sacred/mages/${u.magePath}/level${lvl}.jpg`
+                : '/sacred/mages/level1.jpg'
+              return (
+                <div key={u.id} style={{ width: 50, height: 58, borderRadius: 10, overflow: 'hidden', border: '1.5px solid rgba(212,168,90,0.35)' }}>
+                  <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <button
+          onClick={() => { clearCampaignSave(); setWorldMapState(createInitialMapState()); setWorldPlayerUnits(null); setScreen('landing') }}
+          style={{
+            padding: '14px 36px', background: '#d4a85a', color: '#0f0e09',
+            border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          ← До меню
+        </button>
+      </div>
+    )
+  }
+
   if (screen === 'free-battle') return (
     <FreeBattleSetup
       onStart={handleFreeBattleStart}

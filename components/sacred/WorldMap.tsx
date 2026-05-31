@@ -45,6 +45,8 @@ interface WorldMapProps {
   playerUnits: GameUnit[]
   battleResult?: { gold: number; levelUps: string[] } | null
   onClearBattleResult?: () => void
+  reinforcement?: string | null
+  onClearReinforcement?: () => void
   onMove:    (nodeId: string) => void
   onFight:   (nodeId: string) => void
   onCollect: (nodeId: string) => void
@@ -55,6 +57,7 @@ interface WorldMapProps {
 
 export default function WorldMap({
   mapState, playerUnits, battleResult, onClearBattleResult,
+  reinforcement, onClearReinforcement,
   onMove, onFight, onCollect, onRest, onEndTurn, onBack,
 }: WorldMapProps) {
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
@@ -78,6 +81,12 @@ export default function WorldMap({
     const t = setTimeout(() => onClearBattleResult?.(), 3500)
     return () => clearTimeout(t)
   }, [battleResult])
+
+  useEffect(() => {
+    if (!reinforcement) return
+    const t = setTimeout(() => onClearReinforcement?.(), 4000)
+    return () => clearTimeout(t)
+  }, [reinforcement])
 
   function handleNodeClick(nodeId: string) {
     if (nodeId === heroNodeId) { setPreviewNodeId(null); return }
@@ -149,6 +158,24 @@ export default function WorldMap({
             <div key={name} style={{ fontSize: 12, color: '#a080c8', marginTop: 3 }}>⭐ {name} — новий рівень!</div>
           ))}
           <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.25)', marginTop: 5 }}>торкніться, щоб закрити</div>
+        </div>
+      )}
+
+      {/* Reinforcement notification */}
+      {reinforcement && (
+        <div
+          onClick={() => onClearReinforcement?.()}
+          style={{
+            position: 'fixed', top: 76, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 50, background: '#1e1008', border: '1px solid rgba(192,112,112,0.5)',
+            borderRadius: 12, padding: '12px 20px', boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+            minWidth: 200, textAlign: 'center', cursor: 'pointer',
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#c07070' }}>⚠ Ворожі підкріплення!</div>
+          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.6)', marginTop: 3 }}>
+            {reinforcement} знову під контролем ворога
+          </div>
         </div>
       )}
 
