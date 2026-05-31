@@ -25,6 +25,7 @@ export interface WorldMapState {
   turn: number
   gold: number
   restedThisTurn: boolean
+  maxArmySlots: number
 }
 
 // viewBox: 0 0 200 130
@@ -111,7 +112,7 @@ export function createInitialMapState(): WorldMapState {
     else if (n.type === 'resource' || n.type === 'artifact') statuses[n.id] = 'neutral'
     else statuses[n.id] = 'enemy'
   }
-  return { statuses, heroNodeId: 'town', heroAP: 3, maxAP: 3, turn: 1, gold: 0, restedThisTurn: false }
+  return { statuses, heroNodeId: 'town', heroAP: 3, maxAP: 3, turn: 1, gold: 0, restedThisTurn: false, maxArmySlots: 6 }
 }
 
 function isBlocker(nodeId: string, statuses: Record<string, NodeStatus>): boolean {

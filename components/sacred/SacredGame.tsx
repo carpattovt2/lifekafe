@@ -1240,6 +1240,8 @@ function CLASS_SVG_Component({ cls, color, size }: { cls: string; color: string;
   return Comp ? <Comp color={color} size={size} /> : null
 }
 
+const HIRE_COSTS: Record<UnitClass, number> = { warrior: 2, archer: 3, mage: 5, catapult: 8 }
+
 // ── Tower helpers ──────────────────────────────────────────────────────────────
 const LS_TOWER_FLOOR    = 'sacred_tower_floor'
 const LS_TOWER_UNITS    = 'sacred_tower_units'
@@ -1995,6 +1997,35 @@ export default function SacredGame() {
     }
   }
 
+  function handleHireUnit(unitClass: UnitClass) {
+    if (!worldPlayerUnits) return
+    const cost = HIRE_COSTS[unitClass]
+    if (worldMapState.gold < cost) return
+    if (worldPlayerUnits.length >= worldMapState.maxArmySlots) return
+    setWorldPlayerUnits(addUnitToArmy(worldPlayerUnits, unitClass))
+    setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost }))
+  }
+
+  function handleExpandArmySlots() {
+    const cost = 5
+    if (worldMapState.gold < cost) return
+    setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
+  }
+
+  function handleReorderWorldUnits(id1: string, id2: string) {
+    setWorldPlayerUnits(prev => {
+      if (!prev) return prev
+      const u1 = prev.find(u => u.id === id1)
+      const u2 = prev.find(u => u.id === id2)
+      if (!u1 || !u2) return prev
+      return prev.map(u => {
+        if (u.id === id1) return { ...u, row: u2.row, slot: u2.slot }
+        if (u.id === id2) return { ...u, row: u1.row, slot: u1.slot }
+        return u
+      })
+    })
+  }
+
   function handleWorldRest() {
     setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
     setWorldMapState(prev => ({ ...prev, restedThisTurn: true }))
@@ -2115,6 +2146,9 @@ export default function SacredGame() {
       onRest={handleWorldRest}
       onEndTurn={handleWorldEndTurn}
       onBack={() => setScreen('landing')}
+      onHireUnit={handleHireUnit}
+      onExpandSlots={handleExpandArmySlots}
+      onReorderUnits={handleReorderWorldUnits}
     />
   )
   if (screen === 'world-battle') {
