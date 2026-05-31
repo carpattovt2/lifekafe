@@ -2026,6 +2026,13 @@ export default function SacredGame() {
     })
   }
 
+  function handleMoveWorldUnitSlot(id: string, row: number, slot: number) {
+    setWorldPlayerUnits(prev => {
+      if (!prev) return prev
+      return prev.map(u => u.id === id ? { ...u, row: row as Row, slot } : u)
+    })
+  }
+
   function handleWorldRest() {
     setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
     setWorldMapState(prev => ({ ...prev, restedThisTurn: true }))
@@ -2149,6 +2156,7 @@ export default function SacredGame() {
       onHireUnit={handleHireUnit}
       onExpandSlots={handleExpandArmySlots}
       onReorderUnits={handleReorderWorldUnits}
+      onMoveUnitSlot={handleMoveWorldUnitSlot}
     />
   )
   if (screen === 'world-battle') {

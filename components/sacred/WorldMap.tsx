@@ -61,6 +61,8 @@ function unitSubtitle(unit: GameUnit): string | null {
   return null
 }
 
+const ROW_LABEL_GRID: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд', 2: 'Підтримка' }
+
 interface WorldMapProps {
   mapState: WorldMapState
   playerUnits: GameUnit[]
@@ -68,22 +70,23 @@ interface WorldMapProps {
   onClearBattleResult?: () => void
   reinforcement?: string | null
   onClearReinforcement?: () => void
-  onMove:          (nodeId: string) => void
-  onFight:         (nodeId: string) => void
-  onCollect:       (nodeId: string) => void
-  onRest:          () => void
-  onEndTurn:       () => void
-  onBack:          () => void
-  onHireUnit?:     (cls: UnitClass) => void
-  onExpandSlots?:  () => void
-  onReorderUnits?: (id1: string, id2: string) => void
+  onMove:           (nodeId: string) => void
+  onFight:          (nodeId: string) => void
+  onCollect:        (nodeId: string) => void
+  onRest:           () => void
+  onEndTurn:        () => void
+  onBack:           () => void
+  onHireUnit?:      (cls: UnitClass) => void
+  onExpandSlots?:   () => void
+  onReorderUnits?:  (id1: string, id2: string) => void
+  onMoveUnitSlot?:  (id: string, row: number, slot: number) => void
 }
 
 export default function WorldMap({
   mapState, playerUnits, battleResult, onClearBattleResult,
   reinforcement, onClearReinforcement,
   onMove, onFight, onCollect, onRest, onEndTurn, onBack,
-  onHireUnit, onExpandSlots, onReorderUnits,
+  onHireUnit, onExpandSlots, onReorderUnits, onMoveUnitSlot,
 }: WorldMapProps) {
   const [previewNodeId,   setPreviewNodeId]   = useState<string | null>(null)
   const [armyPanelOpen,   setArmyPanelOpen]   = useState(false)
@@ -147,11 +150,20 @@ export default function WorldMap({
     setPreviewNodeId(null)
   }
 
-  function handleUnitTap(id: string) {
-    if (!selectedUnitId) { setSelectedUnitId(id); return }
-    if (selectedUnitId === id) { setSelectedUnitId(null); return }
-    onReorderUnits?.(selectedUnitId, id)
-    setSelectedUnitId(null)
+  function handleSlotClick(row: number, slot: number) {
+    const occupant = playerUnits.find(u => u.row === row && u.slot === slot)
+    if (selectedUnitId) {
+      const selUnit = playerUnits.find(u => u.id === selectedUnitId)
+      if (!selUnit || selUnit.row !== row) { setSelectedUnitId(null); return }
+      if (occupant && occupant.id !== selectedUnitId) {
+        onReorderUnits?.(selectedUnitId, occupant.id)
+      } else if (!occupant) {
+        onMoveUnitSlot?.(selectedUnitId, row, slot)
+      }
+      setSelectedUnitId(null)
+      return
+    }
+    if (occupant) setSelectedUnitId(occupant.id)
   }
 
   const drawnLines = new Set<string>()
@@ -169,69 +181,70 @@ export default function WorldMap({
     }).filter(Boolean),
   )
 
-  // ── Army panel content (shared between standalone and fortress) ──────────────
-  function ArmyList({ reorder }: { reorder: boolean }) {
+  // ── Army grid (shared between standalone panel and fortress) ────────────────
+  function ArmyGrid({ reorder }: { reorder: boolean }) {
+    const selUnit = selectedUnitId ? playerUnits.find(u => u.id === selectedUnitId) : null
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {reorder && selectedUnitId && (
-          <div style={{ fontSize: 11, color: '#d4a85a', textAlign: 'center', padding: '4px 0' }}>
-            Оберіть другого юніта для обміну
-          </div>
-        )}
-        {playerUnits.map(unit => {
-          const portrait  = getPortraitSrc(unit)
-          const hpPct     = Math.max(0, unit.hp / unit.maxHp)
-          const hpColor   = hpPct > 0.6 ? '#6fa67a' : hpPct > 0.3 ? '#d4a85a' : '#c07070'
-          const subtitle  = unitSubtitle(unit)
-          const isSelected = selectedUnitId === unit.id
+      <div>
+        {([0, 1, 2] as const).map(row => {
+          const rowUnits = playerUnits.filter(u => u.row === row)
+          if (!reorder && rowUnits.length === 0) return null
           return (
-            <div
-              key={unit.id}
-              onClick={reorder ? () => handleUnitTap(unit.id) : undefined}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '9px 11px', borderRadius: 10,
-                background: isSelected ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
-                border: `1px solid ${isSelected ? 'rgba(212,168,90,0.5)' : 'rgba(240,232,216,0.08)'}`,
-                cursor: reorder ? 'pointer' : 'default',
-                transition: 'background 0.15s, border 0.15s',
-              }}
-            >
-              <div style={{ width: 40, height: 46, borderRadius: 8, overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(240,232,216,0.12)' }}>
-                {portrait
-                  ? <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                  : <div style={{ width: '100%', height: '100%', background: '#1a1810' }} />
-                }
+            <div key={row} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
+                {ROW_LABEL_GRID[row]}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#f0e8d8', marginBottom: subtitle ? 1 : 5 }}>
-                  {unit.name}
-                </div>
-                {subtitle && (
-                  <div style={{ fontSize: 10, color: 'rgba(212,168,90,0.7)', marginBottom: 4 }}>{subtitle}</div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ flex: 1, height: 5, background: 'rgba(240,232,216,0.1)', borderRadius: 3 }}>
-                    <div style={{ width: `${hpPct * 100}%`, height: '100%', background: hpColor, borderRadius: 3, transition: 'width 0.3s' }} />
-                  </div>
-                  <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', flexShrink: 0 }}>{unit.hp}/{unit.maxHp}</span>
-                </div>
-              </div>
-              <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                {unit.level && (
-                  <div style={{ fontSize: 12, color: '#b07850', fontWeight: 700 }}>Lv{unit.level}</div>
-                )}
-                {reorder && (
-                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 2 }}>⇅</div>
-                )}
+              <div style={{ display: 'flex', gap: 6 }}>
+                {Array.from({ length: 4 }, (_, slot) => {
+                  const unit    = playerUnits.find(u => u.row === row && u.slot === slot)
+                  const isSel   = unit?.id === selectedUnitId
+                  const isTarget = reorder && selUnit && selUnit.row === row && !unit && !isSel
+                  const portrait = unit ? getPortraitSrc(unit) : null
+                  const subtitle = unit ? unitSubtitle(unit) : null
+                  const hpPct    = unit ? Math.max(0, unit.hp / unit.maxHp) : 0
+                  const hpColor  = hpPct > 0.6 ? '#6fa67a' : hpPct > 0.3 ? '#d4a85a' : '#c07070'
+
+                  return (
+                    <div key={slot}
+                      onClick={reorder ? () => handleSlotClick(row, slot) : undefined}
+                      style={{
+                        width: 72, height: 84, borderRadius: 8, flexShrink: 0,
+                        cursor: reorder ? 'pointer' : 'default',
+                        background: isSel ? 'rgba(212,168,90,0.1)' : unit ? '#1a1810' : 'rgba(0,0,0,0.18)',
+                        border: `2px solid ${isSel ? '#d4a85a' : isTarget ? 'rgba(212,168,90,0.45)' : unit ? 'rgba(240,232,216,0.12)' : 'rgba(240,232,216,0.06)'}`,
+                        borderStyle: isTarget ? 'dashed' : 'solid',
+                        boxShadow: isSel ? '0 0 0 2px rgba(212,168,90,0.2)' : 'none',
+                        position: 'relative', overflow: 'hidden', transition: 'all 0.12s',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {unit && portrait ? (
+                        <>
+                          <img src={portrait} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 35%, rgba(0,0,0,0.78) 100%)' }} />
+                          <div style={{ position: 'relative', zIndex: 1, alignSelf: 'stretch', marginTop: 'auto', padding: '0 4px 4px' }}>
+                            <div style={{ fontSize: 8, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {unit.name}
+                            </div>
+                            {subtitle && <div style={{ fontSize: 7, color: '#d4a85a', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
+                            {isSel && <div style={{ fontSize: 7, color: '#d4a85a', fontWeight: 700 }}>ОБРАНИЙ</div>}
+                            <div style={{ marginTop: 2, height: 2, background: 'rgba(255,255,255,0.15)', borderRadius: 1 }}>
+                              <div style={{ width: `${hpPct * 100}%`, height: '100%', background: hpColor, borderRadius: 1 }} />
+                            </div>
+                          </div>
+                        </>
+                      ) : unit ? (
+                        <div style={{ fontSize: 9, color: '#f0e8d8', textAlign: 'center', padding: '0 4px' }}>{unit.name}</div>
+                      ) : null}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
         })}
         {playerUnits.length === 0 && (
-          <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.35)', textAlign: 'center', padding: '16px 0' }}>
-            Армія порожня
-          </div>
+          <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.35)', textAlign: 'center', padding: '16px 0' }}>Армія порожня</div>
         )}
       </div>
     )
@@ -535,10 +548,10 @@ export default function WorldMap({
             <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 14px' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#d4a85a' }}>⚔ Армія ({playerUnits.length}/{maxArmySlots})</div>
-              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>Натисніть двох юнітів щоб помінятись</div>
+              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>Оберіть юніта, потім слот у тому ж ряду</div>
             </div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
-              <ArmyList reorder={true} />
+              <ArmyGrid reorder={true} />
             </div>
           </div>
         </>
@@ -576,9 +589,9 @@ export default function WorldMap({
               {fortressTab === 'army' && (
                 <>
                   <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 10 }}>
-                    Натисніть двох юнітів щоб помінятись місцями у бойовому порядку
+                    Оберіть юніта, потім інший слот у тому ж ряду щоб поміняти
                   </div>
-                  <ArmyList reorder={true} />
+                  <ArmyGrid reorder={true} />
                 </>
               )}
 
