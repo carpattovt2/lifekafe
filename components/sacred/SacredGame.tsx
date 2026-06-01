@@ -1923,8 +1923,9 @@ export default function SacredGame() {
 
   function handleWorldMap() {
     clearCampaignSave()
-    setWorldMapState(createInitialMapState())
-    setWorldPlayerUnits(buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
+    const init = createInitialMapState()
+    setWorldMapState({ ...init, gold: 10 })
+    setWorldPlayerUnits([])
     setScreen('world-map')
   }
 
