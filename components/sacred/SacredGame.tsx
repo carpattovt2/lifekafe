@@ -17,7 +17,7 @@ import type { WorldMapState } from '@/lib/sacred/worldMap'
 type WorldBattleResult = { gold: number; levelUps: string[] }
 
 const SIDE_COLOR: Record<Side, string> = { player: '#7aaa82', ai: '#c07070' }
-const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Дальній', 2: 'Підтримка' }
+const ROW_LABEL: Record<number, string> = { 0: 'Передній', 1: 'Дальній' }
 const BUFF_ICON: Record<string, string> = {
   defense_up: '🛡',
   aimed: '🎯',
@@ -429,13 +429,13 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
   onSelectUnit: (id: string) => void; onInfoUnit: (id: string) => void
 }) {
   const rowUnits = units.filter(u => u.side === side && u.row === row)
-  const catapult = row === 2 ? units.find(u => u.side === side && u.class === 'catapult') : undefined
+  const catapult = row === 1 ? units.find(u => u.side === side && u.class === 'catapult') : undefined
   const sideColor = SIDE_COLOR[side]
 
   return (
     <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', minHeight: 82 }}>
       {Array.from({ length: maxSlots }, (_, i) => {
-        if (catapult && i === 2) {
+        if (catapult && i === 3) {
           const alive = catapult.hp > 0
           return (
             <div key={i} style={{
@@ -1175,8 +1175,7 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
   const hasCatapult = arranged.some(u => u.class === 'catapult')
 
   function handleSlotClick(row: Row, slot: number) {
-    if (hasCatapult && row === 2 && slot === 2) return
-    if (hasCatapult && row === 1 && slot === 2) { setSelected(null); return }
+    if (hasCatapult && row === 1 && slot === 3) return
     const occupant = arranged.find(u => u.row === row && u.slot === slot)
     if (selected) {
       const selUnit = arranged.find(u => u.id === selected)!
@@ -1196,7 +1195,7 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
     if (occupant && occupant.class !== 'catapult') setSelected(occupant.id)
   }
 
-  const rowLabel: Record<number, string> = { 0: 'Передній ряд (воїни)', 1: 'Дальній ряд (лучники)', 2: 'Підтримка (маги)' }
+  const rowLabel: Record<number, string> = { 0: 'Передній ряд (воїни)', 1: 'Дальній ряд (лучники + маги)' }
 
   return (
     <div style={{
@@ -1208,19 +1207,18 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
         <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>Натисни юніта, потім інший слот у тому ж ряду щоб поміняти</div>
       </div>
       <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
-        {([0, 1, 2] as Row[]).map(row => (
+        {([0, 1] as Row[]).map(row => (
           <div key={row} style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
               {rowLabel[row]}
             </div>
             <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
               {Array.from({ length: 4 }, (_, i) => {
-                const isCatBase = hasCatapult && row === 2 && i === 2
-                const isCatSlot = hasCatapult && row === 1 && i === 2
+                const isCatBase = hasCatapult && row === 1 && i === 3
                 const unit = arranged.find(u => u.row === row && u.slot === i)
                 const isSel = unit?.id === selected
                 const selUnit = selected ? arranged.find(u => u.id === selected) : null
-                const isTarget = selUnit && selUnit.row === row && !isCatBase && !isCatSlot && !unit && !isSel
+                const isTarget = selUnit && selUnit.row === row && !isCatBase && !unit && !isSel
 
                 if (isCatBase) return (
                   <div key={i} style={{ width: 76, height: 86, borderRadius: 8, flexShrink: 0, border: '1.5px dashed rgba(128,96,168,0.25)', background: 'rgba(128,96,168,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
@@ -1232,7 +1230,7 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
                 return (
                   <div key={i} onClick={() => handleSlotClick(row, i)} style={{
                     width: 76, height: 86, borderRadius: 8, flexShrink: 0,
-                    cursor: isCatSlot ? 'default' : 'pointer',
+                    cursor: 'pointer',
                     background: isSel ? 'rgba(111,166,122,0.15)' : isTarget ? 'rgba(176,120,80,0.08)' : unit ? '#fff' : 'rgba(0,0,0,0.02)',
                     border: `2px solid ${isSel ? '#6fa67a' : isTarget ? '#b0785066' : unit ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.08)'}`,
                     borderStyle: isTarget ? 'dashed' : 'solid',
@@ -1329,7 +1327,7 @@ function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[])
 }
 
 // ── Battle component ───────────────────────────────────────────────────────────
-const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4, 2: 4 }
+const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
 
 function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose, onBattleEnd }: {
   counts: ArmyCounts; playerUnits?: GameUnit[]; prebuiltAiUnits?: GameUnit[]; onRestart: () => void
@@ -1467,7 +1465,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
       >
         <ProjectileLayer battlefieldRef={battlefieldRef} events={state.events} />
 
-        {/* AI side: rows 2→1→0 */}
+        {/* AI side: rows 1→0 */}
         <div style={{
           borderRadius: 8, padding: '6px 4px 4px',
           background: 'rgba(192,112,112,0.04)',
@@ -1476,7 +1474,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
           <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(192,112,112,0.8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingLeft: 2 }}>
             Ворог
           </div>
-          {([2, 1, 0] as Row[]).map(row => {
+          {([1, 0] as Row[]).map(row => {
             const hasUnits = state.units.some(u => u.side === 'ai' && u.row === row)
             if (!hasUnits) return null
             return (
@@ -1500,13 +1498,13 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
           </div>
         </div>
 
-        {/* Player side: rows 0→1→2 */}
+        {/* Player side: rows 0→1 */}
         <div style={{
           borderRadius: 8, padding: '4px 4px 6px',
           background: 'rgba(111,166,122,0.04)',
           border: '1px solid rgba(111,166,122,0.1)',
         }}>
-          {([0, 1, 2] as Row[]).map(row => {
+          {([0, 1] as Row[]).map(row => {
             const hasUnits = state.units.some(u => u.side === 'player' && u.row === row)
             if (!hasUnits) return null
             return (

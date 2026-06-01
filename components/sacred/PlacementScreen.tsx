@@ -4,8 +4,8 @@ import { useState } from 'react'
 import type { GameUnit, ArmyCounts, Row, Side } from '@/lib/sacred/types'
 import { buildCustomArmy, buildDefaultAIArmy } from '@/lib/sacred/game'
 
-const ROW_LABEL: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд', 2: 'Підтримка' }
-const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4, 2: 4 }
+const ROW_LABEL: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд' }
+const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
 
 function getPortrait(unit: GameUnit): string {
   const lvl = unit.level ?? 1
@@ -34,45 +34,27 @@ export default function PlacementScreen({ counts, onStart, onBack }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
 
   const hasCatapult = playerUnits.some(u => u.class === 'catapult')
-  const catSlot = playerUnits.find(u => u.class === 'catapult')?.slot ?? 2
+  const catSlot = 3
 
   function handlePlayerSlotClick(row: Row, slot: number) {
-    if (row === 2 && slot === catSlot && hasCatapult) return
-
+    if (hasCatapult && row === 1 && slot === 3) return // catapult base
     const occupant = playerUnits.find(u => u.row === row && u.slot === slot)
-
     if (selected) {
       const selUnit = playerUnits.find(u => u.id === selected)!
-
-      if (selUnit.class === 'catapult') {
-        if (row !== 1) { setSelected(null); return }
-        if (occupant) {
-          setPlayerUnits(prev => prev.map(u => {
-            if (u.id === selUnit.id) return { ...u, slot: occupant.slot }
-            if (u.id === occupant.id) return { ...u, row: selUnit.row, slot: selUnit.slot }
-            return u
-          }))
-        } else {
-          setPlayerUnits(prev => prev.map(u => u.id === selUnit.id ? { ...u, slot } : u))
-        }
-        setSelected(null)
-        return
-      }
-
-      if (!occupant && row === 1 && slot === catSlot && hasCatapult) { setSelected(null); return }
-      if (occupant) {
+      if (selUnit.row !== row) { setSelected(null); return } // same row only
+      if (occupant && occupant.id !== selected) {
         setPlayerUnits(prev => prev.map(u => {
-          if (u.id === selUnit.id) return { ...u, row: occupant.row, slot: occupant.slot }
-          if (u.id === occupant.id) return { ...u, row: selUnit.row, slot: selUnit.slot }
+          if (u.id === selUnit.id) return { ...u, slot: occupant.slot }
+          if (u.id === occupant.id) return { ...u, slot: selUnit.slot }
           return u
         }))
-      } else {
-        setPlayerUnits(prev => prev.map(u => u.id === selUnit.id ? { ...u, row, slot } : u))
+      } else if (!occupant) {
+        setPlayerUnits(prev => prev.map(u => u.id === selUnit.id ? { ...u, slot } : u))
       }
       setSelected(null)
       return
     }
-    if (occupant) setSelected(occupant.id)
+    if (occupant && occupant.class !== 'catapult') setSelected(occupant.id)
   }
 
   const CARD = 56
@@ -98,16 +80,16 @@ export default function PlacementScreen({ counts, onStart, onBack }: Props) {
           <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(192,112,112,0.7)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
             Ворог (попередній перегляд)
           </div>
-          {([2, 1, 0] as Row[]).map(row => {
+          {([1, 0] as Row[]).map(row => {
             const aiHasCat = aiUnits.some(u => u.class === 'catapult')
             const rowHasUnits = aiUnits.some(u => u.row === row)
-            if (!rowHasUnits && !(aiHasCat && row === 2)) return null
+            if (!rowHasUnits && !(aiHasCat && row === 1)) return null
             return (
               <div key={row} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.25)', marginBottom: 3 }}>{ROW_LABEL[row]}</div>
                 <div style={{ display: 'flex', gap: GAP, justifyContent: 'center' }}>
                   {Array.from({ length: ROW_SLOTS[row] }, (_, i) => {
-                    const isCatBase = row === 2 && i === 2 && aiHasCat
+                    const isCatBase = row === 1 && i === 3 && aiHasCat
                     const unit = aiUnits.find(u => u.row === row && u.slot === i)
                     return (
                       <div key={i} style={{
@@ -153,18 +135,17 @@ export default function PlacementScreen({ counts, onStart, onBack }: Props) {
           <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(111,166,122,0.8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
             Твоя армія — переставляй
           </div>
-          {([0, 1, 2] as Row[]).map(row => {
+          {([0, 1] as Row[]).map(row => {
             const rowUnits = playerUnits.filter(u => u.row === row)
             return (
               <div key={row} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.25)', marginBottom: 3 }}>{ROW_LABEL[row]}</div>
                 <div style={{ display: 'flex', gap: GAP, justifyContent: 'center' }}>
                   {Array.from({ length: ROW_SLOTS[row] }, (_, i) => {
-                    const isCatBase  = row === 2 && i === catSlot && hasCatapult
-                    const isCatSlot  = row === 1 && i === catSlot && hasCatapult
+                    const isCatBase  = row === 1 && i === 3 && hasCatapult
                     const unit       = rowUnits.find(u => u.slot === i)
                     const isSelected = unit?.id === selected
-                    const isTarget   = selected != null && !unit && !isCatBase && !isCatSlot
+                    const isTarget   = selected != null && !unit && !isCatBase
 
                     if (isCatBase) {
                       return (

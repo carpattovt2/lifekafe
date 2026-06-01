@@ -11,7 +11,7 @@ const CLASS_MAX_LEVEL: Record<UnitClass, number> = {
   warrior: 5, archer: 3, mage: 5, catapult: 3,
 }
 const CLASS_DEFAULT_ROW: Record<UnitClass, Row> = {
-  warrior: 0, archer: 1, mage: 2, catapult: 1,
+  warrior: 0, archer: 1, mage: 1, catapult: 0,
 }
 const PALETTE_PORTRAITS: Record<UnitClass, string> = {
   warrior:  '/sacred/warriors/level1.jpg',
@@ -26,9 +26,9 @@ const MAGE_PATH_ICON: Record<MagePath, string>  = { fire: '🔥', water: '💧',
 const MAGE_PATH_NAME: Record<MagePath, string>  = { fire: 'Вогонь', water: 'Вода', earth: 'Земля', air: 'Повітря' }
 const CAT_PATH_ICON: Record<CatapultPath, string> = { ballista: '🏹', trebuchet: '⚙' }
 const CAT_PATH_NAME: Record<CatapultPath, string> = { ballista: 'Балліста', trebuchet: 'Требюше' }
-const ROW_LABEL: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд', 2: 'Підтримка' }
+const ROW_LABEL: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд' }
 const ROW_SLOTS = 4
-const MAX_UNITS = 12
+const MAX_UNITS = 8
 
 type Phase = 'player' | 'ai'
 type ConfigMode =
@@ -46,9 +46,14 @@ function getPortraitSrc(cls: UnitClass, level: number, magePath?: MagePath, cata
   return '/sacred/warriors/level1.jpg'
 }
 
-function findFreeSlot(units: GameUnit[], preferRow: Row): { row: Row; slot: number } | null {
-  for (const row of [preferRow, 0, 1, 2] as Row[]) {
+function findFreeSlot(units: GameUnit[], preferRow: Row, hasCat: boolean, isCat: boolean): { row: Row; slot: number } | null {
+  if (isCat) {
+    if (!units.some(u => u.row === 0 && u.slot === 3)) return { row: 0, slot: 3 }
+    return null
+  }
+  for (const row of [preferRow, 0, 1] as Row[]) {
     for (let slot = 0; slot < ROW_SLOTS; slot++) {
+      if (hasCat && slot === 3) continue // slot 3 blocked in both rows when catapult present
       if (!units.some(u => u.row === row && u.slot === slot)) return { row, slot }
     }
   }
@@ -106,9 +111,11 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
     const cPath: CatapultPath | undefined  = (cls === 'catapult' && level >= 2) ? cfgCatapultPath : undefined
     const wPath: WarriorPath | undefined   = (cls === 'warrior'  && level >= 3) ? cfgWarriorPath  : undefined
     const side: Side = phase === 'player' ? 'player' : 'ai'
+    const hasCat = sideUnits.some(u => u.class === 'catapult')
+    const isCat  = cls === 'catapult'
 
     if (configMode.mode === 'add') {
-      const pos = findFreeSlot(sideUnits, CLASS_DEFAULT_ROW[cls])
+      const pos = findFreeSlot(sideUnits, CLASS_DEFAULT_ROW[cls], hasCat, isCat)
       if (!pos) { setConfigMode(null); return }
       const newUnit = buildFreeUnit(cls, level, side, pos.row, pos.slot, mPath, cPath, wPath)
       setSideUnits(prev => [...prev, newUnit])
@@ -210,7 +217,7 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
           <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.4)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
             Натисни юніта щоб налаштувати або видалити
           </div>
-          {([0, 1, 2] as Row[]).map(row => (
+          {([0, 1] as Row[]).map(row => (
             <div key={row} style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.25)', marginBottom: 4 }}>{ROW_LABEL[row]}</div>
               <div style={{ display: 'flex', gap: GAP }}>

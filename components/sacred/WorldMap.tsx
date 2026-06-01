@@ -39,13 +39,16 @@ const MAGE_PATH_LABEL: Record<MagePath, string> = {
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
   { cls: 'warrior',  label: 'Воїн',       cost: 2, desc: 'Передній ряд, щит, провокація' },
   { cls: 'archer',   label: 'Лучник',     cost: 3, desc: 'Дальній ряд, постріл, прицілення' },
-  { cls: 'mage',     label: 'Маг',        cost: 5, desc: 'Підтримка, обирає шлях після lv1' },
+  { cls: 'mage',     label: 'Маг',        cost: 5, desc: 'Дальній ряд, обирає шлях після lv1' },
   { cls: 'catapult', label: 'Катапульта', cost: 8, desc: 'Важка артилерія, площинний урон' },
 ]
 
 function getPortraitSrc(unit: GameUnit): string | null {
   const lvl = unit.level ?? 1
-  if (unit.class === 'warrior') return `/sacred/warriors/level${lvl}.jpg`
+  if (unit.class === 'warrior') {
+    if (unit.warriorPath === 'champion' && lvl >= 3) return `/sacred/warriors/champion/level${lvl}.jpg`
+    return `/sacred/warriors/level${Math.min(lvl, 4)}.jpg`
+  }
   if (unit.class === 'archer')  return `/sacred/archers/level${lvl}.jpg`
   if (unit.class === 'mage')
     return lvl === 1 || !unit.magePath ? '/sacred/mages/level1.jpg' : `/sacred/mages/${unit.magePath}/level${lvl}.jpg`
@@ -61,7 +64,7 @@ function unitSubtitle(unit: GameUnit): string | null {
   return null
 }
 
-const ROW_LABEL_GRID: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд', 2: 'Підтримка' }
+const ROW_LABEL_GRID: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд' }
 
 interface WorldMapProps {
   mapState: WorldMapState
@@ -186,7 +189,7 @@ export default function WorldMap({
     const selUnit = selectedUnitId ? playerUnits.find(u => u.id === selectedUnitId) : null
     return (
       <div>
-        {([0, 1, 2] as const).map(row => {
+        {([0, 1] as const).map(row => {
           const rowUnits = playerUnits.filter(u => u.row === row)
           if (!reorder && rowUnits.length === 0) return null
           return (

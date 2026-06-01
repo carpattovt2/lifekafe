@@ -229,16 +229,11 @@ export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
   const units: GameUnit[] = []
   const hasCat = (counts.catapults ?? 0) > 0
   for (let i = 0; i < counts.warriors; i++) units.push(makeUnit('warrior', side, 0, i))
-  if (hasCat) {
-    units.push(makeUnit('catapult', side, 1, 2))
-    let s = 0
-    for (let i = 0; i < counts.archers; i++) { if (s === 2) s++; units.push(makeUnit('archer', side, 1, s++)) }
-    s = 0
-    for (let i = 0; i < counts.mages;   i++) { if (s === 2) s++; units.push(makeUnit('mage',   side, 2, s++)) }
-  } else {
-    for (let i = 0; i < counts.archers; i++) units.push(makeUnit('archer', side, 1, i))
-    for (let i = 0; i < counts.mages;   i++) units.push(makeUnit('mage',   side, 2, i))
-  }
+  if (hasCat) units.push(makeUnit('catapult', side, 0, 3))
+  // row 1: archers then mages, skip slot 3 if catapult occupies it
+  let s = 0
+  for (let i = 0; i < counts.archers; i++) { if (hasCat && s === 3) s++; units.push(makeUnit('archer', side, 1, s++)) }
+  for (let i = 0; i < counts.mages;   i++) { if (hasCat && s === 3) s++; units.push(makeUnit('mage',   side, 1, s++)) }
   return units
 }
 
@@ -247,15 +242,16 @@ export function generateRecruitOptions(existingUnits: GameUnit[]): GameUnit[] {
   const wc = existingUnits.filter(u => u.class === 'warrior').length
   const ac = existingUnits.filter(u => u.class === 'archer').length
   const mc = existingUnits.filter(u => u.class === 'mage').length
-  const maxA = hasCat ? 3 : 4
-  const maxM = hasCat ? 3 : 4
+  const maxW  = hasCat ? 3 : 4
+  const maxR1 = hasCat ? 3 : 4
+  const r1Count = existingUnits.filter(u => u.row === 1).length
   const avail: UnitClass[] = []
-  if (wc < 4) avail.push('warrior')
-  if (ac < maxA) avail.push('archer')
-  if (mc < maxM) avail.push('mage')
+  if (wc < maxW) avail.push('warrior')
+  if (ac < 4 && r1Count < maxR1) avail.push('archer')
+  if (mc < 4 && r1Count < maxR1) avail.push('mage')
   if (!avail.length) return []
   const shuffled = [...avail].sort(() => Math.random() - 0.5)
-  const pick = (cls: UnitClass) => makeUnit(cls, 'player', cls === 'warrior' ? 0 : cls === 'archer' ? 1 : 2, 99)
+  const pick = (cls: UnitClass) => makeUnit(cls, 'player', cls === 'warrior' ? 0 : 1, 99)
   return shuffled.length === 1
     ? [pick(shuffled[0]), pick(shuffled[0])]
     : [pick(shuffled[0]), pick(shuffled[1])]
@@ -263,10 +259,14 @@ export function generateRecruitOptions(existingUnits: GameUnit[]): GameUnit[] {
 
 export function addUnitToArmy(units: GameUnit[], cls: UnitClass): GameUnit[] {
   const hasCat = units.some(u => u.class === 'catapult')
-  const row: Row = cls === 'warrior' ? 0 : cls === 'archer' ? 1 : 2
+  if (cls === 'catapult') {
+    if (hasCat || units.some(u => u.row === 0 && u.slot === 3)) return units
+    return [...units, makeUnit(cls, 'player', 0, 3)]
+  }
+  const row: Row = cls === 'warrior' ? 0 : 1
   const occupied = new Set(units.filter(u => u.row === row).map(u => u.slot))
   for (let slot = 0; slot <= 3; slot++) {
-    if (hasCat && (row === 1 || row === 2) && slot === 2) continue
+    if (hasCat && slot === 3) continue // slot 3 blocked in both rows when catapult present
     if (!occupied.has(slot)) return [...units, makeUnit(cls, 'player', row, slot)]
   }
   return units
@@ -450,7 +450,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
   const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
 
   if (action === 'strike' || action === 'sacred_strike' || action === 'shkvall') {
-    for (const r of [0, 1, 2] as Row[]) {
+    for (const r of [0, 1] as Row[]) {
       const row = living(enemySide).filter(u => u.row === r)
       if (!row.length) continue
       const reachable = row.filter(u => Math.abs(u.slot - actor.slot) <= 1)
@@ -1475,7 +1475,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     }
 
     // lv1: original logic
-    const rowCounts = ([0, 1, 2] as Row[]).map(r => ({
+    const rowCounts = ([0, 1] as Row[]).map(r => ({
       row: r, units: playerUnits.filter(u => u.row === r),
     }))
     const densest = rowCounts.filter(r => r.units.length > 0).sort((a, b) => b.units.length - a.units.length)[0]
