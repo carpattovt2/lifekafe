@@ -66,7 +66,9 @@ function applyWarriorPath(unit: GameUnit, path: WarriorPath, newLevel: number): 
   const hpPct = unit.hp / unit.maxHp
   return {
     ...unit,
-    warriorPath: path, level: newLevel, xp: 0,
+    // lv1-2 are path-agnostic; only lock in the path at lv3+
+    ...(newLevel >= 3 ? { warriorPath: path } : {}),
+    level: newLevel, xp: 0,
     xpToNext: data.xpToNext === Infinity ? Infinity : data.xpToNext,
     maxHp: data.hp, hp: Math.max(1, Math.round(hpPct * data.hp)),
     minDmg: data.minDmg, maxDmg: data.maxDmg,
@@ -74,7 +76,7 @@ function applyWarriorPath(unit: GameUnit, path: WarriorPath, newLevel: number): 
     evasion: data.evasion, initiative: data.initiative,
     critChance: data.critChance, critMult: data.critMult,
     morale: data.morale,
-    counter: path === 'champion' ? 0.20 : 0,
+    counter: newLevel >= 3 && path === 'champion' ? 0.20 : 0,
   }
 }
 
