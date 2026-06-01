@@ -5,8 +5,8 @@ import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
   generateRecruitOptions, addUnitToArmy,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass, CatapultPath } from '@/lib/sacred/types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
@@ -117,7 +117,10 @@ const CLASS_SVG: Record<string, AvatarComponent> = {
 
 function getPortraitSrc(unit: GameUnit): string | null {
   const lvl = unit.level ?? 1
-  if (unit.class === 'warrior') return `/sacred/warriors/level${lvl}.jpg`
+  if (unit.class === 'warrior')
+    return lvl >= 3 && unit.warriorPath === 'champion'
+      ? `/sacred/warriors/champion/level${lvl}.jpg`
+      : `/sacred/warriors/level${Math.min(lvl, 4)}.jpg`
   if (unit.class === 'archer')  return `/sacred/archers/level${lvl}.jpg`
   if (unit.class === 'mage')
     return lvl === 1 || !unit.magePath ? '/sacred/mages/level1.jpg' : `/sacred/mages/${unit.magePath}/level${lvl}.jpg`
@@ -257,14 +260,19 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const color  = SIDE_COLOR[unit.side]
   const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(240,232,216,0.14)'
   const AvatarSVG = CLASS_SVG[unit.class]
-  const unitLevelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
+  const unitLevelName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
+                        ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
+                      : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                       : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
                       : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath
                         ? MAGE_PATHS[unit.magePath][unit.level]?.name
                         : unit.class === 'mage' ? MAGE_BASE.name
                         : undefined
   const portraitSrc = unit.level
-    ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
+    ? (unit.class === 'warrior'
+        ? ((unit.level >= 3 && unit.warriorPath === 'champion')
+            ? `/sacred/warriors/champion/level${unit.level}.jpg`
+            : `/sacred/warriors/level${Math.min(unit.level, 4)}.jpg`)
      : unit.class === 'catapult'
        ? (unit.level === 1 || !unit.catapultPath
            ? `/sacred/catapults/level1.jpg`
@@ -566,7 +574,10 @@ const CLASS_ACTIONS_INFO: Record<string, { key: ActionKey; extra?: string }[]> =
 
 function getActionsForSheet(unit: GameUnit): { key: ActionKey; extra?: string }[] {
   if (unit.class === 'warrior') {
-    const lvlActions = WARRIOR_LEVELS[unit.level ?? 1]?.actions ?? ['strike', 'shield']
+    const lvl = unit.level ?? 1
+    const lvlActions = lvl >= 3 && unit.warriorPath
+      ? WARRIOR_PATHS[unit.warriorPath][lvl]?.actions ?? ['strike']
+      : WARRIOR_LEVELS[lvl]?.actions ?? ['strike', 'shield']
     return lvlActions.map(key => ({ key, extra: ACTION_EXTRA[key] }))
   }
   if (unit.class === 'archer') {
@@ -589,7 +600,10 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
   const AvatarSVG = CLASS_SVG[unit.class]
   const actionsForSheet = getActionsForSheet(unit)
   const sheetPortrait = unit.level
-    ? (unit.class === 'warrior' ? `/sacred/warriors/level${unit.level}.jpg`
+    ? (unit.class === 'warrior'
+        ? ((unit.level >= 3 && unit.warriorPath === 'champion')
+            ? `/sacred/warriors/champion/level${unit.level}.jpg`
+            : `/sacred/warriors/level${Math.min(unit.level, 4)}.jpg`)
      : unit.class === 'archer'  ? `/sacred/archers/level${unit.level}.jpg`
      : unit.class === 'mage'
        ? (unit.level === 1 || !unit.magePath
@@ -597,16 +611,21 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
            : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
        : null)
     : null
-  const levelName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
+  const levelName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
+                    ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
+                  : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                   : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
                   : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath
                     ? MAGE_PATHS[unit.magePath][unit.level]?.name
                     : unit.class === 'mage' ? MAGE_BASE.name
                     : undefined
-  const maxLevel = unit.class === 'warrior' ? 4 : unit.class === 'archer' ? 3 : unit.class === 'mage' ? 5 : 0
-  const nextLevelName = unit.class === 'warrior' ? WARRIOR_LEVELS[(unit.level ?? 1) + 1]?.name
-                      : unit.class === 'archer'  ? ARCHER_LEVELS[(unit.level ?? 1) + 1]?.name
-                      : unit.class === 'mage' && unit.magePath ? MAGE_PATHS[unit.magePath][(unit.level ?? 1) + 1]?.name
+  const maxLevel = unit.class === 'warrior' ? (unit.warriorPath === 'champion' ? 5 : 4) : unit.class === 'archer' ? 3 : unit.class === 'mage' ? 5 : 0
+  const nextLvl = (unit.level ?? 1) + 1
+  const nextLevelName = unit.class === 'warrior' && nextLvl >= 3 && unit.warriorPath
+                        ? WARRIOR_PATHS[unit.warriorPath][nextLvl]?.name
+                      : unit.class === 'warrior' ? WARRIOR_LEVELS[nextLvl]?.name
+                      : unit.class === 'archer'  ? ARCHER_LEVELS[nextLvl]?.name
+                      : unit.class === 'mage' && unit.magePath ? MAGE_PATHS[unit.magePath][nextLvl]?.name
                       : unit.class === 'mage' ? '?'
                       : undefined
   const stats: [string, string][] = [
@@ -1005,6 +1024,46 @@ function MagePathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: Ma
   )
 }
 
+// ── Warrior path choice modal ─────────────────────────────────────────────────
+function WarriorPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: WarriorPath) => void }) {
+  const paths: { path: WarriorPath; label: string; subtitle: string; lvl3name: string; color: string; img: string }[] = [
+    { path: 'paladin',  label: 'Шлях Паладіна',  subtitle: 'Захист, лікування, командування', lvl3name: 'Лицар',      color: '#d4a85a', img: '/sacred/warriors/level3.jpg' },
+    { path: 'champion', label: 'Шлях Чемпіона',  subtitle: 'Мобільність, урон, контратака',   lvl3name: 'Звитяжець',  color: '#c07070', img: '/sacred/warriors/champion/level3.jpg' },
+  ]
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 60 }} />
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 560, background: '#17150f',
+        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 16px 32px',
+        fontFamily: "'Inter', sans-serif",
+      }}>
+        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 14px' }} />
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 4 }}>⭐ {unit.name} — обери шлях</div>
+        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)', textAlign: 'center', marginBottom: 16 }}>Вибір визначає розвиток до lv5</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {paths.map(({ path, label, subtitle, lvl3name, color, img }) => (
+            <button key={path} onClick={() => onChoose(path)} style={{
+              flex: 1, height: 180, borderRadius: 12, overflow: 'hidden',
+              position: 'relative', padding: 0, cursor: 'pointer',
+              border: `1.5px solid ${color}55`, background: '#0f0e09',
+            }}>
+              <img src={img} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 35%, rgba(0,0,0,0.9) 100%)' }} />
+              <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, textAlign: 'center', padding: '0 6px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,1)' }}>{lvl3name}</div>
+                <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.55)', marginTop: 2, lineHeight: 1.3 }}>{subtitle}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Catapult path choice modal ────────────────────────────────────────────────
 function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: CatapultPath) => void }) {
   const paths: CatapultPath[] = ['ballista', 'trebuchet']
@@ -1179,12 +1238,17 @@ function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: G
                     gap: 3, position: 'relative', overflow: 'hidden', transition: 'all 0.12s',
                   }}>
                     {unit ? (() => {
-                      const portrait = unit.class === 'warrior' ? `/sacred/warriors/level${unit.level ?? 1}.jpg`
+                      const portrait = unit.class === 'warrior'
+                        ? ((unit.level ?? 1) >= 3 && unit.warriorPath === 'champion'
+                            ? `/sacred/warriors/champion/level${unit.level}.jpg`
+                            : `/sacred/warriors/level${Math.min(unit.level ?? 1, 4)}.jpg`)
                         : unit.class === 'archer' ? `/sacred/archers/level${unit.level ?? 1}.jpg`
                         : unit.class === 'mage' ? (unit.level === 1 || !unit.magePath ? `/sacred/mages/level1.jpg` : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
                         : unit.class === 'catapult' ? (unit.level === 1 || !unit.catapultPath ? `/sacred/catapults/level1.jpg` : `/sacred/catapults/${unit.catapultPath}/level${unit.level}.jpg`)
                         : null
-                      const unitName = unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
+                      const unitName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
+                        ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
+                        : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                         : unit.class === 'archer' ? ARCHER_LEVELS[unit.level ?? 1]?.name
                         : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath ? MAGE_PATHS[unit.magePath][unit.level]?.name
                         : unit.class === 'mage' ? MAGE_BASE.name : unit.name
@@ -1283,7 +1347,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
-  const mainActions = actor ? getMainActions(actor.class, actor.level, actor.magePath, actor.catapultPath) : []
+  const mainActions = actor ? getMainActions(actor.class, actor.level, actor.magePath, actor.catapultPath, actor.warriorPath) : []
 
   const targetIds = actor && state.selectedAction
     ? getValidTargets(actor, state.selectedAction, state.units)
@@ -1343,6 +1407,9 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
   const bannerBg = state.phase === 'player-turn'
     ? 'rgba(111,166,122,0.95)' : 'rgba(192,112,112,0.95)'
 
+  const pendingWarrior = state.pendingWarriorLevelUp && state.phase !== 'game-over'
+    ? state.units.find(u => u.id === state.pendingWarriorLevelUp && u.side === 'player') ?? null
+    : null
   const pendingMage = state.pendingMageLevelUp && state.phase !== 'game-over'
     ? state.units.find(u => u.id === state.pendingMageLevelUp && u.side === 'player') ?? null
     : null
@@ -1584,6 +1651,12 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
       </div>
 
       {infoUnit && <UnitInfoSheet unit={infoUnit} onClose={() => setInfoUnit(null)} />}
+      {pendingWarrior && (
+        <WarriorPathModal
+          unit={pendingWarrior}
+          onChoose={path => dispatch({ type: 'CHOOSE_WARRIOR_PATH', unitId: pendingWarrior.id, path })}
+        />
+      )}
       {pendingMage && (
         <MagePathModal
           unit={pendingMage}
@@ -2209,7 +2282,10 @@ export default function SacredGame() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 32, justifyContent: 'center' }}>
             {(worldPlayerUnits ?? []).map(u => {
               const lvl = u.level ?? 1
-              const src = u.class === 'warrior' ? `/sacred/warriors/level${lvl}.jpg`
+              const src = u.class === 'warrior'
+                ? (lvl >= 3 && u.warriorPath === 'champion'
+                    ? `/sacred/warriors/champion/level${lvl}.jpg`
+                    : `/sacred/warriors/level${Math.min(lvl, 4)}.jpg`)
                 : u.class === 'archer' ? `/sacred/archers/level${lvl}.jpg`
                 : u.class === 'mage' && u.magePath && lvl > 1 ? `/sacred/mages/${u.magePath}/level${lvl}.jpg`
                 : '/sacred/mages/level1.jpg'

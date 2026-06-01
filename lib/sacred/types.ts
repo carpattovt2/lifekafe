@@ -58,6 +58,8 @@ export interface GameUnit {
   xp?: number
   xpToNext?: number
 
+  // Warrior-only
+  warriorPath?: WarriorPath
   // Mage-only
   magePath?: MagePath
   // Catapult-only
@@ -72,6 +74,7 @@ export interface GameUnit {
 
 export type MagePath = 'fire' | 'water' | 'earth' | 'air'
 export type CatapultPath = 'ballista' | 'trebuchet'
+export type WarriorPath = 'paladin' | 'champion'
 
 export type ActionKey =
   | 'strike'          // warrior: melee attack (adjacent slots, same row)
@@ -105,6 +108,7 @@ export type ActionKey =
   | 'thunder_storm'   // air (legacy): lightning_bolt hits ALL enemies
   | 'hurricane'       // air lv5: area 30-40 dmg + Громова дезорієнтація + 2-turn cooldown
   | 'provoke'         // warrior lv2: front-row enemies must target this unit + +20% defense
+  | 'shkvall'         // champion lv5 ult: double strike, 3-turn cooldown
   | 'barrage'          // catapult lv1: area strike, adjacents get 25–50% damage
   | 'grapeshot'        // catapult lv1: all enemies in same row, -40% damage
   | 'ballista_shot'    // ballista lv2: single high-acc shot
@@ -149,6 +153,7 @@ export interface BattleState {
   needsTarget: boolean
   events: BattleEvent[]
 
+  pendingWarriorLevelUp?: string    // unitId of warrior awaiting path choice
   pendingMageLevelUp?: string      // unitId of mage awaiting path choice
   pendingCatapultLevelUp?: string  // unitId of catapult awaiting path choice
   pendingFirstTarget?: string      // first target for twin_bolt two-step selection
@@ -160,6 +165,7 @@ export type BattleAction =
   | { type: 'CANCEL_ACTION' }
   | { type: 'AI_TAKE_TURN' }
   | { type: 'ADVANCE_QUEUE' }
+  | { type: 'CHOOSE_WARRIOR_PATH'; unitId: string; path: WarriorPath }
   | { type: 'CHOOSE_MAGE_PATH'; unitId: string; path: MagePath }
   | { type: 'CHOOSE_CATAPULT_PATH'; unitId: string; path: CatapultPath }
 
@@ -309,6 +315,18 @@ export const WARRIOR_LEVELS: Record<number, WarriorLevelData> = {
     initiative: 50, critChance: 0, critMult: 2.0, morale: 80,
     actions: ['sacred_strike', 'shield', 'consecration', 'battle_cry'],
     frontLineBonus: 0.30, xpToNext: Infinity,
+  },
+}
+
+export const WARRIOR_PATHS: Record<WarriorPath, Record<number, WarriorLevelData>> = {
+  paladin: {
+    3: { name: 'Лицар',   hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.80, defense: 0.20, evasion: 0.10, initiative: 50, critChance: 0,    critMult: 2.0, morale: 65, actions: ['strike', 'shield', 'battle_cry', 'provoke'], frontLineBonus: 0.25, xpToNext: 350 },
+    4: { name: 'Паладін', hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08, initiative: 50, critChance: 0,    critMult: 2.0, morale: 80, actions: ['sacred_strike', 'shield', 'consecration', 'battle_cry'], frontLineBonus: 0.30, xpToNext: Infinity },
+  },
+  champion: {
+    3: { name: 'Звитяжець', hp: 125, minDmg: 22, maxDmg: 35, accuracy: 0.80, defense: 0, evasion: 0.15, initiative: 70, critChance: 0.15, critMult: 2.0, morale: 65, actions: ['strike'],           frontLineBonus: 0.20, xpToNext: 350 },
+    4: { name: 'Чемпіон',   hp: 155, minDmg: 30, maxDmg: 46, accuracy: 0.80, defense: 0, evasion: 0.15, initiative: 70, critChance: 0.15, critMult: 2.0, morale: 75, actions: ['strike'],           frontLineBonus: 0.20, xpToNext: 500 },
+    5: { name: 'Легенда',   hp: 185, minDmg: 42, maxDmg: 62, accuracy: 0.80, defense: 0, evasion: 0.15, initiative: 70, critChance: 0.15, critMult: 2.0, morale: 90, actions: ['strike', 'shkvall'], frontLineBonus: 0.20, xpToNext: Infinity },
   },
 }
 

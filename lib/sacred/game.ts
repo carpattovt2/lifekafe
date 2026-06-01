@@ -2,9 +2,9 @@ import type {
   GameUnit, Side, Row, UnitClass, Buff, BuffType,
   ActionKey, ActionDef, LogEntry, BattleState, BattleAction, Phase,
   ArmyCounts, BattleEvent, WarriorLevelData, ArcherLevelData, MagePath, MageLevelData,
-  CatapultPath, CatapultLevelData,
+  CatapultPath, CatapultLevelData, WarriorPath,
 } from './types'
-import { WARRIOR_LEVELS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_BASE, CATAPULT_PATHS } from './types'
+import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_BASE, CATAPULT_PATHS } from './types'
 
 // ── Unit templates ─────────────────────────────────────────────────────────────
 type Template = Omit<GameUnit, 'id' | 'side' | 'row' | 'slot' | 'name' | 'buffs' | 'hasActed' | 'level' | 'xp' | 'xpToNext'>
@@ -59,14 +59,14 @@ function makeUnit(cls: UnitClass, side: Side, row: Row, slot: number): GameUnit 
   return base
 }
 
-// ── Warrior level-up helper ────────────────────────────────────────────────────
-function applyWarriorLevel(unit: GameUnit, newLevel: number): GameUnit {
-  const data: WarriorLevelData = WARRIOR_LEVELS[newLevel]
+// ── Warrior level-up helpers ───────────────────────────────────────────────────
+function applyWarriorPath(unit: GameUnit, path: WarriorPath, newLevel: number): GameUnit {
+  const data: WarriorLevelData = newLevel <= 2 ? WARRIOR_LEVELS[newLevel] : WARRIOR_PATHS[path][newLevel]
   if (!data) return unit
   const hpPct = unit.hp / unit.maxHp
   return {
     ...unit,
-    level: newLevel, xp: 0,
+    warriorPath: path, level: newLevel, xp: 0,
     xpToNext: data.xpToNext === Infinity ? Infinity : data.xpToNext,
     maxHp: data.hp, hp: Math.max(1, Math.round(hpPct * data.hp)),
     minDmg: data.minDmg, maxDmg: data.maxDmg,
@@ -74,25 +74,33 @@ function applyWarriorLevel(unit: GameUnit, newLevel: number): GameUnit {
     evasion: data.evasion, initiative: data.initiative,
     critChance: data.critChance, critMult: data.critMult,
     morale: data.morale,
+    counter: path === 'champion' ? 0.20 : 0,
   }
 }
 
 function grantWarriorXp(
   unit: GameUnit, amount: number,
   newLogs: LogEntry[], newEvents: BattleEvent[],
-): GameUnit {
-  if (unit.class !== 'warrior' || amount <= 0) return unit
+): { unit: GameUnit; pendingChoice: boolean } {
+  if (unit.class !== 'warrior' || amount <= 0) return { unit, pendingChoice: false }
   const curLevel = unit.level ?? 1
-  if (curLevel >= 4) return unit  // maxed
+  const maxLevel = unit.warriorPath === 'champion' ? 5 : 4
+  if (curLevel >= maxLevel) return { unit, pendingChoice: false }
   const newXp = (unit.xp ?? 0) + amount
   if (newXp >= (unit.xpToNext ?? Infinity)) {
+    if (curLevel === 2 && !unit.warriorPath) {
+      // Needs path choice before leveling
+      return { unit: { ...unit, xp: newXp }, pendingChoice: true }
+    }
+    const path = unit.warriorPath ?? 'paladin'
     const nextLevel = curLevel + 1
-    const leveled = applyWarriorLevel({ ...unit, xp: newXp }, nextLevel)
-    newLogs.push(log(`⭐ ${unit.name} — рівень ${nextLevel} (${WARRIOR_LEVELS[nextLevel].name})!`, 'buff'))
+    const leveled = applyWarriorPath({ ...unit, xp: newXp }, path, nextLevel)
+    const levelName = WARRIOR_PATHS[path][nextLevel]?.name ?? ''
+    newLogs.push(log(`⭐ ${unit.name} — рівень ${nextLevel} (${levelName})!`, 'buff'))
     newEvents.push(ev(unit.id, `⭐ Рівень ${nextLevel}!`, 'buff'))
-    return leveled
+    return { unit: leveled, pendingChoice: false }
   }
-  return { ...unit, xp: newXp }
+  return { unit: { ...unit, xp: newXp }, pendingChoice: false }
 }
 
 // ── Archer level-up helper ─────────────────────────────────────────────────────
@@ -274,7 +282,7 @@ export function buildFreeUnit(
 ): GameUnit {
   let unit = makeUnit(cls, side, row, slot)
   if (cls === 'warrior') {
-    for (let l = 2; l <= level; l++) unit = applyWarriorLevel(unit, l)
+    for (let l = 2; l <= level; l++) unit = applyWarriorPath(unit, 'paladin', l)
   } else if (cls === 'archer') {
     for (let l = 2; l <= level; l++) unit = applyArcherLevel(unit, l)
   } else if (cls === 'mage' && level >= 2 && magePath) {
@@ -440,7 +448,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
   const living = (s: Side) => units.filter(u => u.hp > 0 && u.side === s)
   const enemySide: Side = actor.side === 'player' ? 'ai' : 'player'
 
-  if (action === 'strike' || action === 'sacred_strike') {
+  if (action === 'strike' || action === 'sacred_strike' || action === 'shkvall') {
     for (const r of [0, 1, 2] as Row[]) {
       const row = living(enemySide).filter(u => u.row === r)
       if (!row.length) continue
@@ -473,11 +481,12 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
 export function executeAction(
   state: BattleState, actor: GameUnit, action: ActionKey, targetId: string | null,
   secondTargetId?: string | null,
-): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingMageLevelUp?: string; pendingCatapultLevelUp?: string } {
+): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingWarriorLevelUp?: string; pendingMageLevelUp?: string; pendingCatapultLevelUp?: string } {
   let units = state.units.map(u => ({ ...u }))
   const newLogs: LogEntry[] = []
   const newEvents: BattleEvent[] = []
   let pendingMageLevelUp: string | undefined
+  let pendingWarriorLevelUp: string | undefined
 
   const prevUnitMap = new Map(state.units.map(u => [u.id, u]))
   const getUnit = (id: string) => units.find(u => u.id === id)!
@@ -555,6 +564,36 @@ export function executeAction(
       update({ ...tgt, hp: healed })
       newLogs.push(log(`✨ ${actor.name} — Освячення! ${target.name} +${amt} HP`, 'heal'))
       newEvents.push(ev(target.id, `✨ +${amt}`, 'heal', actor.id))
+      break
+    }
+
+    case 'shkvall': {
+      if (!target) break
+      // First hit
+      const res1 = resolveAttack(actor, target, units)
+      newLogs.push(...res1.logs)
+      newEvents.push(...res1.events)
+      if (res1.damage > 0) {
+        update({ ...target, hp: Math.max(0, target.hp - res1.damage) })
+        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      }
+      if (res1.hit && !res1.evaded) hitLanded = true
+      // Second hit (only if target still alive)
+      const tgt2 = getUnit(target.id)
+      if (tgt2.hp > 0) {
+        const res2 = resolveAttack(actor, tgt2, units)
+        newLogs.push(...res2.logs)
+        newEvents.push(...res2.events)
+        if (res2.damage > 0) {
+          update({ ...tgt2, hp: Math.max(0, tgt2.hp - res2.damage) })
+          if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+        }
+        if (res2.hit && !res2.evaded) hitLanded = true
+      }
+      newLogs.push(log(`⚡⚡ ${actor.name} — Шквал! Подвійний удар (перезарядка 3 ходи)`, 'attack'))
+      newEvents.push(ev(actor.id, '⚡⚡ Шквал!', 'buff'))
+      const actorAfter = getUnit(actor.id)
+      update({ ...actorAfter, buffs: [...actorAfter.buffs, makeBuff('cooldown', 0, 3, 'shkvall')] })
       break
     }
 
@@ -1197,6 +1236,23 @@ export function executeAction(
     }
   }
 
+  // ── Counter-attack passive (champion warrior) ──────────────────────────────
+  if (targetId) {
+    const prevTarget = prevUnitMap.get(targetId)
+    const currTarget = getUnit(targetId)
+    if (prevTarget && currTarget && prevTarget.hp > currTarget.hp && currTarget.hp > 0 && currTarget.counter > 0 && Math.random() < currTarget.counter) {
+      const actorNow = getUnit(actor.id)
+      if (actorNow.hp > 0) {
+        const rawDmg = Math.round((currTarget.minDmg + currTarget.maxDmg) / 2 * 0.5)
+        const finalDmg = Math.max(1, Math.round(rawDmg * (1 - actorNow.defense)))
+        update({ ...actorNow, hp: Math.max(0, actorNow.hp - finalDmg) })
+        newLogs.push(log(`⚡ ${currTarget.name} — Контратака! ${actorNow.name} -${finalDmg}`, 'attack'))
+        newEvents.push(ev(actor.id, `⚡ Контратака -${finalDmg}`, 'damage', currTarget.id))
+        if (getUnit(actor.id).hp === 0) newLogs.push(log(`☠ ${actorNow.name} гине від контратаки!`, 'death'))
+      }
+    }
+  }
+
   // ── XP: per kill (+50) and per hit (+10) ──────────────────────────────────
   let pendingCatapultLevelUp: string | undefined
   if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage' || actor.class === 'catapult') {
@@ -1207,8 +1263,15 @@ export function executeAction(
     const xpGain = kills * 50 + (hitLanded ? 10 : 0)
     if (xpGain > 0) {
       const fresh = getUnit(actor.id)
-      if (actor.class === 'warrior') update(grantWarriorXp(fresh, xpGain, newLogs, newEvents))
-      else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
+      if (actor.class === 'warrior') {
+        const { unit: updatedWarrior, pendingChoice } = grantWarriorXp(fresh, xpGain, newLogs, newEvents)
+        update(updatedWarrior)
+        if (pendingChoice) {
+          newLogs.push(log(`⭐ ${fresh.name} готовий до вибору шляху!`, 'buff'))
+          newEvents.push(ev(fresh.id, '⭐ Вибір шляху!', 'buff'))
+          pendingWarriorLevelUp = fresh.id
+        }
+      } else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
       else if (actor.class === 'mage') {
         const { unit: updatedMage, pendingChoice } = grantMageXp(fresh, xpGain, newLogs, newEvents)
         update(updatedMage)
@@ -1229,7 +1292,7 @@ export function executeAction(
     }
   }
 
-  return { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp }
+  return { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp }
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
@@ -1241,6 +1304,20 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
 
   if (actor.class === 'warrior') {
     const lvl = actor.level ?? 1
+    const wPath = actor.warriorPath
+
+    // Champion path AI
+    if (wPath === 'champion') {
+      const onCooldown = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'shkvall')
+      if (lvl >= 5 && !onCooldown && Math.random() < 0.65) {
+        const strikeTargets = getValidTargets(actor, 'shkvall', state.units)
+        const t = state.units.filter(u => strikeTargets.includes(u.id) && u.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+        if (t) return { action: 'shkvall', targetId: t.id }
+      }
+      const strikeTgts = getValidTargets(actor, 'strike', state.units)
+      const t = state.units.filter(u => strikeTgts.includes(u.id) && u.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+      return { action: 'strike', targetId: t?.id ?? null }
+    }
 
     if (lvl >= 4) {
       // Consecration: heal/cleanse hurt ally
@@ -1266,7 +1343,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     }
 
     if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.50) return { action: 'shield', targetId: null }
-    const strikeAction: ActionKey = lvl >= 4 ? 'sacred_strike' : 'strike'
+    const strikeAction: ActionKey = lvl >= 4 && wPath === 'paladin' ? 'sacred_strike' : 'strike'
     const validIds = getValidTargets(actor, strikeAction, state.units)
     const validUnits = state.units.filter(u => validIds.includes(u.id) && u.hp > 0)
     const target = validUnits.sort((a, b) => a.hp - b.hp)[0]
@@ -1423,6 +1500,7 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: 'Удар + -10% броні цілі на 1 хід',          needsTarget: true,  targetSide: 'ai'   },
   consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+25 HP союзнику',                           needsTarget: true,  targetSide: 'ally' },
   provoke:         { key: 'provoke',         label: 'Провокація',        desc: 'Вороги переднього ряду б\'ють тільки тебе + +20% броні на 1 хід', needsTarget: false, targetSide: null },
+  shkvall:         { key: 'shkvall',         label: 'Шквал',             desc: 'Подвійний удар по одній цілі. Перезарядка 3 ходи.',               needsTarget: true,  targetSide: 'ai'  },
   shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога. Lv2+: 25% отруєння. Lv3: 33% крит ×2', needsTarget: true,  targetSide: 'ai'   },
   aim:             { key: 'aim',             label: 'Прицілення',        desc: '+50% точності та +50% ініціативи на 3 власних ходи', needsTarget: false, targetSide: null   },
   poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },
@@ -1456,9 +1534,10 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   plague_volley:    { key: 'plague_volley',    label: 'Чумний залп',       desc: '60 урону + 60% по сусідах + 60% отруєння',   needsTarget: true,  targetSide: 'ai' },
 }
 
-export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePath, catapultPath?: CatapultPath): ActionKey[] {
+export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePath, catapultPath?: CatapultPath, warriorPath?: WarriorPath): ActionKey[] {
   if (cls === 'warrior') {
     const lvl = level ?? 1
+    if (lvl >= 3 && warriorPath) return WARRIOR_PATHS[warriorPath][lvl]?.actions ?? ['strike']
     return WARRIOR_LEVELS[lvl]?.actions ?? ['strike', 'shield']
   }
   if (cls === 'archer') {
@@ -1514,8 +1593,9 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || actor.hp === 0) return state
       if (!ACTIONS[a].needsTarget) {
-        const { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, a, null)
+        const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, a, null)
         const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+        if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
         if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
         return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
       }
@@ -1531,10 +1611,24 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       }
       const mainTarget = state.pendingFirstTarget ?? action.targetId
       const second     = state.pendingFirstTarget ? action.targetId : undefined
-      const { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, state.selectedAction, mainTarget, second)
+      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, state.selectedAction, mainTarget, second)
       const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined })
+      if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
       if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
+    }
+
+    case 'CHOOSE_WARRIOR_PATH': {
+      const warrior = state.units.find(u => u.id === action.unitId)
+      if (!warrior || warrior.class !== 'warrior') return state
+      const leveled = applyWarriorPath(warrior, action.path, 3)
+      const units = state.units.map(u => u.id === action.unitId ? leveled : u)
+      const pathName = action.path === 'champion' ? 'Чемпіон' : 'Паладін'
+      return {
+        ...state, units, pendingWarriorLevelUp: undefined,
+        log: [...state.log, { id: ++_logId, text: `⭐ ${warrior.name} обирає шлях ${pathName} — ${WARRIOR_PATHS[action.path][3].name}!`, type: 'buff' }],
+        events: [ev(action.unitId, `⭐ ${pathName}!`, 'buff')],
+      }
     }
 
     case 'CHOOSE_MAGE_PATH': {
@@ -1567,6 +1661,19 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       return { ...state, selectedAction: null, needsTarget: false }
 
     case 'AI_TAKE_TURN': {
+      // If AI warrior needs path choice, auto-pick paladin
+      if (state.pendingWarriorLevelUp) {
+        const warrior = state.units.find(u => u.id === state.pendingWarriorLevelUp)
+        if (warrior && warrior.side === 'ai') {
+          const leveled = applyWarriorPath(warrior, 'paladin', 3)
+          const units = state.units.map(u => u.id === warrior.id ? leveled : u)
+          return advanceQueue({
+            ...state, units, pendingWarriorLevelUp: undefined,
+            log: [...state.log, { id: ++_logId, text: `⭐ ${warrior.name} → ${WARRIOR_PATHS.paladin[3].name}!`, type: 'buff' }],
+            events: [],
+          })
+        }
+      }
       // If AI mage needs path choice, auto-pick
       if (state.pendingMageLevelUp) {
         const mage = state.units.find(u => u.id === state.pendingMageLevelUp)
@@ -1602,8 +1709,9 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       if (!actor || actor.hp === 0 || actor.side !== 'ai') return advanceQueue(state)
       const { action: act, targetId, secondTargetId } = aiDecide(actor, state)
       if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
-      const { units, newLogs, newEvents, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, act, targetId, secondTargetId)
+      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, act, targetId, secondTargetId)
       const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
       if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
     }
@@ -1639,7 +1747,7 @@ function advanceQueue(state: BattleState): BattleState {
     const roundEvents: BattleEvent[] = []
     for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
       if (u.class === 'warrior') {
-        const updated = grantWarriorXp(u, 15, roundLogs, roundEvents)
+        const { unit: updated } = grantWarriorXp(u, 15, roundLogs, roundEvents)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'archer') {
         const updated = grantArcherXp(u, 15, roundLogs, roundEvents)
