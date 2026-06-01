@@ -1243,7 +1243,9 @@ export function executeAction(
   if (targetId) {
     const prevTarget = prevUnitMap.get(targetId)
     const currTarget = getUnit(targetId)
-    if (prevTarget && currTarget && prevTarget.hp > currTarget.hp && currTarget.hp > 0 && currTarget.counter > 0 && Math.random() < currTarget.counter) {
+    const frontRowAlive = units.filter(u => u.side === currTarget?.side && u.row === 0 && u.hp > 0).length > 0
+    const eligibleToCounter = !!currTarget && (currTarget.row === 0 || !frontRowAlive)
+    if (prevTarget && currTarget && prevTarget.hp > currTarget.hp && currTarget.hp > 0 && currTarget.counter > 0 && eligibleToCounter && Math.random() < currTarget.counter) {
       const actorNow = getUnit(actor.id)
       if (actorNow.hp > 0) {
         const rawDmg = Math.round((currTarget.minDmg + currTarget.maxDmg) / 2 * 0.5)
