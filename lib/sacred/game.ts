@@ -1596,8 +1596,10 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
       if (!actor || actor.hp === 0) return state
       if (!ACTIONS[a].needsTarget) {
-        const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, a, null)
-        const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+        const ticked = tickBuffs(actor)
+        const s0 = { ...state, units: state.units.map(u => u.id === actor.id ? ticked : u) }
+        const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s0, ticked, a, null)
+        const next = advanceQueue({ ...s0, units, log: [...s0.log, ...newLogs], ...TURN_RESET, events: newEvents })
         if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
         if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
         return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
@@ -1612,10 +1614,12 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       if (state.selectedAction === 'twin_bolt' && state.pendingFirstTarget === undefined) {
         return { ...state, pendingFirstTarget: action.targetId }
       }
-      const mainTarget = state.pendingFirstTarget ?? action.targetId
-      const second     = state.pendingFirstTarget ? action.targetId : undefined
-      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, state.selectedAction, mainTarget, second)
-      const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined })
+      const ticked1 = tickBuffs(actor)
+      const s1 = { ...state, units: state.units.map(u => u.id === actor.id ? ticked1 : u) }
+      const mainTarget = s1.pendingFirstTarget ?? action.targetId
+      const second     = s1.pendingFirstTarget ? action.targetId : undefined
+      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s1, ticked1, s1.selectedAction!, mainTarget, second)
+      const next = advanceQueue({ ...s1, units, log: [...s1.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined })
       if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
       if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
@@ -1712,8 +1716,10 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       if (!actor || actor.hp === 0 || actor.side !== 'ai') return advanceQueue(state)
       const { action: act, targetId, secondTargetId } = aiDecide(actor, state)
       if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
-      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(state, actor, act, targetId, secondTargetId)
-      const next = advanceQueue({ ...state, units, log: [...state.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      const ticked2 = tickBuffs(actor)
+      const s2 = { ...state, units: state.units.map(u => u.id === actorId ? ticked2 : u) }
+      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s2, ticked2, act, targetId, secondTargetId)
+      const next = advanceQueue({ ...s2, units, log: [...s2.log, ...newLogs], ...TURN_RESET, events: newEvents })
       if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
       if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
@@ -1734,8 +1740,6 @@ function advanceQueue(state: BattleState): BattleState {
   if (aiAlive     === 0) return { ...state, phase: 'game-over', winner: 'player' }
 
   let units = state.units
-  const justActed = units.find(u => u.id === state.queue[state.queueIdx])
-  if (justActed) units = units.map(u => u.id === justActed.id ? tickBuffs(u) : u)
 
   let idx = state.queueIdx + 1
   while (idx < state.queue.length && (units.find(u => u.id === state.queue[idx])?.hp ?? 0) === 0) idx++
