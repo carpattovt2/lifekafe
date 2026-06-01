@@ -1069,42 +1069,35 @@ function WarriorPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path:
 
 // ── Catapult path choice modal ────────────────────────────────────────────────
 function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path: CatapultPath) => void }) {
-  const paths: CatapultPath[] = ['ballista', 'trebuchet']
-  const pathIcon: Record<CatapultPath, string> = { ballista: '🏹', trebuchet: '⚙' }
-  const pathColor: Record<CatapultPath, string> = { ballista: '#4a86a8', trebuchet: '#8060a8' }
-  const pathDesc: Record<CatapultPath, string> = {
-    ballista:  'Точність і швидкість. Прицільний постріл (95% точн.), Скорпіон б\'є двічі по різних цілях.',
-    trebuchet: 'Важка артилерія. Залп по площі + 60% урону сусідам. Чумний Требюше отруює всіх уражених.',
-  }
+  const paths: { path: CatapultPath; label: string; subtitle: string; color: string; img: string }[] = [
+    { path: 'ballista',  label: 'Балліста',  subtitle: 'Точність, прицільний постріл, Скорпіон б\'є двічі', color: '#4a86a8', img: '/sacred/catapults/ballista/level2.jpg' },
+    { path: 'trebuchet', label: 'Требюше',   subtitle: 'Важка артилерія, залп по площі, отрута на lv3',    color: '#8060a8', img: '/sacred/catapults/trebuchet/level2.jpg' },
+  ]
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }} />
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 60 }} />
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 560, background: '#17150f',
-        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 20px 32px',
+        borderRadius: '18px 18px 0 0', zIndex: 61, padding: '20px 16px 32px',
         fontFamily: "'Inter', sans-serif",
       }}>
-        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 16px' }} />
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 4 }}>
-          ⭐ {unit.name} — Еволюція!
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', textAlign: 'center', marginBottom: 18 }}>
-          Обери напрямок розвитку — це вплине на всі наступні рівні
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {paths.map(path => (
+        <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 14px' }} />
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#d4a85a', textAlign: 'center', marginBottom: 4 }}>⭐ {unit.name} — Еволюція!</div>
+        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)', textAlign: 'center', marginBottom: 16 }}>Обери напрямок — це вплине на всі наступні рівні</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {paths.map(({ path, label, subtitle, color, img }) => (
             <button key={path} onClick={() => onChoose(path)} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
-              borderRadius: 12, border: `1.5px solid ${pathColor[path]}44`,
-              background: `${pathColor[path]}08`, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+              flex: 1, height: 180, borderRadius: 12, overflow: 'hidden',
+              position: 'relative', padding: 0, cursor: 'pointer',
+              border: `1.5px solid ${color}55`, background: '#0f0e09',
             }}>
-              <span style={{ fontSize: 22, lineHeight: 1 }}>{pathIcon[path]}</span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: pathColor[path], marginBottom: 2 }}>
-                  {pathIcon[path]} {CATAPULT_PATHS[path][2].name}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5 }}>{pathDesc[path]}</div>
+              <img src={img} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 35%, rgba(0,0,0,0.9) 100%)' }} />
+              <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, textAlign: 'center', padding: '0 6px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 2 }}>{CATAPULT_PATHS[path][2].name}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,1)' }}>{label}</div>
+                <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.55)', marginTop: 2, lineHeight: 1.3 }}>{subtitle}</div>
               </div>
             </button>
           ))}
