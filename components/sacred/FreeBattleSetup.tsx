@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import type { GameUnit, Row, Side, MagePath, CatapultPath, UnitClass } from '@/lib/sacred/types'
+import type { GameUnit, Row, Side, MagePath, CatapultPath, UnitClass, WarriorPath } from '@/lib/sacred/types'
 import { buildFreeUnit } from '@/lib/sacred/game'
 
 const CLASS_LABEL: Record<UnitClass, string> = {
   warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта',
 }
 const CLASS_MAX_LEVEL: Record<UnitClass, number> = {
-  warrior: 4, archer: 3, mage: 5, catapult: 3,
+  warrior: 5, archer: 3, mage: 5, catapult: 3,
 }
 const CLASS_DEFAULT_ROW: Record<UnitClass, Row> = {
   warrior: 0, archer: 1, mage: 2, catapult: 1,
@@ -19,6 +19,8 @@ const PALETTE_PORTRAITS: Record<UnitClass, string> = {
   mage:     '/sacred/mages/level1.jpg',
   catapult: '/sacred/catapults/level1.jpg',
 }
+const WARRIOR_PATH_ICON: Record<WarriorPath, string> = { paladin: '🛡', champion: '⚔' }
+const WARRIOR_PATH_NAME: Record<WarriorPath, string> = { paladin: 'Паладін', champion: 'Чемпіон' }
 const MAGE_PATH_LIST: MagePath[] = ['fire', 'water', 'earth', 'air']
 const MAGE_PATH_ICON: Record<MagePath, string>  = { fire: '🔥', water: '💧', earth: '🌿', air: '💨' }
 const MAGE_PATH_NAME: Record<MagePath, string>  = { fire: 'Вогонь', water: 'Вода', earth: 'Земля', air: 'Повітря' }
@@ -33,8 +35,11 @@ type ConfigMode =
   | { mode: 'add';  cls: UnitClass }
   | { mode: 'edit'; unitId: string; cls: UnitClass }
 
-function getPortraitSrc(cls: UnitClass, level: number, magePath?: MagePath, catapultPath?: CatapultPath): string {
-  if (cls === 'warrior')  return `/sacred/warriors/level${level}.jpg`
+function getPortraitSrc(cls: UnitClass, level: number, magePath?: MagePath, catapultPath?: CatapultPath, warriorPath?: WarriorPath): string {
+  if (cls === 'warrior') {
+    if (warriorPath === 'champion' && level >= 3) return `/sacred/warriors/champion/level${level}.jpg`
+    return `/sacred/warriors/level${Math.min(level, 4)}.jpg`
+  }
   if (cls === 'archer')   return `/sacred/archers/level${Math.min(level, 3)}.jpg`
   if (cls === 'mage')     return level === 1 || !magePath ? '/sacred/mages/level1.jpg' : `/sacred/mages/${magePath}/level${level}.jpg`
   if (cls === 'catapult') return level === 1 || !catapultPath ? '/sacred/catapults/level1.jpg' : `/sacred/catapults/${catapultPath}/level${level}.jpg`
@@ -63,6 +68,7 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
   const [cfgLevel, setCfgLevel]       = useState(1)
   const [cfgMagePath, setCfgMagePath]         = useState<MagePath>('fire')
   const [cfgCatapultPath, setCfgCatapultPath] = useState<CatapultPath>('ballista')
+  const [cfgWarriorPath, setCfgWarriorPath]   = useState<WarriorPath>('paladin')
 
   const sideUnits    = phase === 'player' ? playerUnits : aiUnits
   const setSideUnits = phase === 'player' ? setPlayerUnits : setAiUnits
@@ -73,6 +79,7 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
     setCfgLevel(1)
     setCfgMagePath('fire')
     setCfgCatapultPath('ballista')
+    setCfgWarriorPath('paladin')
     setConfigMode({ mode: 'add', cls })
   }
 
@@ -82,6 +89,7 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
     setCfgLevel(unit.level ?? 1)
     if (unit.magePath) setCfgMagePath(unit.magePath)
     if (unit.catapultPath) setCfgCatapultPath(unit.catapultPath)
+    if (unit.warriorPath) setCfgWarriorPath(unit.warriorPath)
     setConfigMode({ mode: 'edit', unitId, cls: unit.class })
   }
 
@@ -96,16 +104,17 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
     const level  = cfgLevel
     const mPath: MagePath | undefined      = (cls === 'mage'     && level >= 2) ? cfgMagePath     : undefined
     const cPath: CatapultPath | undefined  = (cls === 'catapult' && level >= 2) ? cfgCatapultPath : undefined
+    const wPath: WarriorPath | undefined   = (cls === 'warrior'  && level >= 3) ? cfgWarriorPath  : undefined
     const side: Side = phase === 'player' ? 'player' : 'ai'
 
     if (configMode.mode === 'add') {
       const pos = findFreeSlot(sideUnits, CLASS_DEFAULT_ROW[cls])
       if (!pos) { setConfigMode(null); return }
-      const newUnit = buildFreeUnit(cls, level, side, pos.row, pos.slot, mPath, cPath)
+      const newUnit = buildFreeUnit(cls, level, side, pos.row, pos.slot, mPath, cPath, wPath)
       setSideUnits(prev => [...prev, newUnit])
     } else {
       const unit    = sideUnits.find(u => u.id === configMode.unitId)!
-      const updated = buildFreeUnit(cls, level, side, unit.row, unit.slot, mPath, cPath)
+      const updated = buildFreeUnit(cls, level, side, unit.row, unit.slot, mPath, cPath, wPath)
       setSideUnits(prev => prev.map(u => u.id === unit.id ? { ...updated, id: unit.id } : u))
     }
     setConfigMode(null)
@@ -138,11 +147,14 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
   }
 
   const cfgCls      = configMode?.cls
-  const maxLevel    = cfgCls ? CLASS_MAX_LEVEL[cfgCls] : 1
+  const maxLevel    = cfgCls === 'warrior'
+    ? (cfgWarriorPath === 'champion' ? 5 : 4)
+    : (cfgCls ? CLASS_MAX_LEVEL[cfgCls] : 1)
   const cfgPortrait = cfgCls ? getPortraitSrc(
     cfgCls, cfgLevel,
     cfgCls === 'mage'     && cfgLevel >= 2 ? cfgMagePath     : undefined,
     cfgCls === 'catapult' && cfgLevel >= 2 ? cfgCatapultPath : undefined,
+    cfgCls === 'warrior'  && cfgLevel >= 3 ? cfgWarriorPath  : undefined,
   ) : ''
 
   const CARD = 64
@@ -217,7 +229,7 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
                           transition: 'all 0.12s',
                         }}
                       >
-                        <img src={getPortraitSrc(unit.class, unit.level ?? 1, unit.magePath, unit.catapultPath)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                        <img src={getPortraitSrc(unit.class, unit.level ?? 1, unit.magePath, unit.catapultPath, unit.warriorPath)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
                         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 38%, rgba(0,0,0,0.8) 100%)' }} />
                         <div style={{ position: 'absolute', bottom: 2, left: 0, right: 0, textAlign: 'center' }}>
                           <span style={{ fontSize: 7, fontWeight: 700, color: '#f0e8d8', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>lv{unit.level ?? 1}</span>
@@ -348,6 +360,33 @@ export default function FreeBattleSetup({ onStart, onBack }: Props) {
                     >
                       <span style={{ fontSize: 16 }}>{MAGE_PATH_ICON[p]}</span>
                       <span>{MAGE_PATH_NAME[p]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Warrior path */}
+            {cfgCls === 'warrior' && cfgLevel >= 3 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 8 }}>Вітка</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['paladin', 'champion'] as WarriorPath[]).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => { setCfgWarriorPath(p); if (p === 'paladin' && cfgLevel > 4) setCfgLevel(4) }}
+                      style={{
+                        flex: 1, padding: '10px 8px', borderRadius: 8,
+                        border: `1.5px solid ${cfgWarriorPath === p ? 'rgba(212,168,90,0.55)' : 'rgba(240,232,216,0.1)'}`,
+                        background: cfgWarriorPath === p ? 'rgba(212,168,90,0.1)' : 'rgba(240,232,216,0.03)',
+                        color: cfgWarriorPath === p ? '#d4a85a' : 'rgba(240,232,216,0.4)',
+                        fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                        transition: 'all 0.12s',
+                      }}
+                    >
+                      <span style={{ fontSize: 18 }}>{WARRIOR_PATH_ICON[p]}</span>
+                      <span>{WARRIOR_PATH_NAME[p]}</span>
                     </button>
                   ))}
                 </div>

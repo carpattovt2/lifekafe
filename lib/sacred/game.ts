@@ -278,11 +278,12 @@ export function buildDefaultAIArmy(): GameUnit[] {
 
 export function buildFreeUnit(
   cls: UnitClass, level: number, side: Side, row: Row, slot: number,
-  magePath?: MagePath, catapultPath?: CatapultPath,
+  magePath?: MagePath, catapultPath?: CatapultPath, warriorPath?: WarriorPath,
 ): GameUnit {
   let unit = makeUnit(cls, side, row, slot)
   if (cls === 'warrior') {
-    for (let l = 2; l <= level; l++) unit = applyWarriorPath(unit, 'paladin', l)
+    const wPath = warriorPath ?? 'paladin'
+    if (level >= 2) unit = applyWarriorPath(unit, wPath, level)
   } else if (cls === 'archer') {
     for (let l = 2; l <= level; l++) unit = applyArcherLevel(unit, l)
   } else if (cls === 'mage' && level >= 2 && magePath) {
