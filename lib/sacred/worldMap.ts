@@ -1,4 +1,4 @@
-import type { ArmyCounts } from './types'
+import type { ArmyCounts, GameUnit } from './types'
 
 export type NodeType = 'town' | 'resource' | 'dungeon' | 'camp' | 'artifact'
 export type NodeStatus = 'player' | 'cleared' | 'collected' | 'enemy' | 'neutral'
@@ -40,6 +40,18 @@ export const FORTRESS_NAMES: Record<number, string> = {
 
 // Cost to unlock next army slot (key = current maxArmySlots, value = gold cost)
 export const SLOT_COSTS: Record<number, number> = { 4: 5, 5: 8, 6: 12, 7: 15 }
+
+const REVIVE_TABLE: Record<string, number[]> = {
+  warrior:  [1, 2, 3, 4, 5],
+  archer:   [2, 4, 6],
+  mage:     [3, 5, 8, 11, 14],
+  catapult: [4, 8, 15],
+}
+export function getReviveCost(unit: GameUnit): number {
+  const lvl = Math.max(1, unit.level ?? 1)
+  const table = REVIVE_TABLE[unit.class] ?? [5]
+  return table[lvl - 1] ?? table[table.length - 1]
+}
 
 export function isSlotUnlocked(row: number, slot: number, maxArmySlots: number): boolean {
   if (slot <= 1) return true

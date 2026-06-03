@@ -11,7 +11,7 @@ import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
 import WorldMap from './WorldMap'
-import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked } from '@/lib/sacred/worldMap'
+import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked, getReviveCost } from '@/lib/sacred/worldMap'
 import type { WorldMapState } from '@/lib/sacred/worldMap'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
@@ -1306,6 +1306,7 @@ const LS_TOWER_UNITS    = 'sacred_tower_units'
 const LS_TOWER_COUNTS   = 'sacred_tower_counts'
 const LS_CAMPAIGN_MAP   = 'sacred_campaign_map'
 const LS_CAMPAIGN_UNITS = 'sacred_campaign_units'
+const LS_CAMPAIGN_DEAD  = 'sacred_campaign_dead'
 
 function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[]): GameUnit[] {
   const freshArmy = buildCustomArmy(towerCounts, 'player')
@@ -1885,6 +1886,7 @@ export default function SacredGame() {
   const [freeBattleAiUnits, setFreeBattleAiUnits] = useState<GameUnit[] | null>(null)
   const [worldMapState, setWorldMapState] = useState<WorldMapState>(createInitialMapState)
   const [worldPlayerUnits, setWorldPlayerUnits] = useState<GameUnit[] | null>(null)
+  const [worldDeadUnits,   setWorldDeadUnits]   = useState<GameUnit[]>([])
   const [worldFightNodeId, setWorldFightNodeId] = useState<string | null>(null)
   const [worldBattleResult, setWorldBattleResult] = useState<WorldBattleResult | null>(null)
   const [worldReinforcement, setWorldReinforcement] = useState<string | null>(null)
@@ -1906,14 +1908,16 @@ export default function SacredGame() {
     try {
       localStorage.setItem(LS_CAMPAIGN_MAP, JSON.stringify(worldMapState))
       localStorage.setItem(LS_CAMPAIGN_UNITS, JSON.stringify(worldPlayerUnits))
+      localStorage.setItem(LS_CAMPAIGN_DEAD, JSON.stringify(worldDeadUnits))
       setHasCampaignSave(true)
     } catch {}
-  }, [worldMapState, worldPlayerUnits])
+  }, [worldMapState, worldPlayerUnits, worldDeadUnits])
 
   function clearCampaignSave() {
     try {
       localStorage.removeItem(LS_CAMPAIGN_MAP)
       localStorage.removeItem(LS_CAMPAIGN_UNITS)
+      localStorage.removeItem(LS_CAMPAIGN_DEAD)
     } catch {}
     setHasCampaignSave(false)
   }
@@ -1925,6 +1929,10 @@ export default function SacredGame() {
       if (!mapData.fortressLevel) mapData.fortressLevel = 1
       setWorldMapState(mapData)
       setWorldPlayerUnits(unitsData)
+      try {
+        const deadData = JSON.parse(localStorage.getItem(LS_CAMPAIGN_DEAD) ?? '[]')
+        setWorldDeadUnits(Array.isArray(deadData) ? deadData : [])
+      } catch { setWorldDeadUnits([]) }
       setScreen('world-map')
     } catch {
       handleWorldMap()
@@ -2012,7 +2020,9 @@ export default function SacredGame() {
 
   function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
     const survived = units.filter(u => u.hp > 0).map(u => ({ ...u, buffs: [] }))
+    const fallen   = units.filter(u => u.hp <= 0).map(u => ({ ...u, buffs: [], hp: 0 }))
     setWorldPlayerUnits(survived)
+    if (fallen.length > 0) setWorldDeadUnits(prev => [...prev, ...fallen])
 
     const fightNodeDef = worldFightNodeId ? WORLD_NODES.find(n => n.id === worldFightNodeId) : null
     const goldGained = won ? (fightNodeDef?.goldReward ?? 0) : 0
@@ -2073,6 +2083,34 @@ export default function SacredGame() {
     if (worldMapState.gold < cost) return
     setWorldPlayerUnits(addUnitAtSlot(worldPlayerUnits, unitClass, row, slot))
     setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost }))
+  }
+
+  function handleReviveUnit(unitId: string) {
+    const unit = worldDeadUnits.find(u => u.id === unitId)
+    if (!unit || !worldPlayerUnits) return
+    const cost = getReviveCost(unit)
+    if (worldMapState.gold < cost) return
+    if (worldPlayerUnits.length >= worldMapState.maxArmySlots) return
+    // Try original slot, else first free unlocked slot in same row
+    const slotFree = (row: number, slot: number) =>
+      isSlotUnlocked(row, slot, worldMapState.maxArmySlots) &&
+      !worldPlayerUnits.find(u => u.row === row && u.slot === slot)
+    let placed = false
+    if (slotFree(unit.row, unit.slot)) {
+      setWorldPlayerUnits(prev => prev ? [...prev, { ...unit, hp: unit.maxHp }] : prev)
+      placed = true
+    } else {
+      for (let s = 0; s <= 3; s++) {
+        if (slotFree(unit.row, s)) {
+          setWorldPlayerUnits(prev => prev ? [...prev, { ...unit, hp: unit.maxHp, slot: s }] : prev)
+          placed = true; break
+        }
+      }
+    }
+    if (placed) {
+      setWorldDeadUnits(prev => prev.filter(u => u.id !== unitId))
+      setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost }))
+    }
   }
 
   function handlePurchaseSlot() {
@@ -2241,6 +2279,8 @@ export default function SacredGame() {
       onReorderUnits={handleReorderWorldUnits}
       onMoveUnitSlot={handleMoveWorldUnitSlot}
       onUpgradeFortress={handleFortressUpgrade}
+      deadUnits={worldDeadUnits}
+      onReviveUnit={handleReviveUnit}
     />
   )
   if (screen === 'world-battle') {

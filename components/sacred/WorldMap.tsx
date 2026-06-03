@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked } from '@/lib/sacred/worldMap'
+import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked, getReviveCost } from '@/lib/sacred/worldMap'
 import type { WorldMapState, NodeType, NodeStatus } from '@/lib/sacred/worldMap'
 import type { GameUnit, UnitClass, MagePath } from '@/lib/sacred/types'
 
@@ -81,6 +81,8 @@ interface WorldMapProps {
   onBack:              () => void
   onHireUnit?:         (cls: UnitClass, row: number, slot: number) => void
   onPurchaseSlot?:     () => void
+  deadUnits?:          GameUnit[]
+  onReviveUnit?:       (id: string) => void
   onReorderUnits?:     (id1: string, id2: string) => void
   onMoveUnitSlot?:     (id: string, row: number, slot: number) => void
   onUpgradeFortress?:  () => void
@@ -90,7 +92,7 @@ export default function WorldMap({
   mapState, playerUnits, battleResult, onClearBattleResult,
   reinforcement, onClearReinforcement,
   onMove, onFight, onCollect, onRest, onEndTurn, onBack,
-  onHireUnit, onPurchaseSlot, onReorderUnits, onMoveUnitSlot, onUpgradeFortress,
+  onHireUnit, onPurchaseSlot, onReorderUnits, onMoveUnitSlot, onUpgradeFortress, deadUnits = [], onReviveUnit,
 }: WorldMapProps) {
   const [previewNodeId,   setPreviewNodeId]   = useState<string | null>(null)
   const [armyPanelOpen,   setArmyPanelOpen]   = useState(false)
@@ -100,6 +102,7 @@ export default function WorldMap({
   const [hirePopup,       setHirePopup]        = useState<{ row: number; slot: number } | null>(null)
 
   const { statuses, heroNodeId, heroAP, maxAP, turn, gold, restedThisTurn, maxArmySlots, fortressLevel } = mapState
+  const isAtTown = heroNodeId === 'town'
   const heroNode  = WORLD_NODES.find(n => n.id === heroNodeId)!
   const reachable = getReachableNodes(heroNodeId, heroAP, statuses)
   const visible   = getVisibleNodeIds(heroNodeId, maxAP)
@@ -221,8 +224,12 @@ export default function WorldMap({
                         boxShadow: isSel ? '0 0 0 2px rgba(212,168,90,0.2)' : 'none',
                         position: 'relative', overflow: 'hidden', transition: 'all 0.12s',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        opacity: (!unit && !isSlotUnlocked(row, slot, maxArmySlots)) ? 0.45 : 1,
                       }}
                     >
+                      {!unit && !isSlotUnlocked(row, slot, maxArmySlots) && (
+                        <span style={{ fontSize: 18, opacity: 0.5 }}>🔒</span>
+                      )}
                       {unit && portrait ? (
                         <>
                           <img src={portrait} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
@@ -313,6 +320,11 @@ export default function WorldMap({
             border: '1px solid rgba(111,166,122,0.3)', borderRadius: 7,
             color: '#7aaa82', fontSize: 11, fontWeight: 600, cursor: 'pointer',
           }}>⚔ Армія</button>
+          <button onClick={() => { setFortressOpen(true); setFortressTab('upgrade') }} style={{
+            padding: '5px 10px', background: 'rgba(212,168,90,0.12)',
+            border: '1px solid rgba(212,168,90,0.3)', borderRadius: 7,
+            color: '#d4a85a', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+          }}>🏰</button>
         </div>
       </div>
 
@@ -614,10 +626,60 @@ export default function WorldMap({
               <div style={{ overflowY: 'auto', flex: 1, padding: '14px 16px 0' }}>
               {fortressTab === 'army' && (
                 <>
-                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 10 }}>
-                    Оберіть юніта, потім інший слот у тому ж ряду щоб поміняти
-                  </div>
-                  <ArmyGrid reorder={true} />
+                  {!isAtTown && (
+                    <div style={{ padding: '10px 12px', marginBottom: 10, borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.08)', fontSize: 11, color: 'rgba(240,232,216,0.4)', textAlign: 'center' }}>
+                      🏰 Армія та воскресіння доступні тільки в замку
+                    </div>
+                  )}
+                  {isAtTown && (
+                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 10 }}>
+                      Оберіть юніта, потім інший слот у тому ж ряду щоб поміняти
+                    </div>
+                  )}
+                  <ArmyGrid reorder={isAtTown} />
+
+                  {/* Fallen units */}
+                  {isAtTown && deadUnits.length > 0 && (
+                    <div style={{ marginTop: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(192,112,112,0.7)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+                        ☠ Полеглі
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {deadUnits.map(unit => {
+                          const cost = getReviveCost(unit)
+                          const canAfford = gold >= cost
+                          const hasSlot = playerUnits.length < maxArmySlots
+                          const portrait = getPortraitSrc(unit)
+                          const canRevive = canAfford && hasSlot
+                          return (
+                            <div key={unit.id} style={{
+                              display: 'flex', alignItems: 'center', gap: 10,
+                              padding: '8px 10px', borderRadius: 8,
+                              background: 'rgba(192,112,112,0.06)', border: '1px solid rgba(192,112,112,0.15)',
+                            }}>
+                              <div style={{ width: 36, height: 42, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: 'rgba(0,0,0,0.3)', filter: 'grayscale(0.7)' }}>
+                                {portrait && <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(240,232,216,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{unit.name}</div>
+                                <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)' }}>Рівень {unit.level ?? 1}</div>
+                                {!hasSlot && <div style={{ fontSize: 9, color: '#c07070' }}>Немає місця в армії</div>}
+                              </div>
+                              <button onClick={() => canRevive && onReviveUnit?.(unit.id)} style={{
+                                padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+                                cursor: canRevive ? 'pointer' : 'not-allowed',
+                                background: canRevive ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.04)',
+                                border: `1px solid ${canRevive ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`,
+                                color: canRevive ? '#d4a85a' : 'rgba(240,232,216,0.25)', flexShrink: 0,
+                              }}>
+                                {cost}💰
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
