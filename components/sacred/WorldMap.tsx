@@ -563,43 +563,41 @@ export default function WorldMap({
 
       {/* ── Fortress panel ── */}
       {fortressOpen && (
-        <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 60 }}
-            onClick={() => { setFortressOpen(false); setSelectedUnitId(null) }} />
           <div style={{
-            position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-            width: '100%', maxWidth: 560,
-            borderRadius: '18px 18px 0 0', zIndex: 61, padding: '0 0 36px',
-            fontFamily: "'Inter', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            position: 'fixed', inset: 0, zIndex: 61,
+            fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
             overflow: 'hidden',
           }}>
-            {/* Full-panel background image */}
+            {/* Full-screen background image */}
             <img
               src={`/sacred/fortress/fortress-${fortressLevel ?? 1}.jpg`}
               alt=""
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', zIndex: 0 }}
             />
-            {/* Dark overlay — heavier at bottom for readability */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, rgba(10,8,4,0.88) 45%, rgba(10,8,4,0.97) 100%)', zIndex: 1 }} />
+            {/* Dark overlay */}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(10,8,4,0.82) 40%, rgba(10,8,4,0.97) 100%)', zIndex: 1 }} />
 
-            {/* All content above the overlay */}
+            {/* Content */}
             <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {/* Drag handle */}
-              <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.3)', borderRadius: 2, margin: '10px auto 0' }} />
-
-              {/* Fortress name header */}
-              <div style={{ padding: '10px 16px 0', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+              {/* Top bar: close + fortress name */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '52px 16px 0' }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Рівень {fortressLevel}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', textAlign: 'right' }}>
-                  Макс. рівень юнітів:<br /><span style={{ color: '#d4a85a', fontWeight: 700, fontSize: 14 }}>{fortressLevel}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <button
+                    onClick={() => { setFortressOpen(false); setSelectedUnitId(null) }}
+                    style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid rgba(240,232,216,0.2)', background: 'rgba(0,0,0,0.4)', color: 'rgba(240,232,216,0.7)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >×</button>
+                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', textAlign: 'right' }}>
+                    Макс. юніти: <span style={{ color: '#d4a85a', fontWeight: 700 }}>{fortressLevel}</span>
+                  </div>
                 </div>
               </div>
 
               {/* Tabs */}
-              <div style={{ display: 'flex', gap: 6, padding: '12px 16px 0' }}>
+              <div style={{ display: 'flex', gap: 6, padding: '16px 16px 0' }}>
                 {(['army', 'hire', 'upgrade'] as const).map(tab => (
                   <button key={tab} onClick={() => { setFortressTab(tab); setSelectedUnitId(null) }} style={{
                     flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -755,7 +753,6 @@ export default function WorldMap({
             </div>
             </div>
           </div>
-        </>
       )}
     </div>
   )
