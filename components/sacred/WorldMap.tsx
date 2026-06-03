@@ -13,12 +13,12 @@ const NODE_COLOR: Record<NodeType, string> = {
   artifact: '#a080c8',
 }
 
-const NODE_ICON: Record<NodeType, string> = {
-  town:     '🏰',
-  resource: '💰',
-  dungeon:  '💀',
-  camp:     '⚔',
-  artifact: '✦',
+const NODE_ICON_SRC: Record<NodeType, string> = {
+  town:     '/sacred/map/icon-town.jpg',
+  resource: '/sacred/map/icon-resource.jpg',
+  dungeon:  '/sacred/map/icon-dungeon.jpg',
+  camp:     '/sacred/map/icon-camp.jpg',
+  artifact: '/sacred/map/icon-artifact.jpg',
 }
 
 const DIFFICULTY_COLOR: Record<string, string> = {
@@ -429,7 +429,7 @@ export default function WorldMap({
             if (fogged) return (
               <g key={node.id} opacity={0.3}>
                 <circle cx={node.x+0.5} cy={node.y+1} r={10.5} fill="rgba(0,0,0,0.5)" />
-                <circle cx={node.x} cy={node.y} r={10} fill="rgba(20,15,5,0.75)"
+                <circle cx={node.x} cy={node.y} r={11} fill="rgba(20,15,5,0.85)"
                   stroke="rgba(240,232,216,0.22)" strokeWidth={1} strokeDasharray="2 2" />
                 <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
                   fontSize={8} fill="rgba(240,232,216,0.45)" style={{ userSelect: 'none', pointerEvents: 'none' }}>?</text>
@@ -449,16 +449,25 @@ export default function WorldMap({
                   fill="none" stroke="#f0e8d8" strokeWidth={2} opacity={0.7} />}
                 {/* Drop shadow */}
                 <circle cx={node.x+0.7} cy={node.y+1.2} r={11.5} fill="rgba(0,0,0,0.65)" />
-                {/* Main node circle */}
-                <circle cx={node.x} cy={node.y} r={11}
-                  fill={dimmed ? 'rgba(30,25,15,0.82)' : `${color}55`}
+                {/* Icon image clipped to circle */}
+                {!dimmed ? (
+                  <image
+                    href={NODE_ICON_SRC[node.type]}
+                    x={node.x - 11} y={node.y - 11} width={22} height={22}
+                    style={{ clipPath: 'circle(50%)', pointerEvents: 'none' }}
+                  />
+                ) : (
+                  <>
+                    <circle cx={node.x} cy={node.y} r={11} fill="rgba(30,25,15,0.85)"
+                      stroke="rgba(240,232,216,0.3)" strokeWidth={1.5} />
+                    <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
+                      fontSize={9} fill="rgba(111,166,122,0.9)" style={{ userSelect: 'none', pointerEvents: 'none' }}>✓</text>
+                  </>
+                )}
+                {/* Colored ring border */}
+                <circle cx={node.x} cy={node.y} r={11} fill="none"
                   stroke={isHero ? '#d4a85a' : dimmed ? 'rgba(240,232,216,0.3)' : color}
-                  strokeWidth={isHero ? 2.5 : 2} />
-                {/* Icon */}
-                <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
-                  fontSize={10} style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                  {dimmed ? '✓' : NODE_ICON[node.type]}
-                </text>
+                  strokeWidth={isHero ? 2.5 : 2} style={{ pointerEvents: 'none' }} />
                 {/* Label with outline */}
                 <text x={node.x} y={node.y + 16.5} textAnchor="middle" fontSize={5.5}
                   stroke="rgba(0,0,0,0.9)" strokeWidth={2.5}
@@ -476,9 +485,12 @@ export default function WorldMap({
       </div>
 
       {/* Legend */}
-      <div style={{ display: 'flex', gap: 12, padding: '0 16px 8px', fontSize: 10, color: 'rgba(240,232,216,0.3)', flexWrap: 'wrap', flexShrink: 0 }}>
-        {([['town','🏰 Місто'], ['resource','💰 Ресурс'], ['dungeon','💀 Данж'], ['camp','⚔ Табір'], ['artifact','✦ Артефакт']] as [NodeType, string][]).map(([t, label]) => (
-          <span key={t} style={{ color: NODE_COLOR[t], opacity: 0.7 }}>{label}</span>
+      <div style={{ display: 'flex', gap: 12, padding: '0 16px 8px', fontSize: 10, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}>
+        {([['town','Місто'], ['resource','Ресурс'], ['dungeon','Данж'], ['camp','Табір'], ['artifact','Артефакт']] as [NodeType, string][]).map(([t, label]) => (
+          <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <img src={NODE_ICON_SRC[t]} alt="" style={{ width: 14, height: 14, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${NODE_COLOR[t]}88` }} />
+            <span style={{ color: NODE_COLOR[t], opacity: 0.8 }}>{label}</span>
+          </span>
         ))}
       </div>
 
@@ -512,11 +524,16 @@ export default function WorldMap({
       <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.08)', padding: '14px 16px 20px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
           <div style={{
-            width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-            background: `${NODE_COLOR[panelNode.type]}14`, border: `1.5px solid ${NODE_COLOR[panelNode.type]}44`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
+            width: 38, height: 38, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
+            border: `1.5px solid ${NODE_COLOR[panelNode.type]}55`,
+            background: '#1a1510', position: 'relative',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {panelStatus === 'cleared' || panelStatus === 'collected' ? '✓' : NODE_ICON[panelNode.type]}
+            {panelStatus === 'cleared' || panelStatus === 'collected' ? (
+              <span style={{ fontSize: 17 }}>✓</span>
+            ) : (
+              <img src={NODE_ICON_SRC[panelNode.type]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
