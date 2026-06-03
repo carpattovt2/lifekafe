@@ -568,46 +568,51 @@ export default function WorldMap({
             onClick={() => { setFortressOpen(false); setSelectedUnitId(null) }} />
           <div style={{
             position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-            width: '100%', maxWidth: 560, background: '#17150f',
+            width: '100%', maxWidth: 560,
             borderRadius: '18px 18px 0 0', zIndex: 61, padding: '0 0 36px',
             fontFamily: "'Inter', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',
           }}>
-            {/* Fortress header image — edge-to-edge */}
-            <div style={{ position: 'relative', flexShrink: 0, borderRadius: '18px 18px 0 0', overflow: 'hidden', height: 160 }}>
-              <img
-                src={`/sacred/fortress/fortress-${fortressLevel ?? 1}.jpg`}
-                alt="Фортеця"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
-              />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 60%)' }} />
-              {/* Drag handle overlay */}
-              <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', width: 36, height: 3, background: 'rgba(240,232,216,0.35)', borderRadius: 2 }} />
-              <div style={{ position: 'absolute', bottom: 10, left: 14, right: 14, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            {/* Full-panel background image */}
+            <img
+              src={`/sacred/fortress/fortress-${fortressLevel ?? 1}.jpg`}
+              alt=""
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', zIndex: 0 }}
+            />
+            {/* Dark overlay — heavier at bottom for readability */}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, rgba(10,8,4,0.88) 45%, rgba(10,8,4,0.97) 100%)', zIndex: 1 }} />
+
+            {/* All content above the overlay */}
+            <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              {/* Drag handle */}
+              <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.3)', borderRadius: 2, margin: '10px auto 0' }} />
+
+              {/* Fortress name header */}
+              <div style={{ padding: '10px 16px 0', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Рівень {fortressLevel}</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Рівень {fortressLevel}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>
-                  Макс. рівень юнітів: <span style={{ color: '#d4a85a', fontWeight: 700 }}>{fortressLevel}</span>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', textAlign: 'right' }}>
+                  Макс. рівень юнітів:<br /><span style={{ color: '#d4a85a', fontWeight: 700, fontSize: 14 }}>{fortressLevel}</span>
                 </div>
               </div>
-            </div>
 
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14, padding: '12px 16px 0' }}>
-              {(['army', 'hire', 'upgrade'] as const).map(tab => (
-                <button key={tab} onClick={() => { setFortressTab(tab); setSelectedUnitId(null) }} style={{
-                  flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  background: fortressTab === tab ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.04)',
-                  border: `1px solid ${fortressTab === tab ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`,
-                  color: fortressTab === tab ? '#d4a85a' : 'rgba(240,232,216,0.45)',
-                }}>
-                  {tab === 'army' ? `⚔ Армія (${playerUnits.length}/${maxArmySlots})` : tab === 'hire' ? '🗡 Найм' : '🏰 Розвиток'}
-                </button>
-              ))}
-            </div>
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 6, padding: '12px 16px 0' }}>
+                {(['army', 'hire', 'upgrade'] as const).map(tab => (
+                  <button key={tab} onClick={() => { setFortressTab(tab); setSelectedUnitId(null) }} style={{
+                    flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    background: fortressTab === tab ? 'rgba(212,168,90,0.2)' : 'rgba(240,232,216,0.06)',
+                    border: `1px solid ${fortressTab === tab ? 'rgba(212,168,90,0.5)' : 'rgba(240,232,216,0.1)'}`,
+                    color: fortressTab === tab ? '#d4a85a' : 'rgba(240,232,216,0.45)',
+                  }}>
+                    {tab === 'army' ? `⚔ Армія (${playerUnits.length}/${maxArmySlots})` : tab === 'hire' ? '🗡 Найм' : '🏰 Розвиток'}
+                  </button>
+                ))}
+              </div>
 
-            <div style={{ overflowY: 'auto', flex: 1, padding: '0 16px' }}>
+              <div style={{ overflowY: 'auto', flex: 1, padding: '14px 16px 0' }}>
               {fortressTab === 'army' && (
                 <>
                   <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 10 }}>
@@ -747,6 +752,7 @@ export default function WorldMap({
                   </div>
                 )
               })()}
+            </div>
             </div>
           </div>
         </>
