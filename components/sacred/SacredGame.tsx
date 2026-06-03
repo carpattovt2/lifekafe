@@ -322,11 +322,17 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           <span key={f.id} className={`float-${f.type}`}>{f.text}</span>
         ))}
 
+        {!alive && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3, pointerEvents: 'none' }}>
+            <span style={{ fontSize: 26, opacity: 0.75, filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}>✝</span>
+          </div>
+        )}
         {portraitSrc ? (
           <>
             {/* Full-bleed portrait */}
             <img src={portraitSrc} alt="" style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+              filter: alive ? 'none' : 'grayscale(1)',
             }} />
             {/* Gradient overlay for text readability */}
             <div style={{
@@ -1381,7 +1387,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
   // AI turn trigger
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
-    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 2400)
+    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1200)
     return () => clearTimeout(t)
   }, [state.phase, state.queueIdx])
 
@@ -2020,7 +2026,7 @@ export default function SacredGame() {
 
   function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
     const survived = units.filter(u => u.hp > 0).map(u => ({ ...u, buffs: [] }))
-    const fallen   = units.filter(u => u.hp <= 0).map(u => ({ ...u, buffs: [], hp: 0 }))
+    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [], hp: 0 }))
     setWorldPlayerUnits(survived)
     if (fallen.length > 0) setWorldDeadUnits(prev => [...prev, ...fallen])
 
@@ -2159,6 +2165,12 @@ export default function SacredGame() {
     setWorldMapState(prev => ({ ...prev, restedThisTurn: true }))
   }
 
+  function handleWorldRestOutside() {
+    if (worldMapState.gold < 1 || worldMapState.heroAP < 1) return
+    setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
+    setWorldMapState(prev => ({ ...prev, heroAP: prev.heroAP - 1, gold: prev.gold - 1 }))
+  }
+
   function handleWorldEndTurn() {
     const nextTurn = worldMapState.turn + 1
     const newStatuses = { ...worldMapState.statuses }
@@ -2272,6 +2284,7 @@ export default function SacredGame() {
       onFight={handleWorldFight}
       onCollect={handleWorldCollect}
       onRest={handleWorldRest}
+      onRestOutside={handleWorldRestOutside}
       onEndTurn={handleWorldEndTurn}
       onBack={() => setScreen('landing')}
       onHireUnit={handleHireUnit}

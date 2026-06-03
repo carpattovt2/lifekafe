@@ -77,6 +77,7 @@ interface WorldMapProps {
   onFight:             (nodeId: string) => void
   onCollect:           (nodeId: string) => void
   onRest:              () => void
+  onRestOutside?:      () => void
   onEndTurn:           () => void
   onBack:              () => void
   onHireUnit?:         (cls: UnitClass, row: number, slot: number) => void
@@ -88,10 +89,18 @@ interface WorldMapProps {
   onUpgradeFortress?:  () => void
 }
 
+function enemyPortrait(cls: UnitClass, level: number): string | null {
+  if (cls === 'warrior')  return `/sacred/warriors/level${Math.min(level, 4)}.jpg`
+  if (cls === 'archer')   return `/sacred/archers/level${Math.min(level, 3)}.jpg`
+  if (cls === 'mage')     return '/sacred/mages/level1.jpg'
+  if (cls === 'catapult') return '/sacred/catapults/level1.jpg'
+  return null
+}
+
 export default function WorldMap({
   mapState, playerUnits, battleResult, onClearBattleResult,
   reinforcement, onClearReinforcement,
-  onMove, onFight, onCollect, onRest, onEndTurn, onBack,
+  onMove, onFight, onCollect, onRest, onRestOutside, onEndTurn, onBack,
   onHireUnit, onPurchaseSlot, onReorderUnits, onMoveUnitSlot, onUpgradeFortress, deadUnits = [], onReviveUnit,
 }: WorldMapProps) {
   const [previewNodeId,   setPreviewNodeId]   = useState<string | null>(null)
@@ -195,8 +204,9 @@ export default function WorldMap({
     return (
       <div>
         {([0, 1] as const).map(row => {
-          const rowUnits = playerUnits.filter(u => u.row === row)
-          if (!reorder && rowUnits.length === 0) return null
+          const rowUnits   = playerUnits.filter(u => u.row === row)
+          const rowDead    = deadUnits.filter(u => u.row === row)
+          if (!reorder && rowUnits.length === 0 && rowDead.length === 0) return null
           return (
             <div key={row} style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
@@ -204,13 +214,45 @@ export default function WorldMap({
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {Array.from({ length: 4 }, (_, slot) => {
-                  const unit    = playerUnits.find(u => u.row === row && u.slot === slot)
-                  const isSel   = unit?.id === selectedUnitId
-                  const isTarget = reorder && selUnit && selUnit.row === row && !unit && !isSel
-                  const portrait = unit ? getPortraitSrc(unit) : null
-                  const subtitle = unit ? unitSubtitle(unit) : null
-                  const hpPct    = unit ? Math.max(0, unit.hp / unit.maxHp) : 0
-                  const hpColor  = hpPct > 0.6 ? '#6fa67a' : hpPct > 0.3 ? '#d4a85a' : '#c07070'
+                  const unit      = playerUnits.find(u => u.row === row && u.slot === slot)
+                  const deadUnit  = !unit ? deadUnits.find(u => u.row === row && u.slot === slot) : undefined
+                  const isSel     = unit?.id === selectedUnitId
+                  const isTarget  = reorder && selUnit && selUnit.row === row && !unit && !deadUnit && !isSel
+                  const portrait  = unit ? getPortraitSrc(unit) : null
+                  const subtitle  = unit ? unitSubtitle(unit) : null
+                  const hpPct     = unit ? Math.max(0, unit.hp / unit.maxHp) : 0
+                  const hpColor   = hpPct > 0.6 ? '#6fa67a' : hpPct > 0.3 ? '#d4a85a' : '#c07070'
+
+                  // Dead unit in this slot
+                  if (!unit && deadUnit) {
+                    const dp        = getPortraitSrc(deadUnit)
+                    const cost      = getReviveCost(deadUnit)
+                    const canAfford = gold >= cost
+                    const hasSlot   = playerUnits.length < maxArmySlots
+                    const canRevive = canAfford && hasSlot && isAtTown
+                    return (
+                      <div key={slot}
+                        onClick={() => canRevive && onReviveUnit?.(deadUnit.id)}
+                        style={{
+                          width: 72, height: 84, borderRadius: 8, flexShrink: 0,
+                          background: '#1a0808', border: '1px solid rgba(192,112,112,0.2)',
+                          position: 'relative', overflow: 'hidden',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          cursor: canRevive ? 'pointer' : 'default',
+                        }}
+                      >
+                        {dp && <img src={dp} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', filter: 'grayscale(1)', opacity: 0.3 }} />}
+                        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                          <div style={{ fontSize: 22, opacity: 0.75, lineHeight: 1 }}>✝</div>
+                          {isAtTown && (
+                            <div style={{ fontSize: 9, color: canAfford ? '#d4a85a' : '#c07070', fontWeight: 700, marginTop: 3 }}>
+                              {cost}💰
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  }
 
                   return (
                     <div key={slot}
@@ -255,7 +297,7 @@ export default function WorldMap({
             </div>
           )
         })}
-        {playerUnits.length === 0 && (
+        {playerUnits.length === 0 && deadUnits.length === 0 && (
           <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.35)', textAlign: 'center', padding: '16px 0' }}>Армія порожня</div>
         )}
       </div>
@@ -476,14 +518,25 @@ export default function WorldMap({
               {panelNode.desc}
             </div>
             {panelNode.enemyCounts && panelStatus === 'enemy' && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                {([['⚔', panelNode.enemyCounts.warriors], ['🏹', panelNode.enemyCounts.archers], ['🔮', panelNode.enemyCounts.mages], ['🗿', panelNode.enemyCounts.catapults]] as [string, number][])
-                  .filter(([, n]) => n > 0)
-                  .map(([icon, n]) => (
-                    <span key={icon} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: 'rgba(192,112,112,0.1)', color: 'rgba(192,112,112,0.75)', border: '1px solid rgba(192,112,112,0.18)' }}>{icon} ×{n}</span>
-                  ))}
+              <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {(['warrior', 'archer', 'mage', 'catapult'] as UnitClass[])
+                  .flatMap(cls => {
+                    const n = cls === 'warrior' ? panelNode.enemyCounts!.warriors
+                            : cls === 'archer'  ? panelNode.enemyCounts!.archers
+                            : cls === 'mage'    ? panelNode.enemyCounts!.mages
+                            : panelNode.enemyCounts!.catapults
+                    return Array.from({ length: n }, (_, i) => ({ cls, i }))
+                  })
+                  .map(({ cls, i }) => {
+                    const src = enemyPortrait(cls, panelNode.enemyLevel ?? 1)
+                    return (
+                      <div key={`${cls}-${i}`} style={{ width: 30, height: 38, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(192,112,112,0.3)', flexShrink: 0, background: '#1a0a0a' }}>
+                        {src && <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />}
+                      </div>
+                    )
+                  })}
                 {panelNode.goldReward && (
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: 'rgba(212,168,90,0.1)', color: '#d4a85a', border: '1px solid rgba(212,168,90,0.2)' }}>+{panelNode.goldReward}💰</span>
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: 'rgba(212,168,90,0.1)', color: '#d4a85a', border: '1px solid rgba(212,168,90,0.2)', marginLeft: 4 }}>+{panelNode.goldReward}💰</span>
                 )}
               </div>
             )}
@@ -541,6 +594,17 @@ export default function WorldMap({
               </button>
             </>
           )}
+          {!atTown && heroAP > 0 && (
+            <button onClick={gold >= 1 ? onRestOutside : undefined} disabled={gold < 1} style={{
+              padding: '11px 10px', borderRadius: 8, flexShrink: 0,
+              background: gold >= 1 ? 'rgba(212,168,90,0.08)' : 'rgba(240,232,216,0.03)',
+              border: `1px solid ${gold >= 1 ? 'rgba(212,168,90,0.25)' : 'rgba(240,232,216,0.08)'}`,
+              color: gold >= 1 ? '#d4a85a' : 'rgba(240,232,216,0.25)',
+              fontSize: 12, fontWeight: 600, cursor: gold >= 1 ? 'pointer' : 'not-allowed',
+            }}>
+              🏥 1💰
+            </button>
+          )}
           <button onClick={onEndTurn} style={{
             padding: '11px 18px', borderRadius: 8, flexShrink: 0,
             background: 'rgba(176,120,80,0.1)', border: '1px solid rgba(176,120,80,0.3)',
@@ -577,7 +641,7 @@ export default function WorldMap({
       {/* ── Fortress panel ── */}
       {fortressOpen && (
           <div style={{
-            position: 'fixed', inset: 0, zIndex: 61,
+            position: 'fixed', inset: 0, zIndex: 2000,
             fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
             overflow: 'hidden',
           }}>
@@ -637,49 +701,6 @@ export default function WorldMap({
                     </div>
                   )}
                   <ArmyGrid reorder={isAtTown} />
-
-                  {/* Fallen units */}
-                  {isAtTown && deadUnits.length > 0 && (
-                    <div style={{ marginTop: 16 }}>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(192,112,112,0.7)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-                        ☠ Полеглі
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {deadUnits.map(unit => {
-                          const cost = getReviveCost(unit)
-                          const canAfford = gold >= cost
-                          const hasSlot = playerUnits.length < maxArmySlots
-                          const portrait = getPortraitSrc(unit)
-                          const canRevive = canAfford && hasSlot
-                          return (
-                            <div key={unit.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              padding: '8px 10px', borderRadius: 8,
-                              background: 'rgba(192,112,112,0.06)', border: '1px solid rgba(192,112,112,0.15)',
-                            }}>
-                              <div style={{ width: 36, height: 42, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: 'rgba(0,0,0,0.3)', filter: 'grayscale(0.7)' }}>
-                                {portrait && <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />}
-                              </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(240,232,216,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{unit.name}</div>
-                                <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)' }}>Рівень {unit.level ?? 1}</div>
-                                {!hasSlot && <div style={{ fontSize: 9, color: '#c07070' }}>Немає місця в армії</div>}
-                              </div>
-                              <button onClick={() => canRevive && onReviveUnit?.(unit.id)} style={{
-                                padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700,
-                                cursor: canRevive ? 'pointer' : 'not-allowed',
-                                background: canRevive ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.04)',
-                                border: `1px solid ${canRevive ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`,
-                                color: canRevive ? '#d4a85a' : 'rgba(240,232,216,0.25)', flexShrink: 0,
-                              }}>
-                                {cost}💰
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
 

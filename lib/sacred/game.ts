@@ -342,10 +342,12 @@ export function buildFreeUnit(
 function buildQueue(units: GameUnit[]): string[] {
   return [...units.filter(u => u.hp > 0)]
     .sort((a, b) => {
-      const effInit = (u: GameUnit) =>
-        u.initiative
-        + u.buffs.filter(b => b.type === 'initiative_up').reduce((s, b) => s + b.value, 0)
-        - u.buffs.filter(b => b.type === 'initiative_down').reduce((s, b) => s + b.value, 0)
+      const effInit = (u: GameUnit) => {
+        const base = u.initiative
+          + u.buffs.filter(b => b.type === 'initiative_up').reduce((s, b) => s + b.value, 0)
+          - u.buffs.filter(b => b.type === 'initiative_down').reduce((s, b) => s + b.value, 0)
+        return u.hp < u.maxHp * 0.2 ? base * 0.5 : base
+      }
       return effInit(b) - effInit(a) + (Math.random() - 0.5) * 0.1
     })
     .map(u => u.id)
@@ -448,7 +450,8 @@ function resolveAttack(
   // Wind shield evasion buff
   const windShieldBonus = getBuffValue(def, 'wind_shield')
 
-  if (!ignoreEvasion && Math.random() < def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) {
+  const woundedEvaMult = def.hp < def.maxHp * 0.2 ? 0.5 : 1
+  if (!ignoreEvasion && Math.random() < (def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) * woundedEvaMult) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
     events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
@@ -467,6 +470,7 @@ function resolveAttack(
   dmg *= (1 + getBuffValue(def, 'armor_break'))  // armor break amplifies damage
   // Elemental resistance
   if (elemPath) dmg *= (1 - getElemResist(def, elemPath))
+  if (atk.hp < atk.maxHp * 0.2) dmg *= 0.5
   dmg = Math.max(1, Math.round(dmg))
 
   if (isCrit) {
@@ -501,18 +505,15 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
       const targets = reachable.length
         ? reachable
         : [row.slice().sort((a, b) => Math.abs(a.slot - actor.slot) - Math.abs(b.slot - actor.slot))[0]]
-      // Taunt: front-row attacker must target taunted unit if reachable
-      if (actor.row === 0) {
-        const taunted = targets.filter(u => u.buffs.some(b => b.type === 'taunt'))
-        if (taunted.length) return taunted.map(u => u.id)
-      }
       return targets.map(u => u.id)
     }
     return []
   }
 
   if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'hurricane', 'barrage', 'grapeshot', 'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley', 'freeze'].includes(action)) {
-    return living(enemySide).map(u => u.id)
+    const all = living(enemySide)
+    const taunted = all.filter(u => u.buffs.some(b => b.type === 'taunt'))
+    return taunted.length ? taunted.map(u => u.id) : all.map(u => u.id)
   }
 
   if (['consecration', 'ice_shield', 'stone_skin', 'fortress_aura'].includes(action)) {
