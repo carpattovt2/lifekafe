@@ -39,10 +39,10 @@ export const FORTRESS_NAMES: Record<number, string> = {
 }
 
 export const FORTRESS_UPGRADE_COST: Record<number, number> = {
-  2: 10,
-  3: 20,
-  4: 30,
-  5: 40,
+  2: 5,
+  3: 8,
+  4: 12,
+  5: 15,
 }
 
 // viewBox: 0 0 200 130
