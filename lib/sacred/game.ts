@@ -1793,18 +1793,19 @@ function advanceQueue(state: BattleState): BattleState {
     // Award round-survival XP to all living units
     const roundLogs: LogEntry[] = []
     const roundEvents: BattleEvent[] = []
+    const roundCap = state.fortressLevelCap
     for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
       if (u.class === 'warrior') {
-        const { unit: updated } = grantWarriorXp(u, 15, roundLogs, roundEvents)
+        const { unit: updated } = grantWarriorXp(u, 15, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'archer') {
-        const updated = grantArcherXp(u, 15, roundLogs, roundEvents)
+        const updated = grantArcherXp(u, 15, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'mage') {
-        const { unit: updated } = grantMageXp(u, 15, roundLogs, roundEvents)
+        const { unit: updated } = grantMageXp(u, 15, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'catapult') {
-        const { unit: updated } = grantCatapultXp(u, 15, roundLogs, roundEvents)
+        const { unit: updated } = grantCatapultXp(u, 15, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       }
     }

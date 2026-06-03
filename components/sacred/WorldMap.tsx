@@ -569,22 +569,23 @@ export default function WorldMap({
           <div style={{
             position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
             width: '100%', maxWidth: 560, background: '#17150f',
-            borderRadius: '18px 18px 0 0', zIndex: 61, padding: '16px 16px 36px',
+            borderRadius: '18px 18px 0 0', zIndex: 61, padding: '0 0 36px',
             fontFamily: "'Inter', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
           }}>
-            <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 12px' }} />
-            {/* Fortress header with image */}
-            <div style={{ position: 'relative', marginBottom: 12, borderRadius: 10, overflow: 'hidden', height: 110 }}>
+            {/* Fortress header image — edge-to-edge */}
+            <div style={{ position: 'relative', flexShrink: 0, borderRadius: '18px 18px 0 0', overflow: 'hidden', height: 160 }}>
               <img
                 src={`/sacred/fortress/fortress-${fortressLevel ?? 1}.jpg`}
                 alt="Фортеця"
                 style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
               />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 55%)' }} />
-              <div style={{ position: 'absolute', bottom: 8, left: 12, right: 12, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 60%)' }} />
+              {/* Drag handle overlay */}
+              <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', width: 36, height: 3, background: 'rgba(240,232,216,0.35)', borderRadius: 2 }} />
+              <div style={{ position: 'absolute', bottom: 10, left: 14, right: 14, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Рівень {fortressLevel}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>
                   Макс. рівень юнітів: <span style={{ color: '#d4a85a', fontWeight: 700 }}>{fortressLevel}</span>
@@ -593,7 +594,7 @@ export default function WorldMap({
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, padding: '12px 16px 0' }}>
               {(['army', 'hire', 'upgrade'] as const).map(tab => (
                 <button key={tab} onClick={() => { setFortressTab(tab); setSelectedUnitId(null) }} style={{
                   flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -606,7 +607,7 @@ export default function WorldMap({
               ))}
             </div>
 
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div style={{ overflowY: 'auto', flex: 1, padding: '0 16px' }}>
               {fortressTab === 'army' && (
                 <>
                   <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 10 }}>
