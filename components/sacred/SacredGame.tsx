@@ -1387,9 +1387,15 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
   // AI turn trigger
   useEffect(() => {
     if (state.phase !== 'ai-thinking') return
+    // Block AI while player needs to choose a level-up path
+    const pendingPlayerChoice =
+      (state.pendingWarriorLevelUp  && state.units.find(u => u.id === state.pendingWarriorLevelUp)?.side  === 'player') ||
+      (state.pendingMageLevelUp     && state.units.find(u => u.id === state.pendingMageLevelUp)?.side     === 'player') ||
+      (state.pendingCatapultLevelUp && state.units.find(u => u.id === state.pendingCatapultLevelUp)?.side === 'player')
+    if (pendingPlayerChoice) return
     const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1200)
     return () => clearTimeout(t)
-  }, [state.phase, state.queueIdx])
+  }, [state.phase, state.queueIdx, state.pendingWarriorLevelUp, state.pendingMageLevelUp, state.pendingCatapultLevelUp])
 
   function handleSelectAction(a: ActionKey) {
     if (state.selectedAction === a) { dispatch({ type: 'CANCEL_ACTION' }); return }
@@ -2025,7 +2031,7 @@ export default function SacredGame() {
   }
 
   function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
-    const survived = units.filter(u => u.hp > 0).map(u => ({ ...u, buffs: [] }))
+    const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
     const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [], hp: 0 }))
     setWorldPlayerUnits(survived)
     if (fallen.length > 0) setWorldDeadUnits(prev => [...prev, ...fallen])
