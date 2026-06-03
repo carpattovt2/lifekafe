@@ -399,16 +399,24 @@ export default function WorldMap({
         <svg viewBox="0 0 200 130" style={{ width: '100%', display: 'block' }}
           onClick={() => setPreviewNodeId(null)}>
           <defs>
-            <radialGradient id="mapbg" cx="50%" cy="50%" r="70%">
-              <stop offset="0%" stopColor="#131108" />
-              <stop offset="100%" stopColor="#0a0908" />
-            </radialGradient>
+            <filter id="nodeShadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0.5" dy="1" stdDeviation="1.5" floodColor="rgba(0,0,0,0.8)" />
+            </filter>
           </defs>
-          <rect x={0} y={0} width={200} height={130} fill="url(#mapbg)" />
+          {/* Background image — show top portion of square image */}
+          <image
+            href="/sacred/map/world.jpg"
+            x={0} y={0} width={200} height={130}
+            preserveAspectRatio="xMidYMin slice"
+          />
+          {/* Dark overlay for readability */}
+          <rect x={0} y={0} width={200} height={130} fill="rgba(0,0,0,0.48)" />
+
           {connectionLines.map(l => l && (
             <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-              stroke={!l.visible ? 'rgba(240,232,216,0.03)' : l.active ? 'rgba(212,168,90,0.2)' : 'rgba(240,232,216,0.08)'}
-              strokeWidth={1.5} />
+              stroke={!l.visible ? 'rgba(240,232,216,0.05)' : l.active ? 'rgba(212,168,90,0.45)' : 'rgba(240,232,216,0.18)'}
+              strokeWidth={l.active && l.visible ? 2 : 1.5}
+              strokeLinecap="round" />
           ))}
           {WORLD_NODES.map(node => {
             const status   = statuses[node.id] as NodeStatus
@@ -419,37 +427,51 @@ export default function WorldMap({
             const dimmed   = status === 'cleared' || status === 'collected'
             const fogged   = !visible.has(node.id)
             if (fogged) return (
-              <g key={node.id} opacity={0.2}>
-                <circle cx={node.x} cy={node.y} r={10} fill="rgba(240,232,216,0.04)"
-                  stroke="rgba(240,232,216,0.18)" strokeWidth={1} strokeDasharray="2 2" />
+              <g key={node.id} opacity={0.3}>
+                <circle cx={node.x+0.5} cy={node.y+1} r={10.5} fill="rgba(0,0,0,0.5)" />
+                <circle cx={node.x} cy={node.y} r={10} fill="rgba(20,15,5,0.75)"
+                  stroke="rgba(240,232,216,0.22)" strokeWidth={1} strokeDasharray="2 2" />
                 <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
-                  fontSize={8} fill="rgba(240,232,216,0.35)" style={{ userSelect: 'none', pointerEvents: 'none' }}>?</text>
+                  fontSize={8} fill="rgba(240,232,216,0.45)" style={{ userSelect: 'none', pointerEvents: 'none' }}>?</text>
               </g>
             )
             return (
-              <g key={node.id} opacity={dimmed ? 0.45 : 1}
+              <g key={node.id} opacity={dimmed ? 0.55 : 1}
                 style={{ cursor: canReach || isHero || isPrev ? 'pointer' : 'default' }}
                 onClick={e => { e.stopPropagation(); handleNodeClick(node.id) }}>
-                <circle cx={node.x} cy={node.y} r={15} fill="transparent" />
-                {canReach && <circle cx={node.x} cy={node.y} r={13.5} fill="none"
-                  stroke={color} strokeWidth={1.5} strokeDasharray="3 2" opacity={0.55} />}
-                {isPrev && <circle cx={node.x} cy={node.y} r={13}
-                  fill="none" stroke="#f0e8d8" strokeWidth={1.5} opacity={0.6} />}
-                <circle cx={node.x} cy={node.y} r={10} fill={`${color}1a`}
-                  stroke={isHero ? '#d4a85a' : color} strokeWidth={isHero ? 2.5 : 1.5} />
+                {/* Hitbox */}
+                <circle cx={node.x} cy={node.y} r={16} fill="transparent" />
+                {/* Reachable dashed ring */}
+                {canReach && <circle cx={node.x} cy={node.y} r={14.5} fill="none"
+                  stroke={color} strokeWidth={2} strokeDasharray="3 2" opacity={0.7} />}
+                {/* Preview selected ring */}
+                {isPrev && <circle cx={node.x} cy={node.y} r={14}
+                  fill="none" stroke="#f0e8d8" strokeWidth={2} opacity={0.7} />}
+                {/* Drop shadow */}
+                <circle cx={node.x+0.7} cy={node.y+1.2} r={11.5} fill="rgba(0,0,0,0.65)" />
+                {/* Main node circle */}
+                <circle cx={node.x} cy={node.y} r={11}
+                  fill={dimmed ? 'rgba(30,25,15,0.82)' : `${color}55`}
+                  stroke={isHero ? '#d4a85a' : dimmed ? 'rgba(240,232,216,0.3)' : color}
+                  strokeWidth={isHero ? 2.5 : 2} />
+                {/* Icon */}
                 <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
-                  fontSize={9} style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                  fontSize={10} style={{ userSelect: 'none', pointerEvents: 'none' }}>
                   {dimmed ? '✓' : NODE_ICON[node.type]}
                 </text>
-                <text x={node.x} y={node.y + 15} textAnchor="middle" fontSize={5.5}
-                  fill="rgba(240,232,216,0.5)" style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                {/* Label with outline */}
+                <text x={node.x} y={node.y + 16.5} textAnchor="middle" fontSize={5.5}
+                  stroke="rgba(0,0,0,0.9)" strokeWidth={2.5}
+                  fill="rgba(240,232,216,0.9)" paintOrder="stroke"
+                  style={{ userSelect: 'none', pointerEvents: 'none' }}>
                   {node.label}
                 </text>
               </g>
             )
           })}
-          <circle cx={heroNode.x} cy={heroNode.y} r={14} fill="none"
-            stroke="#d4a85a" strokeWidth={2} opacity={0.9} style={{ pointerEvents: 'none' }} />
+          {/* Hero ring on top */}
+          <circle cx={heroNode.x} cy={heroNode.y} r={15} fill="none"
+            stroke="#d4a85a" strokeWidth={2.5} opacity={0.95} style={{ pointerEvents: 'none' }} />
         </svg>
       </div>
 
