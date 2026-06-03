@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST } from '@/lib/sacred/worldMap'
+import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS } from '@/lib/sacred/worldMap'
 import type { WorldMapState, NodeType, NodeStatus } from '@/lib/sacred/worldMap'
 import type { GameUnit, UnitClass, MagePath } from '@/lib/sacred/types'
 
@@ -79,8 +79,8 @@ interface WorldMapProps {
   onRest:              () => void
   onEndTurn:           () => void
   onBack:              () => void
-  onHireUnit?:         (cls: UnitClass) => void
-  onExpandSlots?:      () => void
+  onHireUnit?:         (cls: UnitClass, row: number, slot: number) => void
+  onPurchaseSlot?:     () => void
   onReorderUnits?:     (id1: string, id2: string) => void
   onMoveUnitSlot?:     (id: string, row: number, slot: number) => void
   onUpgradeFortress?:  () => void
@@ -90,13 +90,14 @@ export default function WorldMap({
   mapState, playerUnits, battleResult, onClearBattleResult,
   reinforcement, onClearReinforcement,
   onMove, onFight, onCollect, onRest, onEndTurn, onBack,
-  onHireUnit, onExpandSlots, onReorderUnits, onMoveUnitSlot, onUpgradeFortress,
+  onHireUnit, onPurchaseSlot, onReorderUnits, onMoveUnitSlot, onUpgradeFortress,
 }: WorldMapProps) {
   const [previewNodeId,   setPreviewNodeId]   = useState<string | null>(null)
   const [armyPanelOpen,   setArmyPanelOpen]   = useState(false)
   const [fortressOpen,    setFortressOpen]     = useState(false)
   const [fortressTab,     setFortressTab]      = useState<'army' | 'hire' | 'upgrade'>('army')
   const [selectedUnitId,  setSelectedUnitId]   = useState<string | null>(null)
+  const [hirePopup,       setHirePopup]        = useState<{ row: number; slot: number } | null>(null)
 
   const { statuses, heroNodeId, heroAP, maxAP, turn, gold, restedThisTurn, maxArmySlots, fortressLevel } = mapState
   const heroNode  = WORLD_NODES.find(n => n.id === heroNodeId)!
@@ -620,64 +621,143 @@ export default function WorldMap({
                 </>
               )}
 
-              {fortressTab === 'hire' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 2 }}>
-                    Слоти армії: {playerUnits.length}/{maxArmySlots} · 💰 {gold}
-                  </div>
-                  {HIRE_INFO.map(({ cls, label, cost, desc }) => {
-                    const canAfford  = gold >= cost
-                    const hasSpace   = playerUnits.length < maxArmySlots
-                    const canHire    = canAfford && hasSpace
-                    return (
-                      <div key={cls} style={{
-                        display: 'flex', alignItems: 'center', gap: 12,
-                        padding: '10px 12px', borderRadius: 10,
-                        background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.08)',
-                        opacity: canHire ? 1 : 0.5,
-                      }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#f0e8d8', marginBottom: 2 }}>{label}</div>
-                          <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>{desc}</div>
-                        </div>
-                        <button onClick={canHire ? () => onHireUnit?.(cls) : undefined} disabled={!canHire} style={{
-                          padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: canHire ? 'pointer' : 'not-allowed',
-                          background: canHire ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.05)',
-                          border: `1px solid ${canHire ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.1)'}`,
-                          color: canHire ? '#d4a85a' : 'rgba(240,232,216,0.3)',
-                          flexShrink: 0,
-                        }}>
-                          {cost}💰
-                        </button>
-                      </div>
-                    )
-                  })}
+              {fortressTab === 'hire' && (() => {
+                const HIRE_COSTS_LOCAL: Record<UnitClass, number> = { warrior: 2, archer: 3, mage: 5, catapult: 8 }
+                const HIRE_LABELS: Record<UnitClass, string> = { warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта' }
+                const hasCat = playerUnits.some(u => u.class === 'catapult')
 
-                  {/* Expand slots */}
-                  <div style={{ marginTop: 4, padding: '10px 12px', borderRadius: 10, background: 'rgba(111,166,122,0.05)', border: '1px solid rgba(111,166,122,0.15)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#7aaa82', marginBottom: 2 }}>+ Розширити армію</div>
-                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>+1 слот для нового юніта</div>
-                      </div>
-                      <button
-                        onClick={gold >= 5 ? onExpandSlots : undefined}
-                        disabled={gold < 5}
-                        style={{
-                          padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                          cursor: gold >= 5 ? 'pointer' : 'not-allowed',
-                          background: gold >= 5 ? 'rgba(111,166,122,0.15)' : 'rgba(240,232,216,0.05)',
-                          border: `1px solid ${gold >= 5 ? 'rgba(111,166,122,0.4)' : 'rgba(240,232,216,0.1)'}`,
-                          color: gold >= 5 ? '#7aaa82' : 'rgba(240,232,216,0.3)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        5💰
-                      </button>
+                function isSlotUnlocked(row: number, slot: number): boolean {
+                  if (slot <= 1) return true
+                  if (slot === 2) return row === 0 ? maxArmySlots >= 5 : maxArmySlots >= 6
+                  if (slot === 3) return row === 0 ? maxArmySlots >= 7 : maxArmySlots >= 8
+                  return false
+                }
+
+                const nextSlotCost = SLOT_COSTS[maxArmySlots]
+
+                // Options per row
+                const frontOptions: UnitClass[] = ['warrior', 'catapult']
+                const backOptions: UnitClass[] = ['archer', 'mage']
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 4 }}>
+                      💰 {gold} · Слоти: {playerUnits.length}/{maxArmySlots}
                     </div>
+
+                    {/* Hire grid — same layout as army */}
+                    {([0, 1] as const).map(row => (
+                      <div key={row}>
+                        <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {row === 0 ? 'Передній ряд' : 'Дальній ряд'}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 8 }}>
+                          {[0, 1, 2, 3].map(slot => {
+                            // Catapult occupies row 1 at its slot — skip rendering
+                            if (row === 1 && hasCat && playerUnits.find(u => u.class === 'catapult' && u.slot === slot)) return (
+                              <div key={slot} style={{ aspectRatio: '1', borderRadius: 8 }} />
+                            )
+
+                            const unit = playerUnits.find(u => u.row === row && u.slot === slot)
+                            const unlocked = isSlotUnlocked(row, slot)
+                            const isNext = !unlocked && nextSlotCost !== undefined &&
+                              ((slot === 2 && row === 0 && maxArmySlots === 4) ||
+                               (slot === 2 && row === 1 && maxArmySlots === 5) ||
+                               (slot === 3 && row === 0 && maxArmySlots === 6) ||
+                               (slot === 3 && row === 1 && maxArmySlots === 7))
+
+                            if (!unlocked) {
+                              return (
+                                <button key={slot} onClick={isNext ? onPurchaseSlot : undefined} style={{
+                                  aspectRatio: '1', borderRadius: 8, display: 'flex', flexDirection: 'column',
+                                  alignItems: 'center', justifyContent: 'center', gap: 2,
+                                  background: isNext ? 'rgba(111,166,122,0.08)' : 'rgba(240,232,216,0.02)',
+                                  border: `1px solid ${isNext ? 'rgba(111,166,122,0.25)' : 'rgba(240,232,216,0.06)'}`,
+                                  cursor: isNext ? 'pointer' : 'default',
+                                  opacity: isNext ? 1 : 0.4,
+                                }}>
+                                  <span style={{ fontSize: 16 }}>🔒</span>
+                                  {isNext && <span style={{ fontSize: 10, color: '#7aaa82', fontWeight: 700 }}>{nextSlotCost}💰</span>}
+                                </button>
+                              )
+                            }
+
+                            if (unit) {
+                              const portrait = getPortraitSrc(unit)
+                              const isCat = unit.class === 'catapult'
+                              return (
+                                <div key={slot} style={{
+                                  aspectRatio: '1', borderRadius: 8, overflow: 'hidden', position: 'relative',
+                                  background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.1)',
+                                  gridRow: isCat ? 'span 2' : undefined,
+                                }}>
+                                  {portrait && <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                </div>
+                              )
+                            }
+
+                            // Empty unlocked slot — show hire button
+                            const options = row === 0 ? frontOptions : backOptions
+                            const isPopupOpen = hirePopup?.row === row && hirePopup?.slot === slot
+
+                            return (
+                              <div key={slot} style={{ position: 'relative' }}>
+                                <button onClick={() => setHirePopup(isPopupOpen ? null : { row, slot })} style={{
+                                  width: '100%', aspectRatio: '1', borderRadius: 8,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  background: isPopupOpen ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
+                                  border: `1px solid ${isPopupOpen ? 'rgba(212,168,90,0.35)' : 'rgba(240,232,216,0.12)'}`,
+                                  cursor: 'pointer', fontSize: 22, color: 'rgba(240,232,216,0.4)',
+                                }}>+</button>
+
+                                {isPopupOpen && (
+                                  <div style={{
+                                    position: 'absolute', top: '110%', left: 0, zIndex: 10,
+                                    background: '#1e1a10', border: '1px solid rgba(212,168,90,0.3)',
+                                    borderRadius: 10, padding: 8, minWidth: 130,
+                                    display: 'flex', flexDirection: 'column', gap: 6,
+                                  }}>
+                                    {options.map(cls => {
+                                      const cost = HIRE_COSTS_LOCAL[cls]
+                                      const canAfford = gold >= cost
+                                      // Catapult: back-row same slot must be unlocked and free
+                                      const backFree = cls !== 'catapult' || (
+                                        isSlotUnlocked(1, slot) &&
+                                        !playerUnits.find(u => u.row === 1 && u.slot === slot)
+                                      )
+                                      const canHire = canAfford && backFree
+                                      return (
+                                        <button key={cls} disabled={!canHire} onClick={() => {
+                                          if (!canHire) return
+                                          onHireUnit?.(cls, row, slot)
+                                          setHirePopup(null)
+                                        }} style={{
+                                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                          padding: '6px 8px', borderRadius: 7, cursor: canHire ? 'pointer' : 'not-allowed',
+                                          background: canHire ? 'rgba(212,168,90,0.1)' : 'rgba(240,232,216,0.03)',
+                                          border: `1px solid ${canHire ? 'rgba(212,168,90,0.3)' : 'rgba(240,232,216,0.07)'}`,
+                                          opacity: canHire ? 1 : 0.45,
+                                        }}>
+                                          <span style={{ fontSize: 12, color: canHire ? '#f0e8d8' : 'rgba(240,232,216,0.4)', fontWeight: 600 }}>
+                                            {HIRE_LABELS[cls]}
+                                          </span>
+                                          <span style={{ fontSize: 11, color: canHire ? '#d4a85a' : 'rgba(212,168,90,0.35)', fontWeight: 700 }}>
+                                            {cost}💰
+                                          </span>
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {fortressTab === 'upgrade' && (() => {
                 const nextLevel = (fortressLevel ?? 1) + 1

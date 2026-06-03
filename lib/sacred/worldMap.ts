@@ -38,6 +38,9 @@ export const FORTRESS_NAMES: Record<number, string> = {
   5: 'Бастіон',
 }
 
+// Cost to unlock next army slot (key = current maxArmySlots, value = gold cost)
+export const SLOT_COSTS: Record<number, number> = { 4: 5, 5: 8, 6: 12, 7: 15 }
+
 export const FORTRESS_UPGRADE_COST: Record<number, number> = {
   2: 5,
   3: 8,
@@ -193,7 +196,7 @@ export function createInitialMapState(): WorldMapState {
     else if (n.type === 'resource' || n.type === 'artifact') statuses[n.id] = 'neutral'
     else statuses[n.id] = 'enemy'
   }
-  return { statuses, heroNodeId: 'town', heroAP: 3, maxAP: 3, turn: 1, gold: 0, restedThisTurn: false, maxArmySlots: 6, fortressLevel: 1 }
+  return { statuses, heroNodeId: 'town', heroAP: 3, maxAP: 3, turn: 1, gold: 0, restedThisTurn: false, maxArmySlots: 4, fortressLevel: 1 }
 }
 
 function isBlocker(nodeId: string, statuses: Record<string, NodeStatus>): boolean {

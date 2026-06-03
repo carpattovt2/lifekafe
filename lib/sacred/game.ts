@@ -282,6 +282,11 @@ export function addUnitToArmy(units: GameUnit[], cls: UnitClass): GameUnit[] {
   return units
 }
 
+export function addUnitAtSlot(units: GameUnit[], cls: UnitClass, row: number, slot: number): GameUnit[] {
+  const targetRow: Row = cls === 'catapult' ? 0 : row as Row
+  return [...units, makeUnit(cls, 'player', targetRow, slot)]
+}
+
 export function buildDefaultAIArmy(): GameUnit[] {
   return buildCustomArmy({ warriors: 2, archers: 1, mages: 1, catapults: 1 }, 'ai')
 }

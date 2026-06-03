@@ -3,7 +3,7 @@
 import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy, buildLeveledArmy,
-  generateRecruitOptions, addUnitToArmy,
+  generateRecruitOptions, addUnitToArmy, addUnitAtSlot,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
 import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
@@ -11,7 +11,7 @@ import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
 import WorldMap from './WorldMap'
-import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST } from '@/lib/sacred/worldMap'
+import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST, SLOT_COSTS } from '@/lib/sacred/worldMap'
 import type { WorldMapState } from '@/lib/sacred/worldMap'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
@@ -2067,18 +2067,17 @@ export default function SacredGame() {
     }
   }
 
-  function handleHireUnit(unitClass: UnitClass) {
+  function handleHireUnit(unitClass: UnitClass, row: number, slot: number) {
     if (!worldPlayerUnits) return
     const cost = HIRE_COSTS[unitClass]
     if (worldMapState.gold < cost) return
-    if (worldPlayerUnits.length >= worldMapState.maxArmySlots) return
-    setWorldPlayerUnits(addUnitToArmy(worldPlayerUnits, unitClass))
+    setWorldPlayerUnits(addUnitAtSlot(worldPlayerUnits, unitClass, row, slot))
     setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost }))
   }
 
-  function handleExpandArmySlots() {
-    const cost = 5
-    if (worldMapState.gold < cost) return
+  function handlePurchaseSlot() {
+    const cost = SLOT_COSTS[worldMapState.maxArmySlots]
+    if (cost === undefined || worldMapState.gold < cost) return
     setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
   }
 
@@ -2237,7 +2236,7 @@ export default function SacredGame() {
       onEndTurn={handleWorldEndTurn}
       onBack={() => setScreen('landing')}
       onHireUnit={handleHireUnit}
-      onExpandSlots={handleExpandArmySlots}
+      onPurchaseSlot={handlePurchaseSlot}
       onReorderUnits={handleReorderWorldUnits}
       onMoveUnitSlot={handleMoveWorldUnitSlot}
       onUpgradeFortress={handleFortressUpgrade}
