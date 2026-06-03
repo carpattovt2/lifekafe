@@ -41,6 +41,13 @@ export const FORTRESS_NAMES: Record<number, string> = {
 // Cost to unlock next army slot (key = current maxArmySlots, value = gold cost)
 export const SLOT_COSTS: Record<number, number> = { 4: 5, 5: 8, 6: 12, 7: 15 }
 
+export function isSlotUnlocked(row: number, slot: number, maxArmySlots: number): boolean {
+  if (slot <= 1) return true
+  if (slot === 2) return row === 0 ? maxArmySlots >= 5 : maxArmySlots >= 6
+  if (slot === 3) return row === 0 ? maxArmySlots >= 7 : maxArmySlots >= 8
+  return false
+}
+
 export const FORTRESS_UPGRADE_COST: Record<number, number> = {
   2: 5,
   3: 8,

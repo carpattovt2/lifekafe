@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS } from '@/lib/sacred/worldMap'
+import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked } from '@/lib/sacred/worldMap'
 import type { WorldMapState, NodeType, NodeStatus } from '@/lib/sacred/worldMap'
 import type { GameUnit, UnitClass, MagePath } from '@/lib/sacred/types'
 
@@ -625,15 +625,8 @@ export default function WorldMap({
                 const HIRE_COSTS_LOCAL: Record<UnitClass, number> = { warrior: 2, archer: 3, mage: 5, catapult: 8 }
                 const HIRE_LABELS: Record<UnitClass, string> = { warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта' }
                 const hasCat = playerUnits.some(u => u.class === 'catapult')
-
-                function isSlotUnlocked(row: number, slot: number): boolean {
-                  if (slot <= 1) return true
-                  if (slot === 2) return row === 0 ? maxArmySlots >= 5 : maxArmySlots >= 6
-                  if (slot === 3) return row === 0 ? maxArmySlots >= 7 : maxArmySlots >= 8
-                  return false
-                }
-
                 const nextSlotCost = SLOT_COSTS[maxArmySlots]
+                const armyFull = playerUnits.length >= maxArmySlots
 
                 // Options per row
                 const frontOptions: UnitClass[] = ['warrior', 'catapult']
@@ -659,7 +652,7 @@ export default function WorldMap({
                             )
 
                             const unit = playerUnits.find(u => u.row === row && u.slot === slot)
-                            const unlocked = isSlotUnlocked(row, slot)
+                            const unlocked = isSlotUnlocked(row, slot, maxArmySlots)
                             const isNext = !unlocked && nextSlotCost !== undefined &&
                               ((slot === 2 && row === 0 && maxArmySlots === 4) ||
                                (slot === 2 && row === 1 && maxArmySlots === 5) ||
@@ -699,15 +692,17 @@ export default function WorldMap({
                             // Empty unlocked slot — show hire button
                             const options = row === 0 ? frontOptions : backOptions
                             const isPopupOpen = hirePopup?.row === row && hirePopup?.slot === slot
+                            const canOpen = !armyFull
 
                             return (
                               <div key={slot} style={{ position: 'relative' }}>
-                                <button onClick={() => setHirePopup(isPopupOpen ? null : { row, slot })} style={{
+                                <button onClick={() => canOpen && setHirePopup(isPopupOpen ? null : { row, slot })} style={{
                                   width: '100%', aspectRatio: '1', borderRadius: 8,
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                                   background: isPopupOpen ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
                                   border: `1px solid ${isPopupOpen ? 'rgba(212,168,90,0.35)' : 'rgba(240,232,216,0.12)'}`,
-                                  cursor: 'pointer', fontSize: 22, color: 'rgba(240,232,216,0.4)',
+                                  cursor: canOpen ? 'pointer' : 'default',
+                                  fontSize: 22, color: canOpen ? 'rgba(240,232,216,0.4)' : 'rgba(240,232,216,0.15)',
                                 }}>+</button>
 
                                 {isPopupOpen && (
@@ -722,7 +717,7 @@ export default function WorldMap({
                                       const canAfford = gold >= cost
                                       // Catapult: back-row same slot must be unlocked and free
                                       const backFree = cls !== 'catapult' || (
-                                        isSlotUnlocked(1, slot) &&
+                                        isSlotUnlocked(1, slot, maxArmySlots) &&
                                         !playerUnits.find(u => u.row === 1 && u.slot === slot)
                                       )
                                       const canHire = canAfford && backFree

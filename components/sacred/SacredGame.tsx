@@ -11,7 +11,7 @@ import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
 import WorldMap from './WorldMap'
-import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST, SLOT_COSTS } from '@/lib/sacred/worldMap'
+import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked } from '@/lib/sacred/worldMap'
 import type { WorldMapState } from '@/lib/sacred/worldMap'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
@@ -2109,6 +2109,7 @@ export default function SacredGame() {
   }
 
   function handleMoveWorldUnitSlot(id: string, row: number, slot: number) {
+    if (!isSlotUnlocked(row, slot, worldMapState.maxArmySlots)) return
     setWorldPlayerUnits(prev => {
       if (!prev) return prev
       return prev.map(u => u.id === id ? { ...u, row: row as Row, slot } : u)
