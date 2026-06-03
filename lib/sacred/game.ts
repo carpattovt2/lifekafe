@@ -83,11 +83,13 @@ function applyWarriorPath(unit: GameUnit, path: WarriorPath, newLevel: number): 
 function grantWarriorXp(
   unit: GameUnit, amount: number,
   newLogs: LogEntry[], newEvents: BattleEvent[],
+  cap?: number,
 ): { unit: GameUnit; pendingChoice: boolean } {
   if (unit.class !== 'warrior' || amount <= 0) return { unit, pendingChoice: false }
   const curLevel = unit.level ?? 1
   const maxLevel = unit.warriorPath === 'champion' ? 5 : 4
   if (curLevel >= maxLevel) return { unit, pendingChoice: false }
+  if (cap !== undefined && curLevel >= cap) return { unit: { ...unit, xp: (unit.xp ?? 0) + amount }, pendingChoice: false }
   const newXp = (unit.xp ?? 0) + amount
   if (newXp >= (unit.xpToNext ?? Infinity)) {
     if (curLevel === 2 && !unit.warriorPath) {
@@ -126,10 +128,12 @@ function applyArcherLevel(unit: GameUnit, newLevel: number): GameUnit {
 function grantArcherXp(
   unit: GameUnit, amount: number,
   newLogs: LogEntry[], newEvents: BattleEvent[],
+  cap?: number,
 ): GameUnit {
   if (unit.class !== 'archer' || amount <= 0) return unit
   const curLevel = unit.level ?? 1
   if (curLevel >= 3) return unit  // maxed
+  if (cap !== undefined && curLevel >= cap) return { ...unit, xp: (unit.xp ?? 0) + amount }
   const newXp = (unit.xp ?? 0) + amount
   if (newXp >= (unit.xpToNext ?? Infinity)) {
     const nextLevel = curLevel + 1
@@ -167,11 +171,13 @@ function applyMageLevel(unit: GameUnit, newLevel: number): GameUnit {
 function grantMageXp(
   unit: GameUnit, amount: number,
   newLogs: LogEntry[], newEvents: BattleEvent[],
+  cap?: number,
 ): { unit: GameUnit; pendingChoice: boolean } {
   if (unit.class !== 'mage' || amount <= 0) return { unit, pendingChoice: false }
   const curLevel = unit.level ?? 1
   const maxLevel = 5
   if (curLevel >= maxLevel) return { unit, pendingChoice: false }
+  if (cap !== undefined && curLevel >= cap) return { unit: { ...unit, xp: (unit.xp ?? 0) + amount }, pendingChoice: false }
   const newXp = (unit.xp ?? 0) + amount
   if (newXp >= (unit.xpToNext ?? Infinity)) {
     if (curLevel === 1) {
@@ -208,10 +214,12 @@ function applyCatapultPath(unit: GameUnit, path: CatapultPath, newLevel: number)
 function grantCatapultXp(
   unit: GameUnit, amount: number,
   newLogs: LogEntry[], newEvents: BattleEvent[],
+  cap?: number,
 ): { unit: GameUnit; pendingChoice: boolean } {
   if (unit.class !== 'catapult' || amount <= 0) return { unit, pendingChoice: false }
   const curLevel = unit.level ?? 1
   if (curLevel >= 3) return { unit, pendingChoice: false }
+  if (cap !== undefined && curLevel >= cap) return { unit: { ...unit, xp: (unit.xp ?? 0) + amount }, pendingChoice: false }
   const newXp = (unit.xp ?? 0) + amount
   if (newXp >= (unit.xpToNext ?? Infinity)) {
     if (curLevel === 1) {
@@ -276,6 +284,35 @@ export function addUnitToArmy(units: GameUnit[], cls: UnitClass): GameUnit[] {
 
 export function buildDefaultAIArmy(): GameUnit[] {
   return buildCustomArmy({ warriors: 2, archers: 1, mages: 1, catapults: 1 }, 'ai')
+}
+
+const MAGE_ELEMENTS: MagePath[] = ['fire', 'water', 'earth', 'air']
+const CATAPULT_PATHS_LIST: CatapultPath[] = ['ballista', 'trebuchet']
+
+export function buildLeveledArmy(counts: ArmyCounts, level: number, side: Side): GameUnit[] {
+  const units: GameUnit[] = []
+  const hasCat = (counts.catapults ?? 0) > 0
+  for (let i = 0; i < counts.warriors; i++) {
+    const wPath: WarriorPath = i % 2 === 0 ? 'paladin' : 'champion'
+    const wLvl = Math.min(level, wPath === 'champion' ? 5 : 4)
+    units.push(buildFreeUnit('warrior', wLvl, side, 0, i, undefined, undefined, level >= 3 ? wPath : undefined))
+  }
+  if (hasCat) {
+    const cPath = CATAPULT_PATHS_LIST[0]
+    units.push(buildFreeUnit('catapult', Math.min(level, 3), side, 0, 3, undefined, level >= 2 ? cPath : undefined))
+  }
+  let s = 0
+  let mageIdx = 0
+  for (let i = 0; i < counts.archers; i++) {
+    if (hasCat && s === 3) s++
+    units.push(buildFreeUnit('archer', Math.min(level, 3), side, 1, s++))
+  }
+  for (let i = 0; i < counts.mages; i++) {
+    if (hasCat && s === 3) s++
+    const mPath = MAGE_ELEMENTS[mageIdx++ % MAGE_ELEMENTS.length]
+    units.push(buildFreeUnit('mage', Math.min(level, 5), side, 1, s++, level >= 2 ? mPath : undefined))
+  }
+  return units
 }
 
 export function buildFreeUnit(
@@ -1268,17 +1305,18 @@ export function executeAction(
     const xpGain = kills * 50 + (hitLanded ? 10 : 0)
     if (xpGain > 0) {
       const fresh = getUnit(actor.id)
+      const cap = state.fortressLevelCap
       if (actor.class === 'warrior') {
-        const { unit: updatedWarrior, pendingChoice } = grantWarriorXp(fresh, xpGain, newLogs, newEvents)
+        const { unit: updatedWarrior, pendingChoice } = grantWarriorXp(fresh, xpGain, newLogs, newEvents, cap)
         update(updatedWarrior)
         if (pendingChoice) {
           newLogs.push(log(`⭐ ${fresh.name} готовий до вибору шляху!`, 'buff'))
           newEvents.push(ev(fresh.id, '⭐ Вибір шляху!', 'buff'))
           pendingWarriorLevelUp = fresh.id
         }
-      } else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents))
+      } else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents, cap))
       else if (actor.class === 'mage') {
-        const { unit: updatedMage, pendingChoice } = grantMageXp(fresh, xpGain, newLogs, newEvents)
+        const { unit: updatedMage, pendingChoice } = grantMageXp(fresh, xpGain, newLogs, newEvents, cap)
         update(updatedMage)
         if (pendingChoice) {
           newLogs.push(log(`⭐ ${fresh.name} готовий до вибору шляху!`, 'buff'))
@@ -1286,7 +1324,7 @@ export function executeAction(
           pendingMageLevelUp = fresh.id
         }
       } else {
-        const { unit: updatedCat, pendingChoice } = grantCatapultXp(fresh, xpGain, newLogs, newEvents)
+        const { unit: updatedCat, pendingChoice } = grantCatapultXp(fresh, xpGain, newLogs, newEvents, cap)
         update(updatedCat)
         if (pendingChoice) {
           newLogs.push(log(`⭐ ${fresh.name} готова до еволюції!`, 'buff'))
@@ -1571,7 +1609,7 @@ const TURN_RESET = {
   needsTarget: false,
 }
 
-export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[], aiCounts?: ArmyCounts, prebuiltAiUnits?: GameUnit[]): BattleState {
+export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: GameUnit[], aiCounts?: ArmyCounts, prebuiltAiUnits?: GameUnit[], fortressLevelCap?: number): BattleState {
   const playerUnits = prebuiltPlayerUnits
     ?? (counts ? buildCustomArmy(counts, 'player') : buildCustomArmy({ warriors: 3, archers: 2, mages: 1, catapults: 0 }, 'player'))
   const aiUnits = prebuiltAiUnits ?? (aiCounts ? buildCustomArmy(aiCounts, 'ai') : buildDefaultAIArmy())
@@ -1584,6 +1622,7 @@ export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: Ga
     winner: null,
     log: [{ id: ++_logId, text: '⚔ Бій починається!', type: 'info' }],
     round: 1, events: [], ...TURN_RESET,
+    ...(fortressLevelCap !== undefined ? { fortressLevelCap } : {}),
   }
 }
 

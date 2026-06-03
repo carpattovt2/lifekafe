@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds } from '@/lib/sacred/worldMap'
+import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST } from '@/lib/sacred/worldMap'
 import type { WorldMapState, NodeType, NodeStatus } from '@/lib/sacred/worldMap'
 import type { GameUnit, UnitClass, MagePath } from '@/lib/sacred/types'
 
@@ -73,31 +73,32 @@ interface WorldMapProps {
   onClearBattleResult?: () => void
   reinforcement?: string | null
   onClearReinforcement?: () => void
-  onMove:           (nodeId: string) => void
-  onFight:          (nodeId: string) => void
-  onCollect:        (nodeId: string) => void
-  onRest:           () => void
-  onEndTurn:        () => void
-  onBack:           () => void
-  onHireUnit?:      (cls: UnitClass) => void
-  onExpandSlots?:   () => void
-  onReorderUnits?:  (id1: string, id2: string) => void
-  onMoveUnitSlot?:  (id: string, row: number, slot: number) => void
+  onMove:              (nodeId: string) => void
+  onFight:             (nodeId: string) => void
+  onCollect:           (nodeId: string) => void
+  onRest:              () => void
+  onEndTurn:           () => void
+  onBack:              () => void
+  onHireUnit?:         (cls: UnitClass) => void
+  onExpandSlots?:      () => void
+  onReorderUnits?:     (id1: string, id2: string) => void
+  onMoveUnitSlot?:     (id: string, row: number, slot: number) => void
+  onUpgradeFortress?:  () => void
 }
 
 export default function WorldMap({
   mapState, playerUnits, battleResult, onClearBattleResult,
   reinforcement, onClearReinforcement,
   onMove, onFight, onCollect, onRest, onEndTurn, onBack,
-  onHireUnit, onExpandSlots, onReorderUnits, onMoveUnitSlot,
+  onHireUnit, onExpandSlots, onReorderUnits, onMoveUnitSlot, onUpgradeFortress,
 }: WorldMapProps) {
   const [previewNodeId,   setPreviewNodeId]   = useState<string | null>(null)
   const [armyPanelOpen,   setArmyPanelOpen]   = useState(false)
   const [fortressOpen,    setFortressOpen]     = useState(false)
-  const [fortressTab,     setFortressTab]      = useState<'army' | 'hire'>('army')
+  const [fortressTab,     setFortressTab]      = useState<'army' | 'hire' | 'upgrade'>('army')
   const [selectedUnitId,  setSelectedUnitId]   = useState<string | null>(null)
 
-  const { statuses, heroNodeId, heroAP, maxAP, turn, gold, restedThisTurn, maxArmySlots } = mapState
+  const { statuses, heroNodeId, heroAP, maxAP, turn, gold, restedThisTurn, maxArmySlots, fortressLevel } = mapState
   const heroNode  = WORLD_NODES.find(n => n.id === heroNodeId)!
   const reachable = getReachableNodes(heroNodeId, heroAP, statuses)
   const visible   = getVisibleNodeIds(heroNodeId, maxAP)
@@ -572,18 +573,35 @@ export default function WorldMap({
             fontFamily: "'Inter', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
           }}>
             <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 12px' }} />
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a', marginBottom: 12 }}>🏰 Фортеця</div>
+            {/* Fortress header with image */}
+            <div style={{ position: 'relative', marginBottom: 12, borderRadius: 10, overflow: 'hidden', height: 110 }}>
+              <img
+                src={`/sacred/fortress/fortress-${fortressLevel ?? 1}.jpg`}
+                alt="Фортеця"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+              />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 55%)' }} />
+              <div style={{ position: 'absolute', bottom: 8, left: 12, right: 12, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Рівень {fortressLevel}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>
+                  Макс. рівень юнітів: <span style={{ color: '#d4a85a', fontWeight: 700 }}>{fortressLevel}</span>
+                </div>
+              </div>
+            </div>
 
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-              {(['army', 'hire'] as const).map(tab => (
+              {(['army', 'hire', 'upgrade'] as const).map(tab => (
                 <button key={tab} onClick={() => { setFortressTab(tab); setSelectedUnitId(null) }} style={{
-                  flex: 1, padding: '8px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   background: fortressTab === tab ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.04)',
                   border: `1px solid ${fortressTab === tab ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`,
                   color: fortressTab === tab ? '#d4a85a' : 'rgba(240,232,216,0.45)',
                 }}>
-                  {tab === 'army' ? `⚔ Армія (${playerUnits.length}/${maxArmySlots})` : '🗡 Найм'}
+                  {tab === 'army' ? `⚔ Армія (${playerUnits.length}/${maxArmySlots})` : tab === 'hire' ? '🗡 Найм' : '🏰 Розвиток'}
                 </button>
               ))}
             </div>
@@ -656,6 +674,78 @@ export default function WorldMap({
                   </div>
                 </div>
               )}
+
+              {fortressTab === 'upgrade' && (() => {
+                const nextLevel = (fortressLevel ?? 1) + 1
+                const cost = FORTRESS_UPGRADE_COST[nextLevel]
+                const canAfford = gold >= (cost ?? 0)
+                const isMaxed = (fortressLevel ?? 1) >= 5
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {isMaxed ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: '#d4a85a', fontWeight: 600 }}>
+                        🏆 Фортеця досягла максимального рівня!
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ padding: '12px', borderRadius: 10, background: 'rgba(212,168,90,0.06)', border: '1px solid rgba(212,168,90,0.15)' }}>
+                          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.5)', marginBottom: 6 }}>Наступний рівень</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>
+                            {FORTRESS_NAMES[nextLevel]} (Рівень {nextLevel})
+                          </div>
+                          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.55)' }}>
+                            Дозволить юнітам досягати рівня {nextLevel}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {[2, 3, 4, 5].map(lvl => {
+                            const upgCost = FORTRESS_UPGRADE_COST[lvl]
+                            const done = (fortressLevel ?? 1) >= lvl
+                            const isCurrent = lvl === nextLevel
+                            return (
+                              <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: done ? 0.4 : 1 }}>
+                                <div style={{
+                                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: 10, fontWeight: 700,
+                                  background: done ? 'rgba(111,166,122,0.2)' : isCurrent ? 'rgba(212,168,90,0.2)' : 'rgba(240,232,216,0.06)',
+                                  border: `1px solid ${done ? 'rgba(111,166,122,0.4)' : isCurrent ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.1)'}`,
+                                  color: done ? '#6fa67a' : isCurrent ? '#d4a85a' : 'rgba(240,232,216,0.3)',
+                                }}>
+                                  {done ? '✓' : lvl}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <span style={{ fontSize: 12, color: done ? 'rgba(240,232,216,0.4)' : isCurrent ? '#f0e8d8' : 'rgba(240,232,216,0.5)', fontWeight: isCurrent ? 600 : 400 }}>
+                                    {FORTRESS_NAMES[lvl]}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: 11, color: 'rgba(212,168,90,0.7)', flexShrink: 0 }}>{upgCost}💰</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        <button
+                          onClick={canAfford ? onUpgradeFortress : undefined}
+                          disabled={!canAfford}
+                          style={{
+                            padding: '12px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                            cursor: canAfford ? 'pointer' : 'not-allowed', marginTop: 4,
+                            background: canAfford ? 'rgba(212,168,90,0.18)' : 'rgba(240,232,216,0.04)',
+                            border: `1px solid ${canAfford ? 'rgba(212,168,90,0.5)' : 'rgba(240,232,216,0.1)'}`,
+                            color: canAfford ? '#d4a85a' : 'rgba(240,232,216,0.25)',
+                          }}
+                        >
+                          {canAfford
+                            ? `🏰 Покращити до ${FORTRESS_NAMES[nextLevel]} — ${cost}💰`
+                            : `Не вистачає золота (потрібно ${cost}💰, є ${gold}💰)`}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </>

@@ -157,6 +157,7 @@ export interface BattleState {
   pendingMageLevelUp?: string      // unitId of mage awaiting path choice
   pendingCatapultLevelUp?: string  // unitId of catapult awaiting path choice
   pendingFirstTarget?: string      // first target for twin_bolt two-step selection
+  fortressLevelCap?: number        // max unit level allowed to level up (campaign battles)
 }
 
 export type BattleAction =

@@ -2,7 +2,7 @@
 
 import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import {
-  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy,
+  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy, buildLeveledArmy,
   generateRecruitOptions, addUnitToArmy,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
@@ -11,7 +11,7 @@ import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
 import WorldMap from './WorldMap'
-import { createInitialMapState, getPathCost, WORLD_NODES } from '@/lib/sacred/worldMap'
+import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST } from '@/lib/sacred/worldMap'
 import type { WorldMapState } from '@/lib/sacred/worldMap'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
@@ -1322,15 +1322,16 @@ function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[])
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
 
-function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose, onBattleEnd }: {
+function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose, onBattleEnd, fortressLevelCap }: {
   counts: ArmyCounts; playerUnits?: GameUnit[]; prebuiltAiUnits?: GameUnit[]; onRestart: () => void
   towerFloor?: TowerFloor; onTowerWin?: (units: GameUnit[]) => void; onTowerLose?: () => void
   onBattleEnd?: (units: GameUnit[], won: boolean) => void
+  fortressLevelCap?: number
 }) {
   const [state, dispatch] = useReducer(
     battleReducer,
     undefined as unknown as ArmyCounts,
-    () => createInitialState(counts, playerUnits, towerFloor?.aiCounts, prebuiltAiUnits),
+    () => createInitialState(counts, playerUnits, towerFloor?.aiCounts, prebuiltAiUnits, fortressLevelCap),
   )
   const [floats, setFloats]       = useState<BattleEvent[]>([])
   const [infoUnit, setInfoUnit]   = useState<GameUnit | null>(null)
@@ -1921,6 +1922,7 @@ export default function SacredGame() {
     try {
       const mapData   = JSON.parse(localStorage.getItem(LS_CAMPAIGN_MAP)   ?? '')
       const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN_UNITS) ?? '')
+      if (!mapData.fortressLevel) mapData.fortressLevel = 1
       setWorldMapState(mapData)
       setWorldPlayerUnits(unitsData)
       setScreen('world-map')
@@ -2080,6 +2082,19 @@ export default function SacredGame() {
     setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
   }
 
+  function handleFortressUpgrade() {
+    const currentLevel = worldMapState.fortressLevel ?? 1
+    if (currentLevel >= 5) return
+    const nextLevel = currentLevel + 1
+    const cost = FORTRESS_UPGRADE_COST[nextLevel]
+    if (worldMapState.gold < cost) return
+    setWorldMapState(prev => ({
+      ...prev,
+      gold: prev.gold - cost,
+      fortressLevel: nextLevel as 1 | 2 | 3 | 4 | 5,
+    }))
+  }
+
   function handleReorderWorldUnits(id1: string, id2: string) {
     setWorldPlayerUnits(prev => {
       if (!prev) return prev
@@ -2225,6 +2240,7 @@ export default function SacredGame() {
       onExpandSlots={handleExpandArmySlots}
       onReorderUnits={handleReorderWorldUnits}
       onMoveUnitSlot={handleMoveWorldUnitSlot}
+      onUpgradeFortress={handleFortressUpgrade}
     />
   )
   if (screen === 'world-battle') {
@@ -2233,7 +2249,8 @@ export default function SacredGame() {
       <Battle
         counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
         playerUnits={worldPlayerUnits}
-        prebuiltAiUnits={buildCustomArmy(fightNode.enemyCounts, 'ai')}
+        prebuiltAiUnits={buildLeveledArmy(fightNode.enemyCounts, fightNode.enemyLevel ?? 1, 'ai')}
+        fortressLevelCap={worldMapState.fortressLevel ?? 1}
         onRestart={() => handleWorldBattleEnd(worldPlayerUnits, false)}
         onBattleEnd={handleWorldBattleEnd}
       />
