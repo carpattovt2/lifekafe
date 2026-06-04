@@ -83,20 +83,20 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Легко',
     enemyCounts: { warriors: 2, archers: 0, mages: 0, catapults: 0 },
     enemyLevel: 1,
-    goldReward: 2,
+    goldReward: 3,
   },
   {
     id: 'farmlands', label: 'Занедбані поля', type: 'resource',
     x: 40, y: 88, connections: ['town', 'watchtower', 'ruins'],
     desc: "Покинуті поля. Серед бур'яну ще можна знайти золоті монети.",
-    goldReward: 3,
+    goldReward: 4,
   },
   // ── Zone 2 (lv1–2) ────────────────────────────────────────────────────────────
   {
     id: 'forest', label: 'Зачарований ліс', type: 'resource',
     x: 68, y: 20, connections: ['outpost', 'shrine', 'watchtower'],
     desc: 'Старий ліс, повний магічних трав і золотих грибів.',
-    goldReward: 3,
+    goldReward: 4,
     xpReward: 20,
   },
   {
@@ -106,7 +106,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Легко',
     enemyCounts: { warriors: 2, archers: 1, mages: 0, catapults: 0 },
     enemyLevel: 1,
-    goldReward: 3,
+    goldReward: 4,
   },
   {
     id: 'ruins', label: 'Стародавні руїни', type: 'dungeon',
@@ -115,7 +115,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Легко',
     enemyCounts: { warriors: 2, archers: 1, mages: 0, catapults: 0 },
     enemyLevel: 1,
-    goldReward: 3,
+    goldReward: 4,
   },
   // ── Zone 3 (lv2–3) ────────────────────────────────────────────────────────────
   {
@@ -128,7 +128,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     id: 'mine', label: 'Золота шахта', type: 'resource',
     x: 96, y: 42, connections: ['shrine', 'watchtower', 'swamp'],
     desc: 'Занедбана гномами шахта. Золото ще там — потрібно лише взяти.',
-    goldReward: 5,
+    goldReward: 6,
   },
   {
     id: 'swamp', label: 'Мертве болото', type: 'camp',
@@ -137,7 +137,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Середньо',
     enemyCounts: { warriors: 2, archers: 1, mages: 1, catapults: 0 },
     enemyLevel: 2,
-    goldReward: 4,
+    goldReward: 5,
   },
   {
     id: 'cemetery', label: 'Проклятий цвинтар', type: 'dungeon',
@@ -146,7 +146,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Середньо',
     enemyCounts: { warriors: 3, archers: 1, mages: 0, catapults: 0 },
     enemyLevel: 2,
-    goldReward: 4,
+    goldReward: 5,
   },
   // ── Zone 4 (lv3–4) ────────────────────────────────────────────────────────────
   {
@@ -156,7 +156,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Важко',
     enemyCounts: { warriors: 2, archers: 2, mages: 1, catapults: 0 },
     enemyLevel: 3,
-    goldReward: 6,
+    goldReward: 7,
   },
   {
     id: 'crossroads', label: 'Перехрестя Доріг', type: 'camp',
@@ -165,7 +165,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Важко',
     enemyCounts: { warriors: 3, archers: 2, mages: 1, catapults: 0 },
     enemyLevel: 3,
-    goldReward: 5,
+    goldReward: 6,
   },
   {
     id: 'necropolis', label: 'Некрополь', type: 'dungeon',
@@ -174,7 +174,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Дуже важко',
     enemyCounts: { warriors: 3, archers: 2, mages: 2, catapults: 0 },
     enemyLevel: 4,
-    goldReward: 8,
+    goldReward: 9,
   },
   // ── Zone 5 (lv4–5) ────────────────────────────────────────────────────────────
   {
@@ -184,7 +184,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Дуже важко',
     enemyCounts: { warriors: 4, archers: 2, mages: 2, catapults: 0 },
     enemyLevel: 4,
-    goldReward: 10,
+    goldReward: 11,
   },
   {
     id: 'shadow_gate', label: 'Брама Тіней', type: 'dungeon',
@@ -193,7 +193,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Дуже важко',
     enemyCounts: { warriors: 4, archers: 3, mages: 2, catapults: 1 },
     enemyLevel: 5,
-    goldReward: 12,
+    goldReward: 13,
   },
   {
     id: 'boss', label: 'Цитадель Тьми', type: 'dungeon',
@@ -202,7 +202,7 @@ export const WORLD_NODES: MapNodeDef[] = [
     difficulty: 'Фінальний бій',
     enemyCounts: { warriors: 4, archers: 3, mages: 3, catapults: 1 },
     enemyLevel: 5,
-    goldReward: 20,
+    goldReward: 21,
   },
 ]
 

@@ -2182,7 +2182,7 @@ export default function SacredGame() {
     const newStatuses = { ...worldMapState.statuses }
     let reinforcedLabel: string | null = null
 
-    if (nextTurn % 3 === 0) {
+    if (nextTurn % 5 === 0) {
       const eligible = WORLD_NODES.filter(n =>
         (n.type === 'dungeon' || n.type === 'camp') &&
         newStatuses[n.id] === 'cleared' &&
