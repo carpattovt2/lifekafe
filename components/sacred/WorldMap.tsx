@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   TERRITORIES, getAttackableTerritories, getMovableTerritories,
   isSlotUnlocked, MAP_WIDTH, MAP_HEIGHT, HIRE_COSTS,
@@ -76,6 +76,9 @@ interface Props {
 
 type FortressTab = 'army' | 'hire' | 'upgrade' | 'revive'
 
+const MIN_SCALE = 0.12
+const MAX_SCALE = 4
+
 export default function WorldMap({
   mapState, playerUnits, deadUnits,
   onMove, onAttack, onEndTurn, onRest, onBack,
@@ -103,6 +106,94 @@ export default function WorldMap({
     const t = setTimeout(() => onClearBattleResult?.(), 3500)
     return () => clearTimeout(t)
   }, [battleResult])
+
+  // ── Map pan/zoom ─────────────────────────────────────────────────────────────
+  const mapContainerRef = useRef<HTMLDivElement>(null)
+  const transformRef    = useRef({ x: 0, y: 0, scale: 1 })
+  const [mapTransform,  setMapTransform] = useState({ x: 0, y: 0, scale: 1 })
+  const touchRef = useRef<{ t1: { clientX: number; clientY: number } | null; t2: { clientX: number; clientY: number } | null; dist: number }>({ t1: null, t2: null, dist: 0 })
+  const dragRef  = useRef({ down: false, x: 0, y: 0, moved: false })
+
+  function applyT(t: { x: number; y: number; scale: number }) {
+    transformRef.current = t
+    setMapTransform(t)
+  }
+
+  useEffect(() => {
+    const el = mapContainerRef.current
+    if (!el) return
+    const fit = () => {
+      const W = el.clientWidth, H = el.clientHeight
+      if (!W || !H) return
+      const s = Math.min(W / MAP_WIDTH, H / MAP_HEIGHT)
+      applyT({ x: (W - MAP_WIDTH * s) / 2, y: (H - MAP_HEIGHT * s) / 2, scale: s })
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [])
+
+  useEffect(() => {
+    const el = mapContainerRef.current
+    if (!el) return
+    function onTM(e: TouchEvent) {
+      e.preventDefault()
+      const ts = Array.from(e.touches)
+      const prev = touchRef.current
+      const cur = { ...transformRef.current }
+      if (ts.length === 1 && prev.t1) {
+        const dx = ts[0].clientX - prev.t1.clientX
+        const dy = ts[0].clientY - prev.t1.clientY
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragRef.current.moved = true
+        cur.x += dx; cur.y += dy
+      } else if (ts.length >= 2 && prev.t2) {
+        const newDist = Math.hypot(ts[1].clientX - ts[0].clientX, ts[1].clientY - ts[0].clientY)
+        const factor  = newDist / (prev.dist || newDist)
+        const rect    = el!.getBoundingClientRect()
+        const mx = (ts[0].clientX + ts[1].clientX) / 2 - rect.left
+        const my = (ts[0].clientY + ts[1].clientY) / 2 - rect.top
+        const ns = Math.max(MIN_SCALE, Math.min(MAX_SCALE, cur.scale * factor))
+        const sf = ns / cur.scale
+        cur.x = mx - (mx - cur.x) * sf; cur.y = my - (my - cur.y) * sf; cur.scale = ns
+        touchRef.current.dist = newDist; dragRef.current.moved = true
+      }
+      touchRef.current.t1 = ts[0] ?? null; touchRef.current.t2 = ts[1] ?? null
+      applyT(cur)
+    }
+    function onWH(e: WheelEvent) {
+      e.preventDefault()
+      const rect = el!.getBoundingClientRect()
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top
+      const factor = e.deltaY < 0 ? 1.12 : 0.9
+      const cur = { ...transformRef.current }
+      const ns = Math.max(MIN_SCALE, Math.min(MAX_SCALE, cur.scale * factor))
+      const sf = ns / cur.scale
+      applyT({ x: mx - (mx - cur.x) * sf, y: my - (my - cur.y) * sf, scale: ns })
+    }
+    el.addEventListener('touchmove', onTM, { passive: false })
+    el.addEventListener('wheel', onWH, { passive: false })
+    return () => { el.removeEventListener('touchmove', onTM); el.removeEventListener('wheel', onWH) }
+  }, [])
+
+  function onMapTS(e: React.TouchEvent) {
+    const ts = Array.from(e.touches)
+    touchRef.current = { t1: ts[0] ?? null, t2: ts[1] ?? null, dist: ts.length >= 2 ? Math.hypot(ts[1].clientX - ts[0].clientX, ts[1].clientY - ts[0].clientY) : 0 }
+    dragRef.current.moved = false
+  }
+  function onMapTE(e: React.TouchEvent) {
+    const ts = Array.from(e.touches)
+    touchRef.current.t1 = ts[0] ?? null; touchRef.current.t2 = ts[1] ?? null
+  }
+  function onMapMD(e: React.MouseEvent) { dragRef.current = { down: true, x: e.clientX, y: e.clientY, moved: false } }
+  function onMapMM(e: React.MouseEvent) {
+    if (!dragRef.current.down) return
+    const dx = e.clientX - dragRef.current.x, dy = e.clientY - dragRef.current.y
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragRef.current.moved = true
+    const cur = { ...transformRef.current, x: transformRef.current.x + dx, y: transformRef.current.y + dy }
+    dragRef.current.x = e.clientX; dragRef.current.y = e.clientY
+    applyT(cur)
+  }
+  function onMapMU() { dragRef.current.down = false }
 
   function closeFortress() {
     setFortressOpen(false)
@@ -141,78 +232,69 @@ export default function WorldMap({
       </div>
 
       {/* Map */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 260 }}>
-        <img
-          src="/sacred/world-map.jpg" alt=""
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
-        />
-        <svg
-          viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
-          preserveAspectRatio="xMidYMid slice"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-        >
-          {TERRITORIES.map(t => {
-            const isPlayer   = ownership[t.id] === 'player'
-            const isSelected = selectedId === t.id
-            const isAtk      = attackable.has(t.id)
-            const isMov      = movable.has(t.id)
-            const isArmy     = armyNodeId === t.id
-            const [cx, cy]   = polyCentroid(t.polygon)
-            const pts        = t.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+      <div
+        ref={mapContainerRef}
+        style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 260, touchAction: 'none' }}
+        onTouchStart={onMapTS}
+        onTouchEnd={onMapTE}
+        onMouseDown={onMapMD}
+        onMouseMove={onMapMM}
+        onMouseUp={onMapMU}
+        onMouseLeave={onMapMU}
+      >
+        <div style={{
+          position: 'absolute', top: 0, left: 0,
+          width: MAP_WIDTH, height: MAP_HEIGHT,
+          transform: `translate(${mapTransform.x}px,${mapTransform.y}px) scale(${mapTransform.scale})`,
+          transformOrigin: '0 0',
+          willChange: 'transform',
+        }}>
+          <img
+            src="/sacred/world-map.jpg" alt=""
+            draggable={false}
+            style={{ position: 'absolute', top: 0, left: 0, width: MAP_WIDTH, height: MAP_HEIGHT, display: 'block', userSelect: 'none' }}
+          />
+          <svg width={MAP_WIDTH} height={MAP_HEIGHT} style={{ position: 'absolute', top: 0, left: 0 }}>
+            {TERRITORIES.map(t => {
+              const isPlayer   = ownership[t.id] === 'player'
+              const isSelected = selectedId === t.id
+              const isAtk      = attackable.has(t.id)
+              const isMov      = movable.has(t.id)
+              const isArmy     = armyNodeId === t.id
+              const [cx, cy]   = polyCentroid(t.polygon)
+              const pts        = t.polygon.map(([x, y]) => `${x},${y}`).join(' ')
 
-            const fillColor   = isPlayer ? '#6fa67a' : '#c07070'
-            const fillOpacity = isSelected ? 0.6 : isAtk ? 0.45 : isMov ? 0.4 : 0.15
-            const strokeColor = isSelected ? '#ffffff' : isAtk ? '#ffd700' : isMov ? '#88ccff' : (isPlayer ? '#8fd49a' : '#e08080')
-            const strokeW     = isSelected ? 4 : (isAtk || isMov) ? 3 : 2
-            const strokeOpacity = isSelected ? 1 : (isAtk || isMov) ? 1 : 0.75
+              const fillColor     = isPlayer ? '#6fa67a' : '#c07070'
+              const fillOpacity   = isSelected ? 0.6 : isAtk ? 0.45 : isMov ? 0.4 : 0.15
+              const strokeColor   = isSelected ? '#fff' : isAtk ? '#ffd700' : isMov ? '#88ccff' : (isPlayer ? '#8fd49a' : '#e08080')
+              const strokeW       = isSelected ? 4 : (isAtk || isMov) ? 3 : 2
+              const strokeOpacity = isSelected ? 1 : (isAtk || isMov) ? 1 : 0.75
 
-            // Banner width estimate (~26px per Ukrainian char + padding)
-            const bannerW  = t.name.length * 28 + 28
-            const bannerH  = 52
-            const bannerX  = cx - bannerW / 2
-            const bannerY  = cy - 56
-
-            return (
-              <g key={t.id} onClick={() => setSelectedId(prev => prev === t.id ? null : t.id)} style={{ cursor: 'pointer' }}>
-                <polygon
-                  points={pts}
-                  fill={fillColor}
-                  fillOpacity={fillOpacity}
-                  stroke={strokeColor}
-                  strokeWidth={strokeW}
-                  strokeOpacity={strokeOpacity}
-                  vectorEffect="non-scaling-stroke"
-                />
-                {/* Label banner */}
-                <rect
-                  x={bannerX} y={bannerY}
-                  width={bannerW} height={bannerH}
-                  rx={8}
-                  fill="rgba(0,0,0,0.55)"
-                />
-                <text
-                  x={cx} y={cy - 24}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize={40} fontWeight="700"
-                  fill="#fff"
-                  style={{ pointerEvents: 'none', userSelect: 'none' }}
-                >
-                  {t.name}
-                </text>
-                {/* Army marker */}
-                {isArmy && (
-                  <text x={cx} y={cy + 55} textAnchor="middle" dominantBaseline="middle" fontSize={58} style={{ pointerEvents: 'none' }}>⚔</text>
-                )}
-                {t.isBoss && !isArmy && (
-                  <text x={cx} y={cy + 55} textAnchor="middle" dominantBaseline="middle" fontSize={58} style={{ pointerEvents: 'none' }}>💀</text>
-                )}
-                {t.isStart && !isArmy && (
-                  <text x={cx} y={cy + 55} textAnchor="middle" dominantBaseline="middle" fontSize={58} style={{ pointerEvents: 'none' }}>🏰</text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
+              return (
+                <g key={t.id} onClick={() => { if (!dragRef.current.moved) setSelectedId(prev => prev === t.id ? null : t.id) }} style={{ cursor: 'pointer' }}>
+                  <polygon
+                    points={pts}
+                    fill={fillColor}
+                    fillOpacity={fillOpacity}
+                    stroke={strokeColor}
+                    strokeWidth={strokeW}
+                    strokeOpacity={strokeOpacity}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {isArmy && (
+                    <text x={cx} y={cy + 60} textAnchor="middle" dominantBaseline="middle" fontSize={80} style={{ pointerEvents: 'none' }}>⚔</text>
+                  )}
+                  {t.isBoss && !isArmy && (
+                    <text x={cx} y={cy + 60} textAnchor="middle" dominantBaseline="middle" fontSize={80} style={{ pointerEvents: 'none' }}>💀</text>
+                  )}
+                  {t.isStart && !isArmy && (
+                    <text x={cx} y={cy + 60} textAnchor="middle" dominantBaseline="middle" fontSize={80} style={{ pointerEvents: 'none' }}>🏰</text>
+                  )}
+                </g>
+              )
+            })}
+          </svg>
+        </div>
       </div>
 
       {/* Bottom panel */}
