@@ -218,7 +218,7 @@ export default function WorldMap({
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ maxWidth: 560, margin: '0 auto', height: '100dvh', background: '#0f0e09', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
 
       {/* Header */}
       <div style={{ padding: '10px 16px', background: '#17150f', borderBottom: '1px solid rgba(240,232,216,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -234,7 +234,7 @@ export default function WorldMap({
       {/* Map */}
       <div
         ref={mapContainerRef}
-        style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 260, touchAction: 'none' }}
+        style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', touchAction: 'none' }}
         onTouchStart={onMapTS}
         onTouchEnd={onMapTE}
         onMouseDown={onMapMD}
@@ -298,7 +298,7 @@ export default function WorldMap({
       </div>
 
       {/* Bottom panel */}
-      <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0 }}>
+      <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {selectedTerritory ? (
           <div style={{ padding: '14px 16px 24px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
