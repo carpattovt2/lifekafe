@@ -1,129 +1,102 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WORLD_NODES, getReachableNodes, getPathCost, getVisibleNodeIds, FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked, getReviveCost } from '@/lib/sacred/worldMap'
-import type { WorldMapState, NodeType, NodeStatus } from '@/lib/sacred/worldMap'
-import type { GameUnit, UnitClass, MagePath } from '@/lib/sacred/types'
-
-const NODE_COLOR: Record<NodeType, string> = {
-  town:     '#d4a85a',
-  resource: '#6fa67a',
-  dungeon:  '#c07070',
-  camp:     '#b07850',
-  artifact: '#a080c8',
-}
-
-const NODE_ICON_SRC: Record<NodeType, string> = {
-  town:     '/sacred/map/icon-town.jpg',
-  resource: '/sacred/map/icon-resource.jpg',
-  dungeon:  '/sacred/map/icon-dungeon.jpg',
-  camp:     '/sacred/map/icon-camp.jpg',
-  artifact: '/sacred/map/icon-artifact.jpg',
-}
-
-const DIFFICULTY_COLOR: Record<string, string> = {
-  'Легко':         '#6fa67a',
-  'Середньо':      '#d4a85a',
-  'Важко':         '#c07070',
-  'Дуже важко':    '#a060a0',
-  'Фінальний бій': '#c07070',
-}
-
-const MAGE_PATH_LABEL: Record<MagePath, string> = {
-  fire:  'Шлях Вогню',
-  water: 'Шлях Води',
-  earth: 'Шлях Землі',
-  air:   'Шлях Повітря',
-}
+import {
+  TERRITORIES, getAttackableTerritories, getMovableTerritories,
+  isSlotUnlocked, MAP_WIDTH, MAP_HEIGHT, HIRE_COSTS,
+  FORTRESS_NAMES, FORTRESS_UPGRADE_COST, SLOT_COSTS, getReviveCost,
+} from '@/lib/sacred/territories'
+import type { TerritoryMapState } from '@/lib/sacred/territories'
+import type { GameUnit, UnitClass } from '@/lib/sacred/types'
 
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
-  { cls: 'warrior',  label: 'Воїн',       cost: 2, desc: 'Передній ряд, щит, провокація' },
-  { cls: 'archer',   label: 'Лучник',     cost: 3, desc: 'Дальній ряд, постріл, прицілення' },
-  { cls: 'mage',     label: 'Маг',        cost: 5, desc: 'Дальній ряд, обирає шлях після lv1' },
-  { cls: 'catapult', label: 'Катапульта', cost: 8, desc: 'Важка артилерія, площинний урон' },
+  { cls: 'warrior',  label: 'Воїн',       cost: HIRE_COSTS.warrior,  desc: 'Передній ряд, щит, провокація' },
+  { cls: 'archer',   label: 'Лучник',     cost: HIRE_COSTS.archer,   desc: 'Дальній ряд, постріл, прицілення' },
+  { cls: 'mage',     label: 'Маг',        cost: HIRE_COSTS.mage,     desc: 'Дальній ряд, обирає шлях після lv1' },
+  { cls: 'catapult', label: 'Катапульта', cost: HIRE_COSTS.catapult, desc: 'Важка артилерія, площинний урон' },
 ]
 
-function getPortraitSrc(unit: GameUnit): string | null {
+const ROW_LABEL: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд' }
+const CLASS_UA:  Record<UnitClass, string> = { warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта' }
+
+function getPortrait(unit: GameUnit): string {
   const lvl = unit.level ?? 1
   if (unit.class === 'warrior') {
     if (unit.warriorPath === 'champion' && lvl >= 3) return `/sacred/warriors/champion/level${lvl}.jpg`
     return `/sacred/warriors/level${Math.min(lvl, 4)}.jpg`
   }
-  if (unit.class === 'archer')  return `/sacred/archers/level${lvl}.jpg`
+  if (unit.class === 'archer')  return `/sacred/archers/level${Math.min(lvl, 3)}.jpg`
   if (unit.class === 'mage')
-    return lvl === 1 || !unit.magePath ? '/sacred/mages/level1.jpg' : `/sacred/mages/${unit.magePath}/level${lvl}.jpg`
+    return lvl > 1 && unit.magePath ? `/sacred/mages/${unit.magePath}/level${lvl}.jpg` : '/sacred/mages/level1.jpg'
   if (unit.class === 'catapult')
-    return lvl === 1 || !unit.catapultPath ? '/sacred/catapults/level1.jpg' : `/sacred/catapults/${unit.catapultPath}/level${lvl}.jpg`
-  return null
+    return lvl > 1 && unit.catapultPath ? `/sacred/catapults/${unit.catapultPath}/level${lvl}.jpg` : '/sacred/catapults/level1.jpg'
+  return ''
 }
 
-function unitSubtitle(unit: GameUnit): string | null {
-  if (unit.class === 'mage' && unit.magePath && (unit.level ?? 1) > 1) {
-    return MAGE_PATH_LABEL[unit.magePath]
-  }
-  return null
+function polyCentroid(poly: [number, number][]): [number, number] {
+  return [
+    poly.reduce((s, [x]) => s + x, 0) / poly.length,
+    poly.reduce((s, [, y]) => s + y, 0) / poly.length,
+  ]
 }
 
-const ROW_LABEL_GRID: Record<number, string> = { 0: 'Передній ряд', 1: 'Дальній ряд' }
+// ── AP dots ───────────────────────────────────────────────────────────────────
+function ApDots({ ap }: { ap: number }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      {[0, 1].map(i => (
+        <div key={i} style={{
+          width: 10, height: 10, borderRadius: '50%',
+          background: i < ap ? '#d4a85a' : 'rgba(212,168,90,0.2)',
+          border: '1px solid rgba(212,168,90,0.4)',
+        }} />
+      ))}
+    </div>
+  )
+}
 
-interface WorldMapProps {
-  mapState: WorldMapState
-  playerUnits: GameUnit[]
-  battleResult?: { gold: number; levelUps: string[] } | null
+interface Props {
+  mapState:             TerritoryMapState
+  playerUnits:          GameUnit[]
+  deadUnits:            GameUnit[]
+  onMove:               (territoryId: string) => void
+  onAttack:             (territoryId: string) => void
+  onEndTurn:            () => void
+  onRest:               () => void
+  onBack:               () => void
+  onHireUnit:           (cls: UnitClass, row: number, slot: number) => void
+  onReorderUnits:       (id1: string, id2: string) => void
+  onMoveUnitSlot:       (id: string, row: number, slot: number) => void
+  onUpgradeFortress:    () => void
+  onPurchaseSlot:       () => void
+  onReviveUnit:         (id: string) => void
+  battleResult?:        { gold: number; levelUps: string[] } | null
   onClearBattleResult?: () => void
-  reinforcement?: string | null
-  onClearReinforcement?: () => void
-  onMove:              (nodeId: string) => void
-  onFight:             (nodeId: string) => void
-  onCollect:           (nodeId: string) => void
-  onRest:              () => void
-  onRestOutside?:      () => void
-  onEndTurn:           () => void
-  onBack:              () => void
-  onHireUnit?:         (cls: UnitClass, row: number, slot: number) => void
-  onPurchaseSlot?:     () => void
-  deadUnits?:          GameUnit[]
-  onReviveUnit?:       (id: string) => void
-  onReorderUnits?:     (id1: string, id2: string) => void
-  onMoveUnitSlot?:     (id: string, row: number, slot: number) => void
-  onUpgradeFortress?:  () => void
 }
 
-function enemyPortrait(cls: UnitClass, level: number): string | null {
-  if (cls === 'warrior')  return `/sacred/warriors/level${Math.min(level, 4)}.jpg`
-  if (cls === 'archer')   return `/sacred/archers/level${Math.min(level, 3)}.jpg`
-  if (cls === 'mage')     return '/sacred/mages/level1.jpg'
-  if (cls === 'catapult') return '/sacred/catapults/level1.jpg'
-  return null
-}
+type FortressTab = 'army' | 'hire' | 'upgrade' | 'revive'
 
 export default function WorldMap({
-  mapState, playerUnits, battleResult, onClearBattleResult,
-  reinforcement, onClearReinforcement,
-  onMove, onFight, onCollect, onRest, onRestOutside, onEndTurn, onBack,
-  onHireUnit, onPurchaseSlot, onReorderUnits, onMoveUnitSlot, onUpgradeFortress, deadUnits = [], onReviveUnit,
-}: WorldMapProps) {
-  const [previewNodeId,   setPreviewNodeId]   = useState<string | null>(null)
-  const [armyPanelOpen,   setArmyPanelOpen]   = useState(false)
-  const [fortressOpen,    setFortressOpen]     = useState(false)
-  const [fortressTab,     setFortressTab]      = useState<'army' | 'hire' | 'upgrade'>('army')
-  const [selectedUnitId,  setSelectedUnitId]   = useState<string | null>(null)
-  const [hirePopup,       setHirePopup]        = useState<{ row: number; slot: number } | null>(null)
+  mapState, playerUnits, deadUnits,
+  onMove, onAttack, onEndTurn, onRest, onBack,
+  onHireUnit, onReorderUnits, onMoveUnitSlot,
+  onUpgradeFortress, onPurchaseSlot, onReviveUnit,
+  battleResult, onClearBattleResult,
+}: Props) {
+  const [selectedId,    setSelectedId]    = useState<string | null>(null)
+  const [fortressOpen,  setFortressOpen]  = useState(false)
+  const [fortressTab,   setFortressTab]   = useState<FortressTab>('army')
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
+  const [hirePopup,     setHirePopup]     = useState<{ row: number; slot: number } | null>(null)
 
-  const { statuses, heroNodeId, heroAP, maxAP, turn, gold, restedThisTurn, maxArmySlots, fortressLevel } = mapState
-  const isAtTown = heroNodeId === 'town'
-  const heroNode  = WORLD_NODES.find(n => n.id === heroNodeId)!
-  const reachable = getReachableNodes(heroNodeId, heroAP, statuses)
-  const visible   = getVisibleNodeIds(heroNodeId, maxAP)
-  const atTown    = heroNodeId === 'town'
-
-  const panelNode   = (previewNodeId ? WORLD_NODES.find(n => n.id === previewNodeId) : null) ?? heroNode
-  const panelIsHero = panelNode.id === heroNodeId
-  const panelStatus = statuses[panelNode.id] as NodeStatus
-
-  const nonTownNodes = WORLD_NODES.filter(n => n.id !== 'town')
-  const clearedCount = nonTownNodes.filter(n => statuses[n.id] === 'cleared' || statuses[n.id] === 'collected').length
-  const totalCount   = nonTownNodes.length
+  const { ownership, gold, turn, ap, armyNodeId, maxArmySlots, fortressLevel, restedThisTurn } = mapState
+  const attackable  = getAttackableTerritories(ownership, armyNodeId)
+  const movable     = getMovableTerritories(ownership, armyNodeId)
+  const atDans      = armyNodeId === 'dans'
+  const playerCount = Object.values(ownership).filter(o => o === 'player').length
+  const selectedTerritory = selectedId ? TERRITORIES.find(t => t.id === selectedId) : null
+  const isAttackable = !!selectedId && attackable.has(selectedId)
+  const isMovable    = !!selectedId && movable.has(selectedId)
 
   useEffect(() => {
     if (!battleResult) return
@@ -131,825 +104,429 @@ export default function WorldMap({
     return () => clearTimeout(t)
   }, [battleResult])
 
-  useEffect(() => {
-    if (!reinforcement) return
-    const t = setTimeout(() => onClearReinforcement?.(), 4000)
-    return () => clearTimeout(t)
-  }, [reinforcement])
-
-  function handleNodeClick(nodeId: string) {
-    if (nodeId === heroNodeId) { setPreviewNodeId(null); return }
-    const status = statuses[nodeId]
-    if (reachable.has(nodeId)) {
-      if (status === 'enemy') {
-        setPreviewNodeId(nodeId)
-      } else {
-        onMove(nodeId)
-        setPreviewNodeId(null)
-      }
-    } else {
-      setPreviewNodeId(nodeId)
-    }
-  }
-
-  function handleAttack() {
-    if (!previewNodeId) {
-      if (statuses[heroNodeId] === 'enemy') onFight(heroNodeId)
-      return
-    }
-    onMove(previewNodeId)
-    onFight(previewNodeId)
-    setPreviewNodeId(null)
-  }
-
-  function handleCollect() {
-    onCollect(panelNode.id)
-    setPreviewNodeId(null)
+  function closeFortress() {
+    setFortressOpen(false)
+    setHirePopup(null)
+    setSelectedUnitId(null)
   }
 
   function handleSlotClick(row: number, slot: number) {
+    if (!isSlotUnlocked(row, slot, maxArmySlots)) return
     const occupant = playerUnits.find(u => u.row === row && u.slot === slot)
     if (selectedUnitId) {
       const selUnit = playerUnits.find(u => u.id === selectedUnitId)
       if (!selUnit || selUnit.row !== row) { setSelectedUnitId(null); return }
-      if (occupant && occupant.id !== selectedUnitId) {
-        onReorderUnits?.(selectedUnitId, occupant.id)
-      } else if (!occupant) {
-        onMoveUnitSlot?.(selectedUnitId, row, slot)
-      }
+      if (occupant && occupant.id !== selectedUnitId) onReorderUnits(selectedUnitId, occupant.id)
+      else if (!occupant) onMoveUnitSlot(selectedUnitId, row, slot)
       setSelectedUnitId(null)
       return
     }
-    if (occupant) setSelectedUnitId(occupant.id)
+    if (occupant) { setSelectedUnitId(occupant.id); return }
+    setHirePopup({ row, slot })
   }
 
-  const drawnLines = new Set<string>()
-  const connectionLines = WORLD_NODES.flatMap(node =>
-    node.connections.map(connId => {
-      const key = [node.id, connId].sort().join('|')
-      if (drawnLines.has(key)) return null
-      drawnLines.add(key)
-      const conn = WORLD_NODES.find(n => n.id === connId)!
-      const bothVisible    = visible.has(node.id) && visible.has(connId)
-      const bothAccessible =
-        (statuses[node.id] !== 'enemy' || node.id === heroNodeId) &&
-        (statuses[connId]  !== 'enemy' || connId  === heroNodeId)
-      return { key, x1: node.x, y1: node.y, x2: conn.x, y2: conn.y, active: bothAccessible, visible: bothVisible }
-    }).filter(Boolean),
-  )
+  // ── Render ──────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
 
-  // ── Army grid (shared between standalone panel and fortress) ────────────────
-  function ArmyGrid({ reorder }: { reorder: boolean }) {
-    const selUnit = selectedUnitId ? playerUnits.find(u => u.id === selectedUnitId) : null
-    return (
-      <div>
-        {([0, 1] as const).map(row => {
-          const rowUnits   = playerUnits.filter(u => u.row === row)
-          const rowDead    = deadUnits.filter(u => u.row === row)
-          if (!reorder && rowUnits.length === 0 && rowDead.length === 0) return null
-          return (
-            <div key={row} style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
-                {ROW_LABEL_GRID[row]}
+      {/* Header */}
+      <div style={{ padding: '10px 16px', background: '#17150f', borderBottom: '1px solid rgba(240,232,216,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.5)', cursor: 'pointer', fontSize: 20, padding: '0 8px 0 0' }}>←</button>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: '#d4a85a', fontWeight: 700 }}>💰 {gold}</span>
+          <ApDots ap={ap} />
+          <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>День {turn}</span>
+          <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>{playerCount}/{TERRITORIES.length}</span>
+        </div>
+      </div>
+
+      {/* Map */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 260 }}>
+        <img
+          src="/sacred/world-map.jpg" alt=""
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
+        />
+        <svg
+          viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
+          preserveAspectRatio="xMidYMid slice"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+        >
+          {TERRITORIES.map(t => {
+            const isPlayer   = ownership[t.id] === 'player'
+            const isSelected = selectedId === t.id
+            const isAtk      = attackable.has(t.id)
+            const isMov      = movable.has(t.id)
+            const isArmy     = armyNodeId === t.id
+            const [cx, cy]   = polyCentroid(t.polygon)
+            const pts        = t.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+
+            const fillColor   = isPlayer ? '#6fa67a' : '#c07070'
+            const fillOpacity = isSelected ? 0.6 : isAtk ? 0.45 : isMov ? 0.4 : 0.15
+            const strokeColor = isSelected ? '#ffffff' : isAtk ? '#ffd700' : isMov ? '#88ccff' : (isPlayer ? '#8fd49a' : '#e08080')
+            const strokeW     = isSelected ? 4 : (isAtk || isMov) ? 3 : 2
+            const strokeOpacity = isSelected ? 1 : (isAtk || isMov) ? 1 : 0.75
+
+            // Banner width estimate (~26px per Ukrainian char + padding)
+            const bannerW  = t.name.length * 28 + 28
+            const bannerH  = 52
+            const bannerX  = cx - bannerW / 2
+            const bannerY  = cy - 56
+
+            return (
+              <g key={t.id} onClick={() => setSelectedId(prev => prev === t.id ? null : t.id)} style={{ cursor: 'pointer' }}>
+                <polygon
+                  points={pts}
+                  fill={fillColor}
+                  fillOpacity={fillOpacity}
+                  stroke={strokeColor}
+                  strokeWidth={strokeW}
+                  strokeOpacity={strokeOpacity}
+                  vectorEffect="non-scaling-stroke"
+                />
+                {/* Label banner */}
+                <rect
+                  x={bannerX} y={bannerY}
+                  width={bannerW} height={bannerH}
+                  rx={8}
+                  fill="rgba(0,0,0,0.55)"
+                />
+                <text
+                  x={cx} y={cy - 24}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={40} fontWeight="700"
+                  fill="#fff"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {t.name}
+                </text>
+                {/* Army marker */}
+                {isArmy && (
+                  <text x={cx} y={cy + 55} textAnchor="middle" dominantBaseline="middle" fontSize={58} style={{ pointerEvents: 'none' }}>⚔</text>
+                )}
+                {t.isBoss && !isArmy && (
+                  <text x={cx} y={cy + 55} textAnchor="middle" dominantBaseline="middle" fontSize={58} style={{ pointerEvents: 'none' }}>💀</text>
+                )}
+                {t.isStart && !isArmy && (
+                  <text x={cx} y={cy + 55} textAnchor="middle" dominantBaseline="middle" fontSize={58} style={{ pointerEvents: 'none' }}>🏰</text>
+                )}
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* Bottom panel */}
+      <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0 }}>
+        {selectedTerritory ? (
+          <div style={{ padding: '14px 16px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: selectedTerritory.isBoss ? '#c07070' : ownership[selectedTerritory.id] === 'player' ? '#6fa67a' : '#f0e8d8' }}>
+                  {selectedTerritory.isBoss ? '💀 ' : ''}{selectedTerritory.name}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginTop: 2 }}>
+                  {ownership[selectedTerritory.id] === 'player' ? '🟢 Твій регіон' : '🔴 Ворожий регіон'}
+                  {selectedTerritory.goldReward > 0 ? ` · 💰 +${selectedTerritory.goldReward} за перемогу` : ''}
+                </div>
+                {ownership[selectedTerritory.id] === 'enemy' && selectedTerritory.army.length > 0 && (
+                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)', marginTop: 4, lineHeight: 1.5 }}>
+                    {selectedTerritory.army.map(u => `${CLASS_UA[u.class]} lv${u.level}`).join(' · ')}
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {Array.from({ length: 4 }, (_, slot) => {
-                  const unit      = playerUnits.find(u => u.row === row && u.slot === slot)
-                  const deadUnit  = !unit ? deadUnits.find(u => u.row === row && u.slot === slot) : undefined
-                  const isSel     = unit?.id === selectedUnitId
-                  const isTarget  = reorder && selUnit && selUnit.row === row && !unit && !deadUnit && !isSel
-                  const portrait  = unit ? getPortraitSrc(unit) : null
-                  const subtitle  = unit ? unitSubtitle(unit) : null
-                  const hpPct     = unit ? Math.max(0, unit.hp / unit.maxHp) : 0
-                  const hpColor   = hpPct > 0.6 ? '#6fa67a' : hpPct > 0.3 ? '#d4a85a' : '#c07070'
+              <button onClick={() => setSelectedId(null)} style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 18, padding: '0 0 0 12px', flexShrink: 0 }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {isAttackable && (
+                <button
+                  onClick={() => { onAttack(selectedId!); setSelectedId(null) }}
+                  disabled={ap <= 0}
+                  style={{
+                    flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                    background: ap <= 0 ? 'rgba(192,112,112,0.12)' : 'linear-gradient(135deg, #c07070, #8a3030)',
+                    color: ap <= 0 ? 'rgba(240,232,216,0.25)' : '#fff',
+                    border: `1px solid ${ap <= 0 ? 'rgba(192,112,112,0.2)' : '#c07070'}`,
+                    cursor: ap <= 0 ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {ap <= 0 ? 'Немає AP' : `⚔ Атакувати`}
+                </button>
+              )}
+              {isMovable && (
+                <button
+                  onClick={() => { onMove(selectedId!); setSelectedId(null) }}
+                  disabled={ap <= 0}
+                  style={{
+                    flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                    background: ap <= 0 ? 'rgba(136,204,255,0.08)' : 'rgba(136,204,255,0.12)',
+                    color: ap <= 0 ? 'rgba(240,232,216,0.25)' : '#88ccff',
+                    border: `1px solid ${ap <= 0 ? 'rgba(136,204,255,0.1)' : 'rgba(136,204,255,0.35)'}`,
+                    cursor: ap <= 0 ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {ap <= 0 ? 'Немає AP' : `→ Перемістити армію`}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '14px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => { setFortressOpen(true); setFortressTab('army') }}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 12, fontWeight: 600, background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.12)', color: '#f0e8d8', cursor: 'pointer' }}
+              >
+                🏰 {FORTRESS_NAMES[fortressLevel]} ({playerUnits.length})
+              </button>
+              <button
+                onClick={() => {
+                  if (!restedThisTurn && (atDans || gold >= 1)) onRest()
+                }}
+                disabled={restedThisTurn || (!atDans && gold < 1)}
+                style={{
+                  flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
+                  background: restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.03)' : 'rgba(111,166,122,0.12)',
+                  border: `1px solid ${restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.07)' : 'rgba(111,166,122,0.3)'}`,
+                  color: restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.22)' : '#6fa67a',
+                  cursor: restedThisTurn || (!atDans && gold < 1) ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {restedThisTurn ? '😴 Вже відпочили' : atDans ? '😴 Відпочити' : `😴 Відпочити (-1💰)`}
+              </button>
+            </div>
+            <button
+              onClick={onEndTurn}
+              style={{ width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg, #7a5a30, #4a3018)', border: '1px solid rgba(212,168,90,0.3)', color: '#f0e8d8', cursor: 'pointer' }}
+            >
+              Кінець дня → (+{Object.values(ownership).filter(o => o === 'player').length}💰)
+            </button>
+            {ap > 0 && attackable.size > 0 && (
+              <div style={{ fontSize: 11, color: '#ffd700', textAlign: 'center' }}>
+                ⚔ Можна атакувати: {Array.from(attackable).map(id => TERRITORIES.find(t => t.id === id)?.name).filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-                  // Dead unit in this slot
-                  if (!unit && deadUnit) {
-                    const dp        = getPortraitSrc(deadUnit)
-                    const cost      = getReviveCost(deadUnit)
-                    const canAfford = gold >= cost
-                    const hasSlot   = playerUnits.length < maxArmySlots
-                    const canRevive = canAfford && hasSlot && isAtTown
-                    return (
-                      <div key={slot}
-                        onClick={() => canRevive && onReviveUnit?.(deadUnit.id)}
-                        style={{
-                          width: 72, height: 84, borderRadius: 8, flexShrink: 0,
-                          background: '#1a0808', border: '1px solid rgba(192,112,112,0.2)',
-                          position: 'relative', overflow: 'hidden',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                          cursor: canRevive ? 'pointer' : 'default',
-                        }}
-                      >
-                        {dp && <img src={dp} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', filter: 'grayscale(1)', opacity: 0.3 }} />}
-                        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-                          <div style={{ fontSize: 22, opacity: 0.75, lineHeight: 1 }}>✝</div>
-                          {isAtTown && (
-                            <div style={{ fontSize: 9, color: canAfford ? '#d4a85a' : '#c07070', fontWeight: 700, marginTop: 3 }}>
-                              {cost}💰
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  }
-
+      {/* Fortress sheet */}
+      {fortressOpen && (
+        <>
+          <div onClick={closeFortress} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 40 }} />
+          <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 560, background: '#17150f', borderRadius: '16px 16px 0 0', border: '1px solid rgba(240,232,216,0.12)', borderBottom: 'none', zIndex: 41, maxHeight: '82vh', overflowY: 'auto' }}>
+            <div style={{ padding: '14px 16px 0' }}>
+              <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 12px' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>🏰 {FORTRESS_NAMES[fortressLevel]}</div>
+                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.35)', marginTop: 2 }}>
+                    Рівень {fortressLevel} · юніти до lv{fortressLevel}
+                  </div>
+                </div>
+                <button onClick={closeFortress} style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              </div>
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 2, marginBottom: 14 }}>
+                {(['army', 'hire', 'upgrade', 'revive'] as FortressTab[]).map(tab => {
+                  const labels: Record<FortressTab, string> = { army: 'Армія', hire: 'Найняти', upgrade: 'Апгрейд', revive: `Воскресити (${deadUnits.length})` }
                   return (
-                    <div key={slot}
-                      onClick={reorder ? () => handleSlotClick(row, slot) : undefined}
-                      style={{
-                        width: 72, height: 84, borderRadius: 8, flexShrink: 0,
-                        cursor: reorder ? 'pointer' : 'default',
-                        background: isSel ? 'rgba(212,168,90,0.1)' : unit ? '#1a1810' : 'rgba(0,0,0,0.18)',
-                        border: `2px solid ${isSel ? '#d4a85a' : isTarget ? 'rgba(212,168,90,0.45)' : unit ? 'rgba(240,232,216,0.12)' : 'rgba(240,232,216,0.06)'}`,
-                        borderStyle: isTarget ? 'dashed' : 'solid',
-                        boxShadow: isSel ? '0 0 0 2px rgba(212,168,90,0.2)' : 'none',
-                        position: 'relative', overflow: 'hidden', transition: 'all 0.12s',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        opacity: (!unit && !isSlotUnlocked(row, slot, maxArmySlots)) ? 0.45 : 1,
-                      }}
-                    >
-                      {!unit && !isSlotUnlocked(row, slot, maxArmySlots) && (
-                        <span style={{ fontSize: 18, opacity: 0.5 }}>🔒</span>
-                      )}
-                      {unit && portrait ? (
-                        <>
-                          <img src={portrait} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 35%, rgba(0,0,0,0.78) 100%)' }} />
-                          <div style={{ position: 'relative', zIndex: 1, alignSelf: 'stretch', marginTop: 'auto', padding: '0 4px 4px' }}>
-                            <div style={{ fontSize: 8, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {unit.name}
-                            </div>
-                            {subtitle && <div style={{ fontSize: 7, color: '#d4a85a', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
-                            {isSel && <div style={{ fontSize: 7, color: '#d4a85a', fontWeight: 700 }}>ОБРАНИЙ</div>}
-                            <div style={{ marginTop: 2, height: 2, background: 'rgba(255,255,255,0.15)', borderRadius: 1 }}>
-                              <div style={{ width: `${hpPct * 100}%`, height: '100%', background: hpColor, borderRadius: 1 }} />
-                            </div>
-                          </div>
-                        </>
-                      ) : unit ? (
-                        <div style={{ fontSize: 9, color: '#f0e8d8', textAlign: 'center', padding: '0 4px' }}>{unit.name}</div>
-                      ) : null}
-                    </div>
+                    <button key={tab} onClick={() => setFortressTab(tab)} style={{
+                      flex: 1, padding: '7px 0', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                      background: fortressTab === tab ? 'rgba(212,168,90,0.18)' : 'rgba(240,232,216,0.05)',
+                      border: `1px solid ${fortressTab === tab ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`,
+                      color: fortressTab === tab ? '#d4a85a' : 'rgba(240,232,216,0.45)',
+                      cursor: 'pointer',
+                    }}>
+                      {labels[tab]}
+                    </button>
                   )
                 })}
               </div>
             </div>
-          )
-        })}
-        {playerUnits.length === 0 && deadUnits.length === 0 && (
-          <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.35)', textAlign: 'center', padding: '16px 0' }}>Армія порожня</div>
-        )}
-      </div>
-    )
-  }
 
-  return (
-    <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100dvh',
-      background: '#0f0e09', color: '#f0e8d8',
-      fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
-    }}>
-
-      {/* Reinforcement notification */}
-      {reinforcement && (
-        <div onClick={() => onClearReinforcement?.()} style={{
-          position: 'fixed', top: 76, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 50, background: '#1e1008', border: '1px solid rgba(192,112,112,0.5)',
-          borderRadius: 12, padding: '12px 20px', boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
-          minWidth: 200, textAlign: 'center', cursor: 'pointer',
-        }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#c07070' }}>⚠ Ворожі підкріплення!</div>
-          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.6)', marginTop: 3 }}>
-            {reinforcement} знову під контролем ворога
-          </div>
-        </div>
-      )}
-
-      {/* Battle result notification */}
-      {battleResult && (battleResult.gold > 0 || battleResult.levelUps.length > 0) && (
-        <div onClick={() => onClearBattleResult?.()} style={{
-          position: 'fixed', top: reinforcement ? 136 : 76, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 50, background: '#1e1b12', border: '1px solid rgba(212,168,90,0.45)',
-          borderRadius: 12, padding: '12px 20px', boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
-          minWidth: 190, textAlign: 'center', cursor: 'pointer',
-        }}>
-          {battleResult.gold > 0 && (
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a' }}>+{battleResult.gold} 💰 золото</div>
-          )}
-          {battleResult.levelUps.map(name => (
-            <div key={name} style={{ fontSize: 12, color: '#a080c8', marginTop: 3 }}>⭐ {name} — новий рівень!</div>
-          ))}
-        </div>
-      )}
-
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 16px', background: '#17150f',
-        borderBottom: '1px solid rgba(240,232,216,0.08)', flexShrink: 0,
-      }}>
-        <button onClick={onBack} style={{
-          background: 'none', border: 'none', color: 'rgba(240,232,216,0.45)',
-          fontSize: 13, cursor: 'pointer', padding: '4px 0', lineHeight: 1,
-        }}>← Меню</button>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#d4a85a' }}>✦ Кампанія</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'rgba(240,232,216,0.5)' }}>💰 {gold}</span>
-          <span style={{ fontSize: 12, color: '#b07850' }}>Хід {turn}</span>
-          <button onClick={() => { setArmyPanelOpen(true); setSelectedUnitId(null) }} style={{
-            padding: '5px 10px', background: 'rgba(111,166,122,0.12)',
-            border: '1px solid rgba(111,166,122,0.3)', borderRadius: 7,
-            color: '#7aaa82', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-          }}>⚔ Армія</button>
-          <button onClick={() => { setFortressOpen(true); setFortressTab('upgrade') }} style={{
-            padding: '5px 10px', background: 'rgba(212,168,90,0.12)',
-            border: '1px solid rgba(212,168,90,0.3)', borderRadius: 7,
-            color: '#d4a85a', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-          }}>🏰</button>
-        </div>
-      </div>
-
-      {/* AP + Progress */}
-      <div style={{
-        padding: '7px 16px 6px', background: '#17150f',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
-        borderBottom: '1px solid rgba(240,232,216,0.05)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginRight: 2 }}>Кроки:</span>
-          {Array.from({ length: maxAP }, (_, i) => (
-            <div key={i} style={{
-              width: 9, height: 9, borderRadius: '50%',
-              background: i < heroAP ? '#d4a85a' : 'rgba(240,232,216,0.1)',
-              transition: 'background 0.2s',
-            }} />
-          ))}
-          {heroAP === 0 && (
-            <span style={{ fontSize: 11, color: '#c07070', marginLeft: 4 }}>— завершіть хід</span>
-          )}
-        </div>
-        <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>
-          {clearedCount}/{totalCount} вузлів
-        </span>
-      </div>
-
-      {/* SVG Map */}
-      <div style={{ flexShrink: 0, padding: '6px 0' }}>
-        <svg viewBox="0 0 200 130" style={{ width: '100%', display: 'block' }}
-          onClick={() => setPreviewNodeId(null)}>
-          <defs>
-            <filter id="nodeShadow" x="-40%" y="-40%" width="180%" height="180%">
-              <feDropShadow dx="0.5" dy="1" stdDeviation="1.5" floodColor="rgba(0,0,0,0.8)" />
-            </filter>
-          </defs>
-          {/* Background image — show top portion of square image */}
-          <image
-            href="/sacred/map/world.jpg"
-            x={0} y={0} width={200} height={130}
-            preserveAspectRatio="xMidYMin slice"
-          />
-          {/* Dark overlay for readability */}
-          <rect x={0} y={0} width={200} height={130} fill="rgba(0,0,0,0.48)" />
-
-          {connectionLines.map(l => l && (
-            <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-              stroke={!l.visible ? 'rgba(240,232,216,0.05)' : l.active ? 'rgba(212,168,90,0.45)' : 'rgba(240,232,216,0.18)'}
-              strokeWidth={l.active && l.visible ? 2 : 1.5}
-              strokeLinecap="round" />
-          ))}
-          {WORLD_NODES.map(node => {
-            const status   = statuses[node.id] as NodeStatus
-            const isHero   = node.id === heroNodeId
-            const canReach = reachable.has(node.id) && !isHero
-            const isPrev   = node.id === previewNodeId
-            const color    = NODE_COLOR[node.type]
-            const dimmed   = status === 'cleared' || status === 'collected'
-            const fogged   = !visible.has(node.id)
-            if (fogged) return (
-              <g key={node.id} opacity={0.3}>
-                <circle cx={node.x+0.5} cy={node.y+1} r={10.5} fill="rgba(0,0,0,0.5)" />
-                <circle cx={node.x} cy={node.y} r={11} fill="rgba(20,15,5,0.85)"
-                  stroke="rgba(240,232,216,0.22)" strokeWidth={1} strokeDasharray="2 2" />
-                <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
-                  fontSize={8} fill="rgba(240,232,216,0.45)" style={{ userSelect: 'none', pointerEvents: 'none' }}>?</text>
-              </g>
-            )
-            return (
-              <g key={node.id} opacity={dimmed ? 0.55 : 1}
-                style={{ cursor: canReach || isHero || isPrev ? 'pointer' : 'default' }}
-                onClick={e => { e.stopPropagation(); handleNodeClick(node.id) }}>
-                {/* Hitbox */}
-                <circle cx={node.x} cy={node.y} r={16} fill="transparent" />
-                {/* Reachable dashed ring */}
-                {canReach && <circle cx={node.x} cy={node.y} r={14.5} fill="none"
-                  stroke={color} strokeWidth={2} strokeDasharray="3 2" opacity={0.7} />}
-                {/* Preview selected ring */}
-                {isPrev && <circle cx={node.x} cy={node.y} r={14}
-                  fill="none" stroke="#f0e8d8" strokeWidth={2} opacity={0.7} />}
-                {/* Drop shadow */}
-                <circle cx={node.x+0.7} cy={node.y+1.2} r={11.5} fill="rgba(0,0,0,0.65)" />
-                {/* Icon image clipped to circle */}
-                {!dimmed ? (
-                  <image
-                    href={NODE_ICON_SRC[node.type]}
-                    x={node.x - 11} y={node.y - 11} width={22} height={22}
-                    style={{ clipPath: 'circle(50%)', pointerEvents: 'none' }}
-                  />
-                ) : (
-                  <>
-                    <circle cx={node.x} cy={node.y} r={11} fill="rgba(30,25,15,0.85)"
-                      stroke="rgba(240,232,216,0.3)" strokeWidth={1.5} />
-                    <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
-                      fontSize={9} fill="rgba(111,166,122,0.9)" style={{ userSelect: 'none', pointerEvents: 'none' }}>✓</text>
-                  </>
-                )}
-                {/* Colored ring border */}
-                <circle cx={node.x} cy={node.y} r={11} fill="none"
-                  stroke={isHero ? '#d4a85a' : dimmed ? 'rgba(240,232,216,0.3)' : color}
-                  strokeWidth={isHero ? 2.5 : 2} style={{ pointerEvents: 'none' }} />
-                {/* Label with outline */}
-                <text x={node.x} y={node.y + 16.5} textAnchor="middle" fontSize={5.5}
-                  stroke="rgba(0,0,0,0.9)" strokeWidth={2.5}
-                  fill="rgba(240,232,216,0.9)" paintOrder="stroke"
-                  style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                  {node.label}
-                </text>
-              </g>
-            )
-          })}
-          {/* Hero ring on top */}
-          <circle cx={heroNode.x} cy={heroNode.y} r={15} fill="none"
-            stroke="#d4a85a" strokeWidth={2.5} opacity={0.95} style={{ pointerEvents: 'none' }} />
-        </svg>
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 12, padding: '0 16px 8px', fontSize: 10, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}>
-        {([['town','Місто'], ['resource','Ресурс'], ['dungeon','Данж'], ['camp','Табір'], ['artifact','Артефакт']] as [NodeType, string][]).map(([t, label]) => (
-          <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <img src={NODE_ICON_SRC[t]} alt="" style={{ width: 14, height: 14, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${NODE_COLOR[t]}88` }} />
-            <span style={{ color: NODE_COLOR[t], opacity: 0.8 }}>{label}</span>
-          </span>
-        ))}
-      </div>
-
-      {/* Mini army bar */}
-      {playerUnits.length > 0 && (
-        <div style={{
-          padding: '8px 16px 10px', background: '#17150f',
-          borderTop: '1px solid rgba(240,232,216,0.07)',
-          display: 'flex', gap: 7, overflowX: 'auto', flexShrink: 0,
-          scrollbarWidth: 'none',
-        } as React.CSSProperties}>
-          {playerUnits.map(unit => {
-            const portrait = getPortraitSrc(unit)
-            const hpPct = Math.max(0, unit.hp / unit.maxHp)
-            const hpColor = hpPct > 0.6 ? '#6fa67a' : hpPct > 0.3 ? '#d4a85a' : '#c07070'
-            return (
-              <div key={unit.id} style={{ flexShrink: 0, width: 36 }}>
-                <div style={{ width: 36, height: 42, borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(240,232,216,0.12)', background: '#17150f' }}>
-                  {portrait ? <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} /> : <div style={{ width: '100%', height: '100%', background: '#1a1810' }} />}
+            <div style={{ padding: '0 16px 40px' }}>
+              {/* Army tab */}
+              {fortressTab === 'army' && ([0, 1] as const).map(row => (
+                <div key={row} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+                    {ROW_LABEL[row]}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {Array.from({ length: 4 }, (_, slot) => {
+                      const unlocked = isSlotUnlocked(row, slot, maxArmySlots)
+                      const unit     = playerUnits.find(u => u.row === row && u.slot === slot)
+                      const isSel    = unit?.id === selectedUnitId
+                      if (!unlocked) return (
+                        <div key={slot} style={{ flex: 1, height: 74, borderRadius: 8, background: 'rgba(240,232,216,0.02)', border: '1px dashed rgba(240,232,216,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 14, color: 'rgba(240,232,216,0.15)' }}>🔒</span>
+                        </div>
+                      )
+                      if (!unit) return (
+                        <div key={slot} onClick={() => { setFortressTab('hire'); setHirePopup({ row, slot }) }} style={{ flex: 1, height: 74, borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px dashed rgba(240,232,216,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <span style={{ fontSize: 20, color: 'rgba(240,232,216,0.22)' }}>+</span>
+                        </div>
+                      )
+                      return (
+                        <div key={slot} onClick={() => handleSlotClick(row, slot)} style={{ flex: 1, height: 74, borderRadius: 8, overflow: 'hidden', border: `2px solid ${isSel ? '#d4a85a' : 'rgba(240,232,216,0.12)'}`, cursor: 'pointer', position: 'relative' }}>
+                          <img src={getPortrait(unit)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.75), transparent)', padding: '4px 4px 3px', fontSize: 8, color: '#fff', fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>
+                            {unit.name}<br />lv{unit.level ?? 1}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-                <div style={{ height: 3, background: 'rgba(240,232,216,0.1)', borderRadius: 2, marginTop: 2 }}>
-                  <div style={{ width: `${hpPct * 100}%`, height: '100%', background: hpColor, borderRadius: 2, transition: 'width 0.3s' }} />
+              ))}
+              {fortressTab === 'army' && selectedUnitId && (
+                <div style={{ fontSize: 11, color: '#b07850', textAlign: 'center', marginTop: 4 }}>
+                  Натисни інший слот у тому ж ряду для переставлення
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+              )}
 
-      {/* Node info panel */}
-      <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.08)', padding: '14px 16px 20px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
-          <div style={{
-            width: 38, height: 38, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
-            border: `1.5px solid ${NODE_COLOR[panelNode.type]}55`,
-            background: '#1a1510', position: 'relative',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {panelStatus === 'cleared' || panelStatus === 'collected' ? (
-              <span style={{ fontSize: 17 }}>✓</span>
-            ) : (
-              <img src={NODE_ICON_SRC[panelNode.type]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            )}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#f0e8d8' }}>{panelNode.label}</span>
-              {panelNode.difficulty && panelStatus === 'enemy' && (
-                <span style={{
-                  fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 600,
-                  background: `${DIFFICULTY_COLOR[panelNode.difficulty] ?? '#b07850'}18`,
-                  color: DIFFICULTY_COLOR[panelNode.difficulty] ?? '#b07850',
-                  border: `1px solid ${DIFFICULTY_COLOR[panelNode.difficulty] ?? '#b07850'}33`,
-                }}>{panelNode.difficulty}</span>
+              {/* Hire tab */}
+              {fortressTab === 'hire' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {hirePopup && (
+                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 4 }}>
+                      Ряд: {ROW_LABEL[hirePopup.row]} · Слот {hirePopup.slot + 1}
+                    </div>
+                  )}
+                  {HIRE_INFO
+                    .filter(h => !hirePopup || (hirePopup.row === 0 ? h.cls === 'warrior' || h.cls === 'catapult' : h.cls !== 'warrior'))
+                    .map(h => {
+                      if (hirePopup) {
+                        const hasCat     = playerUnits.some(u => u.class === 'catapult')
+                        const catBlocked = h.cls === 'catapult' && (hasCat || playerUnits.some(u => u.row === 0 && u.slot === 3))
+                        if (catBlocked) return null
+                      }
+                      const canAfford = gold >= h.cost
+                      return (
+                        <button
+                          key={h.cls}
+                          disabled={!canAfford}
+                          onClick={() => {
+                            if (!canAfford || !hirePopup) return
+                            onHireUnit(h.cls, hirePopup.row, hirePopup.slot)
+                            setHirePopup(null)
+                            setFortressTab('army')
+                          }}
+                          style={{ padding: '11px 14px', borderRadius: 9, background: canAfford ? 'rgba(240,232,216,0.06)' : 'rgba(240,232,216,0.02)', border: `1px solid ${canAfford ? 'rgba(240,232,216,0.14)' : 'rgba(240,232,216,0.05)'}`, color: canAfford ? '#f0e8d8' : 'rgba(240,232,216,0.25)', cursor: canAfford ? 'pointer' : 'not-allowed', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{h.label}</div>
+                            <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginTop: 1 }}>{h.desc}</div>
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: canAfford ? '#d4a85a' : 'rgba(240,232,216,0.2)' }}>💰 {h.cost}</div>
+                        </button>
+                      )
+                    })}
+                  {!hirePopup && (
+                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.3)', textAlign: 'center', marginTop: 8 }}>
+                      Перейди на вкладку Армія і натисни порожній слот
+                    </div>
+                  )}
+                </div>
               )}
-              {panelIsHero && <span style={{ fontSize: 10, color: '#d4a85a', opacity: 0.7 }}>▲ ти тут</span>}
-              {previewNodeId && !panelIsHero && reachable.has(previewNodeId) && (
-                <span style={{ fontSize: 10, color: 'rgba(240,232,216,0.35)' }}>
-                  (-{getPathCost(heroNodeId, previewNodeId, statuses)} кроки)
-                </span>
+
+              {/* Upgrade tab */}
+              {fortressTab === 'upgrade' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(240,232,216,0.5)', padding: '4px 0' }}>
+                    <span>Рівень {fortressLevel} — {FORTRESS_NAMES[fortressLevel]}</span>
+                    <span>Юніти до lv{fortressLevel}</span>
+                  </div>
+                  {fortressLevel < 5 ? (
+                    <>
+                      <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>
+                        Апгрейд до {FORTRESS_NAMES[fortressLevel + 1]} (lv{fortressLevel + 1} юніти)
+                      </div>
+                      <button
+                        disabled={gold < FORTRESS_UPGRADE_COST[fortressLevel + 1]}
+                        onClick={() => { onUpgradeFortress(); }}
+                        style={{
+                          padding: '12px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                          background: gold >= FORTRESS_UPGRADE_COST[fortressLevel + 1] ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.04)',
+                          border: `1px solid ${gold >= FORTRESS_UPGRADE_COST[fortressLevel + 1] ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`,
+                          color: gold >= FORTRESS_UPGRADE_COST[fortressLevel + 1] ? '#d4a85a' : 'rgba(240,232,216,0.2)',
+                          cursor: gold >= FORTRESS_UPGRADE_COST[fortressLevel + 1] ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        🏰 Апгрейд · 💰 {FORTRESS_UPGRADE_COST[fortressLevel + 1]}
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 13, color: '#d4a85a', textAlign: 'center', padding: '12px 0' }}>⭐ Максимальний рівень</div>
+                  )}
+                  <div style={{ borderTop: '1px solid rgba(240,232,216,0.08)', paddingTop: 10, marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 8 }}>
+                      Слоти армії ({maxArmySlots}/8)
+                    </div>
+                    {maxArmySlots < 8 ? (
+                      <button
+                        disabled={!SLOT_COSTS[maxArmySlots] || gold < SLOT_COSTS[maxArmySlots]}
+                        onClick={onPurchaseSlot}
+                        style={{
+                          width: '100%', padding: '11px', borderRadius: 9, fontSize: 12, fontWeight: 600,
+                          background: gold >= (SLOT_COSTS[maxArmySlots] ?? 999) ? 'rgba(111,166,122,0.1)' : 'rgba(240,232,216,0.04)',
+                          border: `1px solid ${gold >= (SLOT_COSTS[maxArmySlots] ?? 999) ? 'rgba(111,166,122,0.3)' : 'rgba(240,232,216,0.08)'}`,
+                          color: gold >= (SLOT_COSTS[maxArmySlots] ?? 999) ? '#6fa67a' : 'rgba(240,232,216,0.2)',
+                          cursor: gold >= (SLOT_COSTS[maxArmySlots] ?? 999) ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        + Розблокувати слот · 💰 {SLOT_COSTS[maxArmySlots] ?? '—'}
+                      </button>
+                    ) : (
+                      <div style={{ fontSize: 12, color: '#6fa67a', textAlign: 'center' }}>✓ Всі слоти відкриті</div>
+                    )}
+                  </div>
+                </div>
               )}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.42)', marginTop: 4, lineHeight: 1.45 }}>
-              {panelNode.desc}
-            </div>
-            {panelNode.enemyCounts && panelStatus === 'enemy' && (
-              <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                {(['warrior', 'archer', 'mage', 'catapult'] as UnitClass[])
-                  .flatMap(cls => {
-                    const n = cls === 'warrior' ? panelNode.enemyCounts!.warriors
-                            : cls === 'archer'  ? panelNode.enemyCounts!.archers
-                            : cls === 'mage'    ? panelNode.enemyCounts!.mages
-                            : panelNode.enemyCounts!.catapults
-                    return Array.from({ length: n }, (_, i) => ({ cls, i }))
-                  })
-                  .map(({ cls, i }) => {
-                    const src = enemyPortrait(cls, panelNode.enemyLevel ?? 1)
+
+              {/* Revive tab */}
+              {fortressTab === 'revive' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {deadUnits.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.3)', textAlign: 'center', padding: '16px 0' }}>
+                      Немає загиблих юнітів
+                    </div>
+                  ) : deadUnits.map(u => {
+                    const cost     = getReviveCost(u)
+                    const canAfford = gold >= cost
+                    const mustBeAtDans = armyNodeId !== 'dans'
                     return (
-                      <div key={`${cls}-${i}`} style={{ width: 30, height: 38, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(192,112,112,0.3)', flexShrink: 0, background: '#1a0a0a' }}>
-                        {src && <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />}
+                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9, background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.08)' }}>
+                        <img src={getPortrait(u)} alt="" style={{ width: 44, height: 52, borderRadius: 6, objectFit: 'cover', objectPosition: 'center top', opacity: 0.6 }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(240,232,216,0.7)' }}>{u.name}</div>
+                          <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)', marginTop: 1 }}>{CLASS_UA[u.class]} lv{u.level ?? 1}</div>
+                          {mustBeAtDans && <div style={{ fontSize: 9, color: '#c07070', marginTop: 2 }}>Треба бути в Данс</div>}
+                        </div>
+                        <button
+                          disabled={!canAfford || mustBeAtDans}
+                          onClick={() => onReviveUnit(u.id)}
+                          style={{ padding: '7px 12px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: canAfford && !mustBeAtDans ? 'rgba(212,168,90,0.15)' : 'rgba(240,232,216,0.04)', border: `1px solid ${canAfford && !mustBeAtDans ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.08)'}`, color: canAfford && !mustBeAtDans ? '#d4a85a' : 'rgba(240,232,216,0.2)', cursor: canAfford && !mustBeAtDans ? 'pointer' : 'not-allowed' }}
+                        >
+                          💰 {cost}
+                        </button>
                       </div>
                     )
                   })}
-                {panelNode.goldReward && (
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: 'rgba(212,168,90,0.1)', color: '#d4a85a', border: '1px solid rgba(212,168,90,0.2)', marginLeft: 4 }}>+{panelNode.goldReward}💰</span>
-                )}
-              </div>
-            )}
-            {panelNode.type === 'resource' && panelStatus !== 'collected' && (
-              <div style={{ fontSize: 11, color: '#6fa67a', marginTop: 5 }}>💰 +{panelNode.goldReward} золота</div>
-            )}
-            {panelNode.type === 'artifact' && panelStatus !== 'collected' && (
-              <div style={{ fontSize: 11, color: '#a080c8', marginTop: 5 }}>✦ +{panelNode.xpReward} XP усім юнітам</div>
-            )}
-            {(panelStatus === 'cleared' || panelStatus === 'collected') && (
-              <div style={{ fontSize: 11, color: 'rgba(111,166,122,0.8)', marginTop: 5, fontWeight: 600 }}>✓ Зачищено</div>
-            )}
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          {((previewNodeId && reachable.has(previewNodeId) && panelStatus === 'enemy') ||
-            (panelIsHero && (panelNode.type === 'dungeon' || panelNode.type === 'camp') && panelStatus === 'enemy')) && (
-            <button onClick={handleAttack} style={{
-              flex: 1, padding: '11px', borderRadius: 8,
-              background: 'rgba(192,112,112,0.15)', border: '1px solid rgba(192,112,112,0.4)',
-              color: '#e08080', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>
-              ⚔ Атакувати{panelNode.goldReward ? ` (+${panelNode.goldReward}💰)` : ''}
-            </button>
-          )}
-          {panelIsHero && panelNode.type === 'resource' && panelStatus === 'neutral' && (
-            <button onClick={handleCollect} style={{ flex: 1, padding: '11px', borderRadius: 8, background: 'rgba(111,166,122,0.12)', border: '1px solid rgba(111,166,122,0.3)', color: '#7aaa82', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              💰 Зібрати +{panelNode.goldReward} золота
-            </button>
-          )}
-          {panelIsHero && panelNode.type === 'artifact' && panelStatus === 'neutral' && (
-            <button onClick={handleCollect} style={{ flex: 1, padding: '11px', borderRadius: 8, background: 'rgba(160,128,200,0.12)', border: '1px solid rgba(160,128,200,0.3)', color: '#a080c8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              ✦ Взяти (+{panelNode.xpReward} XP)
-            </button>
-          )}
-          {panelIsHero && panelNode.type === 'town' && (
-            <>
-              <button onClick={restedThisTurn ? undefined : onRest} disabled={restedThisTurn} style={{
-                flex: 1, padding: '11px', borderRadius: 8,
-                background: restedThisTurn ? 'rgba(240,232,216,0.03)' : 'rgba(212,168,90,0.1)',
-                border: `1px solid ${restedThisTurn ? 'rgba(240,232,216,0.1)' : 'rgba(212,168,90,0.3)'}`,
-                color: restedThisTurn ? 'rgba(240,232,216,0.28)' : '#d4a85a',
-                fontSize: 13, fontWeight: 600, cursor: restedThisTurn ? 'not-allowed' : 'pointer',
-              }}>
-                {restedThisTurn ? '🏠 Вже відпочили' : '🏥 Відпочити'}
-              </button>
-              <button onClick={() => { setFortressOpen(true); setFortressTab('army'); setSelectedUnitId(null) }} style={{
-                flex: 1, padding: '11px', borderRadius: 8,
-                background: 'rgba(212,168,90,0.14)', border: '1px solid rgba(212,168,90,0.35)',
-                color: '#d4a85a', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              }}>
-                🏰 Фортеця
-              </button>
-            </>
-          )}
-          {!atTown && heroAP > 0 && (
-            <button onClick={gold >= 1 ? onRestOutside : undefined} disabled={gold < 1} style={{
-              padding: '11px 10px', borderRadius: 8, flexShrink: 0,
-              background: gold >= 1 ? 'rgba(212,168,90,0.08)' : 'rgba(240,232,216,0.03)',
-              border: `1px solid ${gold >= 1 ? 'rgba(212,168,90,0.25)' : 'rgba(240,232,216,0.08)'}`,
-              color: gold >= 1 ? '#d4a85a' : 'rgba(240,232,216,0.25)',
-              fontSize: 12, fontWeight: 600, cursor: gold >= 1 ? 'pointer' : 'not-allowed',
-            }}>
-              🏥 1💰
-            </button>
-          )}
-          <button onClick={onEndTurn} style={{
-            padding: '11px 18px', borderRadius: 8, flexShrink: 0,
-            background: 'rgba(176,120,80,0.1)', border: '1px solid rgba(176,120,80,0.3)',
-            color: '#b07850', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>
-            Хід →
-          </button>
-        </div>
-      </div>
-
-      {/* ── Standalone army panel ── */}
-      {armyPanelOpen && (
-        <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 60 }}
-            onClick={() => { setArmyPanelOpen(false); setSelectedUnitId(null) }} />
-          <div style={{
-            position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-            width: '100%', maxWidth: 560, background: '#17150f',
-            borderRadius: '18px 18px 0 0', zIndex: 61, padding: '16px 16px 36px',
-            fontFamily: "'Inter', sans-serif", maxHeight: '75vh', display: 'flex', flexDirection: 'column',
-          }}>
-            <div style={{ width: 36, height: 3, background: 'rgba(240,232,216,0.15)', borderRadius: 2, margin: '0 auto 14px' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#d4a85a' }}>⚔ Армія ({playerUnits.length}/{maxArmySlots})</div>
-              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>Оберіть юніта, потім слот у тому ж ряду</div>
-            </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              <ArmyGrid reorder={true} />
+                </div>
+              )}
             </div>
           </div>
         </>
       )}
 
-      {/* ── Fortress panel ── */}
-      {fortressOpen && (
-          <div style={{
-            position: 'fixed', inset: 0, zIndex: 2000,
-            fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
-            overflow: 'hidden',
-          }}>
-            {/* Full-screen background image */}
-            <img
-              src={`/sacred/fortress/fortress-${fortressLevel ?? 1}.jpg`}
-              alt=""
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', zIndex: 0 }}
-            />
-            {/* Dark overlay */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(10,8,4,0.82) 40%, rgba(10,8,4,0.97) 100%)', zIndex: 1 }} />
-
-            {/* Content */}
-            <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {/* Top bar: close + fortress name */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '52px 16px 0' }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Рівень {fortressLevel}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel ?? 1]}</div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                  <button
-                    onClick={() => { setFortressOpen(false); setSelectedUnitId(null) }}
-                    style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid rgba(240,232,216,0.2)', background: 'rgba(0,0,0,0.4)', color: 'rgba(240,232,216,0.7)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >×</button>
-                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', textAlign: 'right' }}>
-                    Макс. юніти: <span style={{ color: '#d4a85a', fontWeight: 700 }}>{fortressLevel}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tabs */}
-              <div style={{ display: 'flex', gap: 6, padding: '16px 16px 0' }}>
-                {(['army', 'hire', 'upgrade'] as const).map(tab => (
-                  <button key={tab} onClick={() => { setFortressTab(tab); setSelectedUnitId(null) }} style={{
-                    flex: 1, padding: '8px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    background: fortressTab === tab ? 'rgba(212,168,90,0.2)' : 'rgba(240,232,216,0.06)',
-                    border: `1px solid ${fortressTab === tab ? 'rgba(212,168,90,0.5)' : 'rgba(240,232,216,0.1)'}`,
-                    color: fortressTab === tab ? '#d4a85a' : 'rgba(240,232,216,0.45)',
-                  }}>
-                    {tab === 'army' ? `⚔ Армія (${playerUnits.length}/${maxArmySlots})` : tab === 'hire' ? '🗡 Найм' : '🏰 Розвиток'}
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ overflowY: 'auto', flex: 1, padding: '14px 16px 0' }}>
-              {fortressTab === 'army' && (
-                <>
-                  {!isAtTown && (
-                    <div style={{ padding: '10px 12px', marginBottom: 10, borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.08)', fontSize: 11, color: 'rgba(240,232,216,0.4)', textAlign: 'center' }}>
-                      🏰 Армія та воскресіння доступні тільки в замку
-                    </div>
-                  )}
-                  {isAtTown && (
-                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 10 }}>
-                      Оберіть юніта, потім інший слот у тому ж ряду щоб поміняти
-                    </div>
-                  )}
-                  <ArmyGrid reorder={isAtTown} />
-                </>
-              )}
-
-              {fortressTab === 'hire' && (() => {
-                const HIRE_COSTS_LOCAL: Record<UnitClass, number> = { warrior: 2, archer: 3, mage: 5, catapult: 8 }
-                const HIRE_LABELS: Record<UnitClass, string> = { warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта' }
-                const hasCat = playerUnits.some(u => u.class === 'catapult')
-                const nextSlotCost = SLOT_COSTS[maxArmySlots]
-                const armyFull = playerUnits.length >= maxArmySlots
-
-                // Options per row
-                const frontOptions: UnitClass[] = ['warrior', 'catapult']
-                const backOptions: UnitClass[] = ['archer', 'mage']
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 4 }}>
-                      💰 {gold} · Слоти: {playerUnits.length}/{maxArmySlots}
-                    </div>
-
-                    {/* Hire grid — same layout as army */}
-                    {([0, 1] as const).map(row => (
-                      <div key={row}>
-                        <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {row === 0 ? 'Передній ряд' : 'Дальній ряд'}
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 8 }}>
-                          {[0, 1, 2, 3].map(slot => {
-                            // Catapult occupies row 1 at its slot — skip rendering
-                            if (row === 1 && hasCat && playerUnits.find(u => u.class === 'catapult' && u.slot === slot)) return (
-                              <div key={slot} style={{ aspectRatio: '1', borderRadius: 8 }} />
-                            )
-
-                            const unit = playerUnits.find(u => u.row === row && u.slot === slot)
-                            const unlocked = isSlotUnlocked(row, slot, maxArmySlots)
-                            const isNext = !unlocked && nextSlotCost !== undefined &&
-                              ((slot === 2 && row === 0 && maxArmySlots === 4) ||
-                               (slot === 2 && row === 1 && maxArmySlots === 5) ||
-                               (slot === 3 && row === 0 && maxArmySlots === 6) ||
-                               (slot === 3 && row === 1 && maxArmySlots === 7))
-
-                            if (!unlocked) {
-                              return (
-                                <button key={slot} onClick={isNext ? onPurchaseSlot : undefined} style={{
-                                  aspectRatio: '1', borderRadius: 8, display: 'flex', flexDirection: 'column',
-                                  alignItems: 'center', justifyContent: 'center', gap: 2,
-                                  background: isNext ? 'rgba(111,166,122,0.08)' : 'rgba(240,232,216,0.02)',
-                                  border: `1px solid ${isNext ? 'rgba(111,166,122,0.25)' : 'rgba(240,232,216,0.06)'}`,
-                                  cursor: isNext ? 'pointer' : 'default',
-                                  opacity: isNext ? 1 : 0.4,
-                                }}>
-                                  <span style={{ fontSize: 16 }}>🔒</span>
-                                  {isNext && <span style={{ fontSize: 10, color: '#7aaa82', fontWeight: 700 }}>{nextSlotCost}💰</span>}
-                                </button>
-                              )
-                            }
-
-                            if (unit) {
-                              const portrait = getPortraitSrc(unit)
-                              const isCat = unit.class === 'catapult'
-                              return (
-                                <div key={slot} style={{
-                                  aspectRatio: '1', borderRadius: 8, overflow: 'hidden', position: 'relative',
-                                  background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.1)',
-                                  gridRow: isCat ? 'span 2' : undefined,
-                                }}>
-                                  {portrait && <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                                </div>
-                              )
-                            }
-
-                            // Empty unlocked slot — show hire button
-                            const options = row === 0 ? frontOptions : backOptions
-                            const isPopupOpen = hirePopup?.row === row && hirePopup?.slot === slot
-                            const canOpen = !armyFull
-
-                            return (
-                              <div key={slot} style={{ position: 'relative' }}>
-                                <button onClick={() => canOpen && setHirePopup(isPopupOpen ? null : { row, slot })} style={{
-                                  width: '100%', aspectRatio: '1', borderRadius: 8,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  background: isPopupOpen ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
-                                  border: `1px solid ${isPopupOpen ? 'rgba(212,168,90,0.35)' : 'rgba(240,232,216,0.12)'}`,
-                                  cursor: canOpen ? 'pointer' : 'default',
-                                  fontSize: 22, color: canOpen ? 'rgba(240,232,216,0.4)' : 'rgba(240,232,216,0.15)',
-                                }}>+</button>
-
-                                {isPopupOpen && (
-                                  <div style={{
-                                    position: 'absolute', top: '110%', left: 0, zIndex: 10,
-                                    background: '#1e1a10', border: '1px solid rgba(212,168,90,0.3)',
-                                    borderRadius: 10, padding: 8, minWidth: 130,
-                                    display: 'flex', flexDirection: 'column', gap: 6,
-                                  }}>
-                                    {options.map(cls => {
-                                      const cost = HIRE_COSTS_LOCAL[cls]
-                                      const canAfford = gold >= cost
-                                      // Catapult: back-row same slot must be unlocked and free
-                                      const backFree = cls !== 'catapult' || (
-                                        isSlotUnlocked(1, slot, maxArmySlots) &&
-                                        !playerUnits.find(u => u.row === 1 && u.slot === slot)
-                                      )
-                                      const canHire = canAfford && backFree
-                                      return (
-                                        <button key={cls} disabled={!canHire} onClick={() => {
-                                          if (!canHire) return
-                                          onHireUnit?.(cls, row, slot)
-                                          setHirePopup(null)
-                                        }} style={{
-                                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                          padding: '6px 8px', borderRadius: 7, cursor: canHire ? 'pointer' : 'not-allowed',
-                                          background: canHire ? 'rgba(212,168,90,0.1)' : 'rgba(240,232,216,0.03)',
-                                          border: `1px solid ${canHire ? 'rgba(212,168,90,0.3)' : 'rgba(240,232,216,0.07)'}`,
-                                          opacity: canHire ? 1 : 0.45,
-                                        }}>
-                                          <span style={{ fontSize: 12, color: canHire ? '#f0e8d8' : 'rgba(240,232,216,0.4)', fontWeight: 600 }}>
-                                            {HIRE_LABELS[cls]}
-                                          </span>
-                                          <span style={{ fontSize: 11, color: canHire ? '#d4a85a' : 'rgba(212,168,90,0.35)', fontWeight: 700 }}>
-                                            {cost}💰
-                                          </span>
-                                        </button>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
-
-              {fortressTab === 'upgrade' && (() => {
-                const nextLevel = (fortressLevel ?? 1) + 1
-                const cost = FORTRESS_UPGRADE_COST[nextLevel]
-                const canAfford = gold >= (cost ?? 0)
-                const isMaxed = (fortressLevel ?? 1) >= 5
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {isMaxed ? (
-                      <div style={{ padding: '20px', textAlign: 'center', color: '#d4a85a', fontWeight: 600 }}>
-                        🏆 Фортеця досягла максимального рівня!
-                      </div>
-                    ) : (
-                      <>
-                        <div style={{ padding: '12px', borderRadius: 10, background: 'rgba(212,168,90,0.06)', border: '1px solid rgba(212,168,90,0.15)' }}>
-                          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.5)', marginBottom: 6 }}>Наступний рівень</div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>
-                            {FORTRESS_NAMES[nextLevel]} (Рівень {nextLevel})
-                          </div>
-                          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.55)' }}>
-                            Дозволить юнітам досягати рівня {nextLevel}
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {[2, 3, 4, 5].map(lvl => {
-                            const upgCost = FORTRESS_UPGRADE_COST[lvl]
-                            const done = (fortressLevel ?? 1) >= lvl
-                            const isCurrent = lvl === nextLevel
-                            return (
-                              <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: done ? 0.4 : 1 }}>
-                                <div style={{
-                                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  fontSize: 10, fontWeight: 700,
-                                  background: done ? 'rgba(111,166,122,0.2)' : isCurrent ? 'rgba(212,168,90,0.2)' : 'rgba(240,232,216,0.06)',
-                                  border: `1px solid ${done ? 'rgba(111,166,122,0.4)' : isCurrent ? 'rgba(212,168,90,0.4)' : 'rgba(240,232,216,0.1)'}`,
-                                  color: done ? '#6fa67a' : isCurrent ? '#d4a85a' : 'rgba(240,232,216,0.3)',
-                                }}>
-                                  {done ? '✓' : lvl}
-                                </div>
-                                <div style={{ flex: 1 }}>
-                                  <span style={{ fontSize: 12, color: done ? 'rgba(240,232,216,0.4)' : isCurrent ? '#f0e8d8' : 'rgba(240,232,216,0.5)', fontWeight: isCurrent ? 600 : 400 }}>
-                                    {FORTRESS_NAMES[lvl]}
-                                  </span>
-                                </div>
-                                <span style={{ fontSize: 11, color: 'rgba(212,168,90,0.7)', flexShrink: 0 }}>{upgCost}💰</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <button
-                          onClick={canAfford ? onUpgradeFortress : undefined}
-                          disabled={!canAfford}
-                          style={{
-                            padding: '12px', borderRadius: 10, fontSize: 13, fontWeight: 700,
-                            cursor: canAfford ? 'pointer' : 'not-allowed', marginTop: 4,
-                            background: canAfford ? 'rgba(212,168,90,0.18)' : 'rgba(240,232,216,0.04)',
-                            border: `1px solid ${canAfford ? 'rgba(212,168,90,0.5)' : 'rgba(240,232,216,0.1)'}`,
-                            color: canAfford ? '#d4a85a' : 'rgba(240,232,216,0.25)',
-                          }}
-                        >
-                          {canAfford
-                            ? `🏰 Покращити до ${FORTRESS_NAMES[nextLevel]} — ${cost}💰`
-                            : `Не вистачає золота (потрібно ${cost}💰, є ${gold}💰)`}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )
-              })()}
-            </div>
-            </div>
-          </div>
+      {/* Battle result toast */}
+      {battleResult && (
+        <div style={{ position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)', background: '#1a3a1a', border: '1px solid rgba(111,166,122,0.5)', borderRadius: 10, padding: '12px 22px', zIndex: 60, textAlign: 'center', minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+          {battleResult.gold > 0 && <div style={{ fontSize: 14, color: '#7aaa82', fontWeight: 700 }}>+💰 {battleResult.gold} золота</div>}
+          {battleResult.levelUps.map(name => (
+            <div key={name} style={{ fontSize: 12, color: '#d4a85a', marginTop: 3 }}>⭐ {name} підвищив рівень!</div>
+          ))}
+        </div>
       )}
     </div>
   )

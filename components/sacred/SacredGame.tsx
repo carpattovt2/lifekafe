@@ -2,17 +2,20 @@
 
 import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import {
-  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS, buildCustomArmy, buildLeveledArmy,
-  generateRecruitOptions, addUnitToArmy, addUnitAtSlot,
+  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
+  addUnitAtSlot,
 } from '@/lib/sacred/game'
-import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, TowerFloor, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
-import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS, TOWER_FLOORS } from '@/lib/sacred/types'
+import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS } from '@/lib/sacred/types'
 import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
 import WorldMap from './WorldMap'
-import { createInitialMapState, getPathCost, WORLD_NODES, FORTRESS_UPGRADE_COST, SLOT_COSTS, isSlotUnlocked, getReviveCost } from '@/lib/sacred/worldMap'
-import type { WorldMapState } from '@/lib/sacred/worldMap'
+import {
+  TERRITORIES, createInitialTerritoryState, getTerritoryById, buildArmyFromSpecs,
+  HIRE_COSTS, FORTRESS_UPGRADE_COST, SLOT_COSTS, getReviveCost,
+} from '@/lib/sacred/territories'
+import type { TerritoryMapState } from '@/lib/sacred/territories'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
 
@@ -838,10 +841,7 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle, onWorldMap, onContinueCampaign, hasCampaignSave }: {
-  onStartTower: () => void
-  onContinueTower: () => void
-  savedTowerFloor: number | null
+function Landing({ onFreeBattle, onWorldMap, onContinueCampaign, hasCampaignSave }: {
   onFreeBattle: () => void
   onWorldMap: () => void
   onContinueCampaign: () => void
@@ -953,35 +953,6 @@ function Landing({ onStartTower, onContinueTower, savedTowerFloor, onFreeBattle,
         }}>
           Вільний бій
         </button>
-
-        {savedTowerFloor ? (
-          <>
-            <button onClick={onContinueTower} style={{
-              padding: '15px 0', fontSize: 15, fontWeight: 700,
-              background: 'linear-gradient(135deg, #4a7a5a, #2e5c3e)',
-              color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
-              boxShadow: '0 4px 20px rgba(74,122,90,0.4)',
-            }}>
-              Продовжити тауер ({savedTowerFloor}/{TOWER_FLOORS.length})
-            </button>
-            <button onClick={onStartTower} style={{
-              padding: '11px 0', fontSize: 13, fontWeight: 600,
-              background: 'transparent', color: 'rgba(240,232,216,0.45)',
-              border: '1px solid rgba(240,232,216,0.12)', borderRadius: 10, cursor: 'pointer',
-            }}>
-              Новий тауер
-            </button>
-          </>
-        ) : (
-          <button onClick={onStartTower} style={{
-            padding: '15px 0', fontSize: 15, fontWeight: 700,
-            background: 'linear-gradient(135deg, #4a7a5a, #2e5c3e)',
-            color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(74,122,90,0.4)',
-          }}>
-            Тауер
-          </button>
-        )}
         <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
           v0.9.2
         </div>
@@ -1113,232 +1084,23 @@ function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path
   )
 }
 
-// ── Recruitment screen ─────────────────────────────────────────────────────────
-const CLASS_LABEL_UA: Record<UnitClass, string> = {
-  warrior: 'Воїн', archer: 'Лучник', mage: 'Маг', catapult: 'Катапульта',
-}
-const CLASS_DESC_UA: Record<UnitClass, string> = {
-  warrior: 'Передній ряд. Ближній бій, щит, провокація.',
-  archer:  'Дальній ряд. Постріл, прицілення, пасивне отруєння.',
-  mage:    'Підтримка. Магічні атаки, шлях обирається після рівня 1.',
-  catapult: '',
-}
 
-function RecruitmentScreen({ options, onPick, onSkip }: {
-  options: GameUnit[]; onPick: (cls: UnitClass) => void; onSkip: () => void
-}) {
-  return (
-    <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
-      fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', padding: '32px 24px',
-    }}>
-      <div style={{ fontSize: 28, marginBottom: 8 }}>🎖</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: '#b07850', marginBottom: 6 }}>Нове поповнення!</div>
-      <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 28, textAlign: 'center' }}>
-        Після перемоги до тебе приєднується новий боєць. Обери одного:
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320 }}>
-        {options.map((u, i) => {
-          const AvatarSVG = CLASS_SVG[u.class]
-          return (
-            <button key={i} onClick={() => onPick(u.class)} style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
-              borderRadius: 12, border: '1.5px solid rgba(176,120,80,0.3)',
-              background: 'rgba(176,120,80,0.06)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-            }}>
-              <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(176,120,80,0.12)', border: '1.5px solid rgba(176,120,80,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <AvatarSVG color="#b07850" size={26} />
-              </div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>{CLASS_LABEL_UA[u.class]}</div>
-                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', lineHeight: 1.5 }}>{CLASS_DESC_UA[u.class]}</div>
-              </div>
-            </button>
-          )
-        })}
-      </div>
-      <button onClick={onSkip} style={{
-        marginTop: 20, padding: '10px 24px', fontSize: 13, color: 'rgba(240,232,216,0.45)',
-        background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}>Пропустити</button>
-    </div>
-  )
-}
-
-// ── Arrange screen (between floors) ────────────────────────────────────────────
-function ArrangeScreen({ units, onDone }: { units: GameUnit[]; onDone: (units: GameUnit[]) => void }) {
-  const [arranged, setArranged] = useState<GameUnit[]>(units)
-  const [selected, setSelected] = useState<string | null>(null)
-  const hasCatapult = arranged.some(u => u.class === 'catapult')
-
-  function handleSlotClick(row: Row, slot: number) {
-    if (hasCatapult && row === 1 && slot === 3) return
-    const occupant = arranged.find(u => u.row === row && u.slot === slot)
-    if (selected) {
-      const selUnit = arranged.find(u => u.id === selected)!
-      if (selUnit.row !== row) { setSelected(null); return } // same row only
-      if (occupant) {
-        setArranged(prev => prev.map(u => {
-          if (u.id === selUnit.id) return { ...u, slot: occupant.slot }
-          if (u.id === occupant.id) return { ...u, slot: selUnit.slot }
-          return u
-        }))
-      } else {
-        setArranged(prev => prev.map(u => u.id === selUnit.id ? { ...u, slot } : u))
-      }
-      setSelected(null)
-      return
-    }
-    if (occupant && occupant.class !== 'catapult') setSelected(occupant.id)
-  }
-
-  const rowLabel: Record<number, string> = { 0: 'Передній ряд (воїни)', 1: 'Дальній ряд (лучники + маги)' }
-
-  return (
-    <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
-      fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column',
-    }}>
-      <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#b07850', marginBottom: 2 }}>✦ Розстановка армії</div>
-        <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>Натисни юніта, потім інший слот у тому ж ряду щоб поміняти</div>
-      </div>
-      <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
-        {([0, 1] as Row[]).map(row => (
-          <div key={row} style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-              {rowLabel[row]}
-            </div>
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-              {Array.from({ length: 4 }, (_, i) => {
-                const isCatBase = hasCatapult && row === 1 && i === 3
-                const unit = arranged.find(u => u.row === row && u.slot === i)
-                const isSel = unit?.id === selected
-                const selUnit = selected ? arranged.find(u => u.id === selected) : null
-                const isTarget = selUnit && selUnit.row === row && !isCatBase && !unit && !isSel
-
-                if (isCatBase) return (
-                  <div key={i} style={{ width: 76, height: 86, borderRadius: 8, flexShrink: 0, border: '1.5px dashed rgba(128,96,168,0.25)', background: 'rgba(128,96,168,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 14, opacity: 0.4, color: '#8060a8' }}>⚙</span>
-                    <span style={{ fontSize: 7, color: '#8060a8', opacity: 0.5 }}>База</span>
-                  </div>
-                )
-
-                return (
-                  <div key={i} onClick={() => handleSlotClick(row, i)} style={{
-                    width: 76, height: 86, borderRadius: 8, flexShrink: 0,
-                    cursor: 'pointer',
-                    background: isSel ? 'rgba(111,166,122,0.15)' : isTarget ? 'rgba(176,120,80,0.08)' : unit ? '#fff' : 'rgba(0,0,0,0.02)',
-                    border: `2px solid ${isSel ? '#6fa67a' : isTarget ? '#b0785066' : unit ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.08)'}`,
-                    borderStyle: isTarget ? 'dashed' : 'solid',
-                    boxShadow: isSel ? '0 0 0 2px #6fa67a44' : 'none',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: 3, position: 'relative', overflow: 'hidden', transition: 'all 0.12s',
-                  }}>
-                    {unit ? (() => {
-                      const portrait = unit.class === 'warrior'
-                        ? ((unit.level ?? 1) >= 3 && unit.warriorPath === 'champion'
-                            ? `/sacred/warriors/champion/level${unit.level}.jpg`
-                            : `/sacred/warriors/level${Math.min(unit.level ?? 1, 4)}.jpg`)
-                        : unit.class === 'archer' ? `/sacred/archers/level${unit.level ?? 1}.jpg`
-                        : unit.class === 'mage' ? (unit.level === 1 || !unit.magePath ? `/sacred/mages/level1.jpg` : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
-                        : unit.class === 'catapult' ? (unit.level === 1 || !unit.catapultPath ? `/sacred/catapults/level1.jpg` : `/sacred/catapults/${unit.catapultPath}/level${unit.level}.jpg`)
-                        : null
-                      const unitName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
-                        ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
-                        : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
-                        : unit.class === 'archer' ? ARCHER_LEVELS[unit.level ?? 1]?.name
-                        : unit.class === 'mage' && unit.level && unit.level > 1 && unit.magePath ? MAGE_PATHS[unit.magePath][unit.level]?.name
-                        : unit.class === 'mage' ? MAGE_BASE.name : unit.name
-                      return portrait ? (
-                        <>
-                          <img src={portrait} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)' }} />
-                          <div style={{ position: 'relative', zIndex: 1, alignSelf: 'stretch', marginTop: 'auto', padding: '0 4px 4px' }}>
-                            <div style={{ fontSize: 8, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{unitName}</div>
-                            {isSel && <div style={{ fontSize: 7, color: '#7aaa82', fontWeight: 700 }}>ОБРАНИЙ</div>}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <CLASS_SVG_Component cls={unit.class} color={isSel ? '#6fa67a' : SIDE_COLOR.player} size={22} />
-                          <span style={{ fontSize: 8, color: 'rgba(240,232,216,0.45)', textAlign: 'center', lineHeight: 1.2 }}>{unitName}</span>
-                          {isSel && <span style={{ fontSize: 7, color: '#6fa67a', fontWeight: 700 }}>ОБРАНИЙ</span>}
-                        </>
-                      )
-                    })() : (
-                      <span style={{ fontSize: isTarget ? 18 : 14, color: isTarget ? '#b0785066' : 'rgba(0,0,0,0.1)' }}>
-                        {isTarget ? '+' : '·'}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-        {selected && (
-          <div style={{ textAlign: 'center', fontSize: 12, color: '#b07850', padding: '4px 0' }}>
-            Натисни інший слот у тому ж ряду щоб поміняти · або юніта щоб поміняти місцями
-          </div>
-        )}
-      </div>
-      <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
-        <button onClick={() => onDone(arranged)} style={{
-          width: '100%', padding: '14px', borderRadius: 10, border: 'none',
-          background: '#b07850', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}>
-          Продовжити →
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// Helper for ArrangeScreen SVG
-function CLASS_SVG_Component({ cls, color, size }: { cls: string; color: string; size?: number }) {
-  const Comp = CLASS_SVG[cls]
-  return Comp ? <Comp color={color} size={size} /> : null
-}
-
-const HIRE_COSTS: Record<UnitClass, number> = { warrior: 2, archer: 3, mage: 5, catapult: 8 }
-
-// ── Tower helpers ──────────────────────────────────────────────────────────────
-const LS_TOWER_FLOOR    = 'sacred_tower_floor'
-const LS_TOWER_UNITS    = 'sacred_tower_units'
-const LS_TOWER_COUNTS   = 'sacred_tower_counts'
 const LS_CAMPAIGN_MAP   = 'sacred_campaign_map'
 const LS_CAMPAIGN_UNITS = 'sacred_campaign_units'
 const LS_CAMPAIGN_DEAD  = 'sacred_campaign_dead'
 
-function prepareNextFloorUnits(towerCounts: ArmyCounts, battleUnits: GameUnit[]): GameUnit[] {
-  const freshArmy = buildCustomArmy(towerCounts, 'player')
-  return battleUnits
-    .filter(u => u.side === 'player')
-    .map(u => {
-      if (u.hp > 0) return { ...u, hp: u.maxHp, buffs: [], hasActed: false }
-      const fresh = freshArmy.find(f => f.class === u.class && f.slot === u.slot && f.row === u.row)
-        ?? freshArmy.find(f => f.class === u.class)
-      return fresh ? { ...fresh, row: u.row, slot: u.slot, xp: u.xp, level: u.level, magePath: u.magePath, catapultPath: u.catapultPath } : { ...u, hp: u.maxHp, buffs: [], hasActed: false }
-    })
-}
-
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
 
-function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, onTowerWin, onTowerLose, onBattleEnd, fortressLevelCap }: {
+function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, fortressLevelCap }: {
   counts: ArmyCounts; playerUnits?: GameUnit[]; prebuiltAiUnits?: GameUnit[]; onRestart: () => void
-  towerFloor?: TowerFloor; onTowerWin?: (units: GameUnit[]) => void; onTowerLose?: () => void
   onBattleEnd?: (units: GameUnit[], won: boolean) => void
   fortressLevelCap?: number
 }) {
   const [state, dispatch] = useReducer(
     battleReducer,
     undefined as unknown as ArmyCounts,
-    () => createInitialState(counts, playerUnits, towerFloor?.aiCounts, prebuiltAiUnits, fortressLevelCap),
+    () => createInitialState(counts, playerUnits, undefined, prebuiltAiUnits, fortressLevelCap),
   )
   const [floats, setFloats]       = useState<BattleEvent[]>([])
   const [infoUnit, setInfoUnit]   = useState<GameUnit | null>(null)
@@ -1450,10 +1212,9 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a' }}>✦ Серафити</div>
-            {towerFloor && <div style={{ fontSize: 11, color: '#b07850', fontWeight: 600, opacity: 0.8 }}>🗼 {towerFloor.floor}/{TOWER_FLOORS.length}</div>}
           </div>
           <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)' }}>
-            {towerFloor ? `${towerFloor.name} · ` : ''}Раунд {state.round}
+            Раунд {state.round}
           </div>
         </div>
       </div>
@@ -1544,27 +1305,6 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
           minHeight: 118, display: 'flex', flexDirection: 'column', justifyContent: 'center',
         }}>
         {state.phase === 'game-over' ? (
-          towerFloor ? (
-            <div style={{ padding: '16px 20px', textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 4 }}>
-                {state.winner === 'player' ? '🏆 Поверх пройдено!' : '💀 Поразка'}
-              </div>
-              <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)', marginBottom: 12 }}>
-                {state.winner === 'player' ? towerFloor.name : 'Тауер завершено. Починай спочатку.'}
-              </div>
-              {state.winner === 'player' ? (
-                <button onClick={() => onTowerWin?.(state.units)}
-                  style={{ padding: '10px 28px', background: '#7aaa82', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                  {towerFloor.floor < TOWER_FLOORS.length ? 'Далі →' : '🏆 Завершити тауер'}
-                </button>
-              ) : (
-                <button onClick={onTowerLose}
-                  style={{ padding: '10px 28px', background: '#c07070', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                  До меню
-                </button>
-              )}
-            </div>
-          ) : (
             <div style={{ padding: '16px 20px', textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: state.winner === 'player' ? '#7aaa82' : '#c07070', marginBottom: 12 }}>
                 {state.winner === 'player' ? '🏆 Перемога!' : '💀 Поразка'}
@@ -1582,7 +1322,6 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
                 </button>
               )}
             </div>
-          )
 
         ) : isPlayerTurn && actor ? (
           <div style={{ padding: '10px 16px' }}>
@@ -1612,7 +1351,13 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
               )}
             </div>
             {!state.needsTarget ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <button
+                  onClick={() => dispatch({ type: 'ADVANCE_QUEUE' })}
+                  style={{ padding: '8px 14px', background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.12)', borderRadius: 8, color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
+                >
+                  Пропустити
+                </button>
                 {mainActions.map(a => {
                   let disabled = false
                   if (a === 'provoke' && actor) {
@@ -1681,234 +1426,25 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, towerFloor, o
   )
 }
 
-// ── Tower map ──────────────────────────────────────────────────────────────────
-function aiCompositionText(counts: ArmyCounts): string {
-  const parts: string[] = []
-  if (counts.warriors)  parts.push(`${counts.warriors} воїн${counts.warriors > 1 ? 'и' : ''}`)
-  if (counts.archers)   parts.push(`${counts.archers} лучник${counts.archers > 1 ? 'и' : ''}`)
-  if (counts.mages)     parts.push(`${counts.mages} маг${counts.mages > 1 ? 'и' : ''}`)
-  if (counts.catapults) parts.push(`${counts.catapults} катапульта`)
-  return parts.join(', ') || 'немає'
-}
-
-const ENEMY_CHIPS: { key: keyof ArmyCounts; icon: string; label: string; color: string }[] = [
-  { key: 'warriors',  icon: '⚔',  label: 'воїн',      color: '#c07070' },
-  { key: 'archers',   icon: '🏹', label: 'лучник',     color: '#c4a040' },
-  { key: 'mages',     icon: '✨', label: 'маг',        color: '#7ea8c4' },
-  { key: 'catapults', icon: '⚙',  label: 'катапульта', color: '#8060a8' },
-]
-
-function TowerMap({ floorIdx, playerUnits, onEnterBattle, onBackToMenu }: {
-  floorIdx: number
-  playerUnits: GameUnit[]
-  onEnterBattle: () => void
-  onBackToMenu: () => void
-}) {
-  const currentFloor = TOWER_FLOORS[floorIdx]
-
-  return (
-    <div style={{
-      maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
-      color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
-      display: 'flex', flexDirection: 'column',
-    }}>
-      {/* Header */}
-      <div style={{ padding: '14px 20px 0', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <button onClick={onBackToMenu} style={{
-            padding: '6px 12px', fontSize: 12, color: 'rgba(240,232,216,0.5)',
-            background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.1)',
-            borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-          }}>← Меню</button>
-          <div style={{ flex: 1, fontSize: 16, fontWeight: 800, color: '#d4a85a', textAlign: 'center' }}>🗼 Тауер Серафітів</div>
-          <div style={{ width: 56 }} />
-        </div>
-        {/* Progress bar */}
-        <div style={{ display: 'flex', gap: 3, paddingBottom: 14 }}>
-          {TOWER_FLOORS.map((_, i) => (
-            <div key={i} style={{
-              flex: 1, height: 7, borderRadius: 4,
-              background: i < floorIdx
-                ? 'linear-gradient(90deg, #5a9a6a, #7aaa82)'
-                : i === floorIdx
-                  ? 'linear-gradient(90deg, #b07850, #d4a85a)'
-                  : 'rgba(240,232,216,0.08)',
-              transition: 'background 0.3s',
-              boxShadow: i === floorIdx ? '0 0 6px rgba(176,120,80,0.5)' : 'none',
-            }} />
-          ))}
-        </div>
-      </div>
-
-      {/* Scrollable body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 24px' }}>
-
-        {/* Current floor hero card */}
-        <div style={{
-          borderRadius: 14, marginBottom: 16, overflow: 'hidden',
-          border: '1px solid rgba(176,120,80,0.35)',
-          background: 'linear-gradient(135deg, rgba(176,120,80,0.12) 0%, rgba(176,120,80,0.05) 100%)',
-        }}>
-          <div style={{ padding: '16px 18px 14px' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#d4a85a', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
-              ⚡ Поточний поверх · {currentFloor.floor} з {TOWER_FLOORS.length}
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#f0e8d8', marginBottom: 10, lineHeight: 1.15 }}>
-              {currentFloor.name}
-            </div>
-            {/* Enemy chips */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {ENEMY_CHIPS.filter(c => currentFloor.aiCounts[c.key] > 0).map(c => (
-                <div key={c.key} style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '4px 10px', borderRadius: 20,
-                  background: `${c.color}18`, border: `1px solid ${c.color}44`,
-                }}>
-                  <span style={{ fontSize: 11 }}>{c.icon}</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: c.color }}>
-                    {currentFloor.aiCounts[c.key]} {c.label}{(currentFloor.aiCounts[c.key] ?? 0) > 1 ? 'и' : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Floor list */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-            Поверхи тауера
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {TOWER_FLOORS.map((floor, i) => {
-              const isDone    = i < floorIdx
-              const isCurrent = i === floorIdx
-              const isLocked  = i > floorIdx
-              return (
-                <div key={i} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10,
-                  background: isCurrent ? 'rgba(176,120,80,0.1)' : isDone ? 'rgba(122,170,130,0.07)' : 'rgba(240,232,216,0.03)',
-                  border: `1px solid ${isCurrent ? 'rgba(176,120,80,0.4)' : isDone ? 'rgba(122,170,130,0.2)' : 'rgba(240,232,216,0.07)'}`,
-                  opacity: isLocked ? 0.55 : 1,
-                }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                    background: isDone ? '#5a9a6a' : isCurrent ? '#b07850' : 'rgba(240,232,216,0.08)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 700,
-                    color: isDone || isCurrent ? '#fff' : 'rgba(240,232,216,0.3)',
-                    boxShadow: isCurrent ? '0 0 8px rgba(176,120,80,0.4)' : 'none',
-                  }}>
-                    {isDone ? '✓' : floor.floor}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: isCurrent ? 700 : 500, color: isCurrent ? '#d4a85a' : isDone ? '#7aaa82' : '#f0e8d8' }}>
-                      {floor.name}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.38)', marginTop: 1 }}>
-                      {aiCompositionText(floor.aiCounts)}
-                    </div>
-                  </div>
-                  {isLocked && <span style={{ fontSize: 12, color: 'rgba(240,232,216,0.2)' }}>🔒</span>}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Player army */}
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-            Твоя армія
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {playerUnits.map(u => {
-              const portrait = getPortraitSrc(u)
-              const levelName = u.class === 'warrior' ? WARRIOR_LEVELS[u.level ?? 1]?.name
-                              : u.class === 'archer'  ? ARCHER_LEVELS[u.level ?? 1]?.name
-                              : u.class === 'mage' && u.level && u.level > 1 && u.magePath
-                                ? MAGE_PATHS[u.magePath][u.level]?.name
-                                : u.class === 'mage' ? MAGE_BASE.name
-                                : undefined
-              const maxLevel = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : u.class === 'mage' ? 5 : 0
-              const xpPct = maxLevel > 0 && (u.level ?? 1) < maxLevel
-                ? Math.min(100, ((u.xp ?? 0) / (u.xpToNext ?? 1)) * 100) : 0
-              const AvatarSVG = CLASS_SVG[u.class]
-              return (
-                <div key={u.id} style={{
-                  width: 62, borderRadius: 10, overflow: 'hidden', position: 'relative',
-                  border: '1.5px solid rgba(122,170,130,0.3)',
-                }}>
-                  {/* Portrait */}
-                  <div style={{ height: 68, position: 'relative', background: '#17150f' }}>
-                    {portrait
-                      ? <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <AvatarSVG color="#7aaa82" size={26} />
-                        </div>
-                    }
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 50%, rgba(0,0,0,0.75) 100%)' }} />
-                    <div style={{ position: 'absolute', bottom: 3, left: 0, right: 0, padding: '0 4px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 7, fontWeight: 700, color: '#f0e8d8', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {levelName ?? u.name}
-                      </div>
-                    </div>
-                  </div>
-                  {/* XP bar */}
-                  {xpPct > 0 && (
-                    <div style={{ height: 3, background: 'rgba(176,120,80,0.2)' }}>
-                      <div style={{ width: `${xpPct}%`, height: '100%', background: '#b07850' }} />
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Enter battle */}
-      <div style={{ padding: '12px 16px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0 }}>
-        <button onClick={onEnterBattle} style={{
-          width: '100%', padding: '15px 0', fontSize: 16, fontWeight: 700,
-          background: 'linear-gradient(135deg, #b07850, #8c5a38)',
-          color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(176,120,80,0.4)', fontFamily: 'inherit',
-        }}>
-          ⚔ Вступити в бій
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ── Root component ─────────────────────────────────────────────────────────────
-type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'tower-map' | 'tower-battle' | 'recruitment' | 'arrange' | 'free-battle' | 'world-map' | 'world-battle' | 'campaign-victory'
+type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'free-battle' | 'world-map' | 'world-battle' | 'campaign-victory'
 
 export default function SacredGame() {
   const [screen, setScreen] = useState<RootScreen>('landing')
-  const [isTowerMode, setIsTowerMode] = useState(false)
   const [counts, setCounts] = useState<ArmyCounts | null>(null)
   const [playerUnits, setPlayerUnits] = useState<GameUnit[] | null>(null)
-  const [towerFloorIdx, setTowerFloorIdx] = useState(0)
-  const [towerCounts, setTowerCounts] = useState<ArmyCounts | null>(null)
-  const [towerUnits, setTowerUnits] = useState<GameUnit[] | null>(null)
-  const [savedTowerFloor, setSavedTowerFloor] = useState<number | null>(null)
-  const [pendingRecruitmentOptions, setPendingRecruitmentOptions] = useState<GameUnit[] | null>(null)
   const [freeBattleAiUnits, setFreeBattleAiUnits] = useState<GameUnit[] | null>(null)
-  const [worldMapState, setWorldMapState] = useState<WorldMapState>(createInitialMapState)
+  const [territoryState, setTerritoryState] = useState<TerritoryMapState>(createInitialTerritoryState)
   const [worldPlayerUnits, setWorldPlayerUnits] = useState<GameUnit[] | null>(null)
-  const [worldDeadUnits,   setWorldDeadUnits]   = useState<GameUnit[]>([])
-  const [worldFightNodeId, setWorldFightNodeId] = useState<string | null>(null)
+  const [worldDeadUnits, setWorldDeadUnits] = useState<GameUnit[]>([])
+  const [worldFightTerritoryId, setWorldFightTerritoryId] = useState<string | null>(null)
   const [worldBattleResult, setWorldBattleResult] = useState<WorldBattleResult | null>(null)
-  const [worldReinforcement, setWorldReinforcement] = useState<string | null>(null)
   const [hasCampaignSave, setHasCampaignSave] = useState(false)
   const worldPreBattleUnits = useRef<GameUnit[] | null>(null)
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(LS_TOWER_FLOOR)
-      setSavedTowerFloor(saved ? parseInt(saved) : null)
       setHasCampaignSave(
         !!localStorage.getItem(LS_CAMPAIGN_MAP) && !!localStorage.getItem(LS_CAMPAIGN_UNITS)
       )
@@ -1918,12 +1454,12 @@ export default function SacredGame() {
   useEffect(() => {
     if (!worldPlayerUnits) return
     try {
-      localStorage.setItem(LS_CAMPAIGN_MAP, JSON.stringify(worldMapState))
+      localStorage.setItem(LS_CAMPAIGN_MAP,   JSON.stringify(territoryState))
       localStorage.setItem(LS_CAMPAIGN_UNITS, JSON.stringify(worldPlayerUnits))
-      localStorage.setItem(LS_CAMPAIGN_DEAD, JSON.stringify(worldDeadUnits))
+      localStorage.setItem(LS_CAMPAIGN_DEAD,  JSON.stringify(worldDeadUnits))
       setHasCampaignSave(true)
     } catch {}
-  }, [worldMapState, worldPlayerUnits, worldDeadUnits])
+  }, [territoryState, worldPlayerUnits, worldDeadUnits])
 
   function clearCampaignSave() {
     try {
@@ -1938,68 +1474,20 @@ export default function SacredGame() {
     try {
       const mapData   = JSON.parse(localStorage.getItem(LS_CAMPAIGN_MAP)   ?? '')
       const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN_UNITS) ?? '')
+      const deadData  = JSON.parse(localStorage.getItem(LS_CAMPAIGN_DEAD)  ?? '[]')
+      if (!mapData.armyNodeId) mapData.armyNodeId = 'dans'
       if (!mapData.fortressLevel) mapData.fortressLevel = 1
-      setWorldMapState(mapData)
+      if (mapData.ap === undefined) mapData.ap = 2
+      setTerritoryState(mapData)
       setWorldPlayerUnits(unitsData)
-      try {
-        const deadData = JSON.parse(localStorage.getItem(LS_CAMPAIGN_DEAD) ?? '[]')
-        setWorldDeadUnits(Array.isArray(deadData) ? deadData : [])
-      } catch { setWorldDeadUnits([]) }
+      setWorldDeadUnits(Array.isArray(deadData) ? deadData : [])
       setScreen('world-map')
     } catch {
       handleWorldMap()
     }
   }
 
-  function clearTowerSave() {
-    try {
-      localStorage.removeItem(LS_TOWER_FLOOR)
-      localStorage.removeItem(LS_TOWER_UNITS)
-      localStorage.removeItem(LS_TOWER_COUNTS)
-    } catch {}
-    setSavedTowerFloor(null)
-  }
-
-  function saveTowerProgress(floorNum: number, units: GameUnit[], tc: ArmyCounts) {
-    try {
-      localStorage.setItem(LS_TOWER_FLOOR, String(floorNum))
-      localStorage.setItem(LS_TOWER_UNITS, JSON.stringify(units))
-      localStorage.setItem(LS_TOWER_COUNTS, JSON.stringify(tc))
-    } catch {}
-    setSavedTowerFloor(floorNum)
-  }
-
-  function handleNewGame() {
-    setIsTowerMode(false)
-    setScreen('army-builder')
-  }
-
-  function handleStartTower() {
-    clearTowerSave()
-    setIsTowerMode(true)
-    setTowerFloorIdx(0)
-    setTowerUnits(null)
-    setTowerCounts(null)
-    setScreen('army-builder')
-  }
-
-  function handleContinueTower() {
-    try {
-      const floorNum = parseInt(localStorage.getItem(LS_TOWER_FLOOR) ?? '1')
-      const units = JSON.parse(localStorage.getItem(LS_TOWER_UNITS) ?? '[]') as GameUnit[]
-      const tc = JSON.parse(localStorage.getItem(LS_TOWER_COUNTS) ?? '{}') as ArmyCounts
-      setIsTowerMode(true)
-      setTowerFloorIdx(floorNum - 1)
-      setTowerUnits(units)
-      setTowerCounts(tc)
-      setScreen('tower-map')
-    } catch {
-      handleStartTower()
-    }
-  }
-
   function handleFreeBattle() {
-    setIsTowerMode(false)
     setScreen('free-battle')
   }
 
@@ -2012,32 +1500,35 @@ export default function SacredGame() {
 
   function handleWorldMap() {
     clearCampaignSave()
-    const init = createInitialMapState()
-    setWorldMapState({ ...init, gold: 10 })
+    setTerritoryState(createInitialTerritoryState())
     setWorldPlayerUnits([])
+    setWorldDeadUnits([])
     setScreen('world-map')
   }
 
-  function handleWorldMove(nodeId: string) {
-    const cost = getPathCost(worldMapState.heroNodeId, nodeId, worldMapState.statuses)
-    if (cost === 0 || cost > worldMapState.heroAP) return
-    setWorldMapState(prev => ({ ...prev, heroNodeId: nodeId, heroAP: prev.heroAP - cost }))
+  function handleTerritoryMove(territoryId: string) {
+    setTerritoryState(prev => ({
+      ...prev,
+      armyNodeId: territoryId,
+      ap: prev.ap - 1,
+    }))
   }
 
-  function handleWorldFight(nodeId: string) {
+  function handleTerritoryAttack(territoryId: string) {
     worldPreBattleUnits.current = worldPlayerUnits
-    setWorldFightNodeId(nodeId)
+    setWorldFightTerritoryId(territoryId)
+    setTerritoryState(prev => ({ ...prev, ap: prev.ap - 1 }))
     setScreen('world-battle')
   }
 
-  function handleWorldBattleEnd(units: GameUnit[], won: boolean) {
+  function handleTerritoryBattleEnd(units: GameUnit[], won: boolean) {
     const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
-    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [], hp: 0 }))
+    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
     setWorldPlayerUnits(survived)
-    if (fallen.length > 0) setWorldDeadUnits(prev => [...prev, ...fallen])
+    setWorldDeadUnits(prev => [...prev, ...fallen])
 
-    const fightNodeDef = worldFightNodeId ? WORLD_NODES.find(n => n.id === worldFightNodeId) : null
-    const goldGained = won ? (fightNodeDef?.goldReward ?? 0) : 0
+    const territory  = worldFightTerritoryId ? getTerritoryById(worldFightTerritoryId) : null
+    const goldGained = won ? (territory?.goldReward ?? 0) : 0
 
     const levelUps: string[] = []
     if (won && worldPreBattleUnits.current) {
@@ -2047,101 +1538,36 @@ export default function SacredGame() {
       }
     }
 
-    if (won && worldFightNodeId) {
-      setWorldMapState(prev => ({
+    const fightId = worldFightTerritoryId
+    if (won && fightId) {
+      setTerritoryState(prev => ({
         ...prev,
-        statuses: { ...prev.statuses, [worldFightNodeId]: 'cleared' },
-        gold: prev.gold + goldGained,
-        heroAP: 0,
+        ownership:  { ...prev.ownership, [fightId]: 'player' },
+        gold:       prev.gold + goldGained,
+        armyNodeId: fightId,
       }))
-    } else {
-      setWorldMapState(prev => ({ ...prev, heroAP: 0 }))
     }
 
-    if (won && (goldGained > 0 || levelUps.length > 0)) {
+    if (goldGained > 0 || levelUps.length > 0) {
       setWorldBattleResult({ gold: goldGained, levelUps })
     }
 
     worldPreBattleUnits.current = null
-    setWorldFightNodeId(null)
+    setWorldFightTerritoryId(null)
 
-    if (won && worldFightNodeId === 'boss') {
+    if (won && fightId === 'bebe') {
       setScreen('campaign-victory')
     } else {
       setScreen('world-map')
     }
   }
 
-  function handleWorldCollect(nodeId: string) {
-    const nodeDef = WORLD_NODES.find(n => n.id === nodeId)!
-    const goldGain = nodeDef.goldReward ?? 0
-    const xpGain   = nodeDef.xpReward ?? 0
-    setWorldMapState(prev => ({
-      ...prev,
-      gold: prev.gold + goldGain,
-      statuses: { ...prev.statuses, [nodeId]: 'collected' },
-    }))
-    if (xpGain > 0) {
-      setWorldPlayerUnits(prev => prev
-        ? prev.map(u => ({ ...u, xp: (u.xp ?? 0) + xpGain }))
-        : prev
-      )
-    }
-  }
-
   function handleHireUnit(unitClass: UnitClass, row: number, slot: number) {
     if (!worldPlayerUnits) return
     const cost = HIRE_COSTS[unitClass]
-    if (worldMapState.gold < cost) return
+    if (territoryState.gold < cost) return
     setWorldPlayerUnits(addUnitAtSlot(worldPlayerUnits, unitClass, row, slot))
-    setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost }))
-  }
-
-  function handleReviveUnit(unitId: string) {
-    const unit = worldDeadUnits.find(u => u.id === unitId)
-    if (!unit || !worldPlayerUnits) return
-    const cost = getReviveCost(unit)
-    if (worldMapState.gold < cost) return
-    if (worldPlayerUnits.length >= worldMapState.maxArmySlots) return
-    // Try original slot, else first free unlocked slot in same row
-    const slotFree = (row: number, slot: number) =>
-      isSlotUnlocked(row, slot, worldMapState.maxArmySlots) &&
-      !worldPlayerUnits.find(u => u.row === row && u.slot === slot)
-    let placed = false
-    if (slotFree(unit.row, unit.slot)) {
-      setWorldPlayerUnits(prev => prev ? [...prev, { ...unit, hp: unit.maxHp }] : prev)
-      placed = true
-    } else {
-      for (let s = 0; s <= 3; s++) {
-        if (slotFree(unit.row, s)) {
-          setWorldPlayerUnits(prev => prev ? [...prev, { ...unit, hp: unit.maxHp, slot: s }] : prev)
-          placed = true; break
-        }
-      }
-    }
-    if (placed) {
-      setWorldDeadUnits(prev => prev.filter(u => u.id !== unitId))
-      setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost }))
-    }
-  }
-
-  function handlePurchaseSlot() {
-    const cost = SLOT_COSTS[worldMapState.maxArmySlots]
-    if (cost === undefined || worldMapState.gold < cost) return
-    setWorldMapState(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
-  }
-
-  function handleFortressUpgrade() {
-    const currentLevel = worldMapState.fortressLevel ?? 1
-    if (currentLevel >= 5) return
-    const nextLevel = currentLevel + 1
-    const cost = FORTRESS_UPGRADE_COST[nextLevel]
-    if (worldMapState.gold < cost) return
-    setWorldMapState(prev => ({
-      ...prev,
-      gold: prev.gold - cost,
-      fortressLevel: nextLevel as 1 | 2 | 3 | 4 | 5,
-    }))
+    setTerritoryState(prev => ({ ...prev, gold: prev.gold - cost }))
   }
 
   function handleReorderWorldUnits(id1: string, id2: string) {
@@ -2159,119 +1585,76 @@ export default function SacredGame() {
   }
 
   function handleMoveWorldUnitSlot(id: string, row: number, slot: number) {
-    if (!isSlotUnlocked(row, slot, worldMapState.maxArmySlots)) return
     setWorldPlayerUnits(prev => {
       if (!prev) return prev
       return prev.map(u => u.id === id ? { ...u, row: row as Row, slot } : u)
     })
   }
 
-  function handleWorldRest() {
-    setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
-    setWorldMapState(prev => ({ ...prev, restedThisTurn: true }))
+  function handleRest() {
+    const atDans = territoryState.armyNodeId === 'dans'
+    if (!atDans && territoryState.gold < 1) return
+    setWorldPlayerUnits(prev => prev?.map(u => ({ ...u, hp: u.maxHp })) ?? prev)
+    setTerritoryState(prev => ({
+      ...prev,
+      gold:           atDans ? prev.gold : prev.gold - 1,
+      restedThisTurn: true,
+    }))
   }
 
-  function handleWorldRestOutside() {
-    if (worldMapState.gold < 1 || worldMapState.heroAP < 1) return
-    setWorldPlayerUnits(prev => prev ? prev.map(u => ({ ...u, hp: u.maxHp })) : prev)
-    setWorldMapState(prev => ({ ...prev, heroAP: prev.heroAP - 1, gold: prev.gold - 1 }))
+  function handleUpgradeFortress() {
+    const { fortressLevel, gold } = territoryState
+    if (fortressLevel >= 5) return
+    const cost = FORTRESS_UPGRADE_COST[fortressLevel + 1]
+    if (gold < cost) return
+    setTerritoryState(prev => ({
+      ...prev,
+      gold:          prev.gold - cost,
+      fortressLevel: (prev.fortressLevel + 1) as 1 | 2 | 3 | 4 | 5,
+    }))
+  }
+
+  function handlePurchaseSlot() {
+    const { maxArmySlots, gold } = territoryState
+    if (maxArmySlots >= 8) return
+    const cost = SLOT_COSTS[maxArmySlots]
+    if (!cost || gold < cost) return
+    setTerritoryState(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
+  }
+
+  function handleReviveUnit(id: string) {
+    const unit = worldDeadUnits.find(u => u.id === id)
+    if (!unit) return
+    const cost = getReviveCost(unit)
+    if (territoryState.gold < cost) return
+    setWorldDeadUnits(prev => prev.filter(u => u.id !== id))
+    setWorldPlayerUnits(prev => prev ? [...prev, { ...unit, hp: Math.round(unit.maxHp * 0.5) }] : [{ ...unit, hp: Math.round(unit.maxHp * 0.5) }])
+    setTerritoryState(prev => ({ ...prev, gold: prev.gold - cost }))
   }
 
   function handleWorldEndTurn() {
-    const nextTurn = worldMapState.turn + 1
-    const newStatuses = { ...worldMapState.statuses }
-    let reinforcedLabel: string | null = null
-
-    if (nextTurn % 5 === 0) {
-      const eligible = WORLD_NODES.filter(n =>
-        (n.type === 'dungeon' || n.type === 'camp') &&
-        newStatuses[n.id] === 'cleared' &&
-        n.id !== 'boss'
-      )
-      if (eligible.length > 0) {
-        const picked = eligible[Math.floor(Math.random() * eligible.length)]
-        newStatuses[picked.id] = 'enemy'
-        reinforcedLabel = picked.label
-      }
-    }
-
-    setWorldMapState(prev => ({
+    const ownedCount = Object.values(territoryState.ownership).filter(o => o === 'player').length
+    setTerritoryState(prev => ({
       ...prev,
-      statuses: newStatuses,
-      heroAP: prev.maxAP,
-      turn: nextTurn,
+      turn:           prev.turn + 1,
+      ap:             2,
       restedThisTurn: false,
+      gold:           prev.gold + ownedCount,
     }))
-    if (reinforcedLabel) setWorldReinforcement(reinforcedLabel)
   }
 
   function handleArmyBuilt(c: ArmyCounts) {
     setCounts(c)
-    if (isTowerMode) setTowerCounts(c)
     setScreen('placement')
   }
 
   function handlePlacementDone(units: GameUnit[]) {
     setPlayerUnits(units)
-    if (isTowerMode) {
-      setTowerUnits(units)
-      saveTowerProgress(1, units, towerCounts!)
-      setScreen('tower-map')
-    } else {
-      setScreen('battle')
-    }
-  }
-
-  function handleTowerWin(battleUnits: GameUnit[]) {
-    const nextIdx = towerFloorIdx + 1
-    if (nextIdx >= TOWER_FLOORS.length) {
-      clearTowerSave()
-      setScreen('landing')
-      return
-    }
-    const nextUnits = prepareNextFloorUnits(towerCounts!, battleUnits)
-    setTowerFloorIdx(nextIdx)
-    setTowerUnits(nextUnits)
-    // Recruitment offered after floors 3 and 5 (indices 2 and 4)
-    if (towerFloorIdx === 2 || towerFloorIdx === 4) {
-      const opts = generateRecruitOptions(nextUnits)
-      if (opts.length > 0) {
-        setPendingRecruitmentOptions(opts)
-        setScreen('recruitment')
-        return
-      }
-    }
-    saveTowerProgress(nextIdx + 1, nextUnits, towerCounts!)
-    setScreen('arrange')
-  }
-
-  function handleRecruitmentComplete(cls: UnitClass | null) {
-    let newUnits = towerUnits!
-    if (cls !== null) {
-      newUnits = addUnitToArmy(newUnits, cls)
-      setTowerUnits(newUnits)
-    }
-    setPendingRecruitmentOptions(null)
-    saveTowerProgress(towerFloorIdx + 1, newUnits, towerCounts!)
-    setScreen('arrange')
-  }
-
-  function handleArrangeComplete(arranged: GameUnit[]) {
-    setTowerUnits(arranged)
-    saveTowerProgress(towerFloorIdx + 1, arranged, towerCounts!)
-    setScreen('tower-map')
-  }
-
-  function handleTowerLose() {
-    clearTowerSave()
-    setScreen('landing')
+    setScreen('battle')
   }
 
   if (screen === 'landing') return (
     <Landing
-      onStartTower={handleStartTower}
-      onContinueTower={handleContinueTower}
-      savedTowerFloor={savedTowerFloor}
       onFreeBattle={handleFreeBattle}
       onWorldMap={handleWorldMap}
       onContinueCampaign={handleContinueCampaign}
@@ -2280,46 +1663,41 @@ export default function SacredGame() {
   )
   if (screen === 'world-map') return (
     <WorldMap
-      mapState={worldMapState}
+      mapState={territoryState}
       playerUnits={worldPlayerUnits ?? []}
+      deadUnits={worldDeadUnits}
       battleResult={worldBattleResult}
       onClearBattleResult={() => setWorldBattleResult(null)}
-      reinforcement={worldReinforcement}
-      onClearReinforcement={() => setWorldReinforcement(null)}
-      onMove={handleWorldMove}
-      onFight={handleWorldFight}
-      onCollect={handleWorldCollect}
-      onRest={handleWorldRest}
-      onRestOutside={handleWorldRestOutside}
+      onMove={handleTerritoryMove}
+      onAttack={handleTerritoryAttack}
       onEndTurn={handleWorldEndTurn}
+      onRest={handleRest}
       onBack={() => setScreen('landing')}
       onHireUnit={handleHireUnit}
-      onPurchaseSlot={handlePurchaseSlot}
       onReorderUnits={handleReorderWorldUnits}
       onMoveUnitSlot={handleMoveWorldUnitSlot}
-      onUpgradeFortress={handleFortressUpgrade}
-      deadUnits={worldDeadUnits}
+      onUpgradeFortress={handleUpgradeFortress}
+      onPurchaseSlot={handlePurchaseSlot}
       onReviveUnit={handleReviveUnit}
     />
   )
   if (screen === 'world-battle') {
-    const fightNode = worldFightNodeId ? WORLD_NODES.find(n => n.id === worldFightNodeId) : null
-    if (fightNode?.enemyCounts && worldPlayerUnits) return (
+    const territory = worldFightTerritoryId ? getTerritoryById(worldFightTerritoryId) : null
+    if (territory && worldPlayerUnits) return (
       <Battle
         counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
         playerUnits={worldPlayerUnits}
-        prebuiltAiUnits={buildLeveledArmy(fightNode.enemyCounts, fightNode.enemyLevel ?? 1, 'ai')}
-        fortressLevelCap={worldMapState.fortressLevel ?? 1}
-        onRestart={() => handleWorldBattleEnd(worldPlayerUnits, false)}
-        onBattleEnd={handleWorldBattleEnd}
+        prebuiltAiUnits={buildArmyFromSpecs(territory.army, 'ai')}
+        fortressLevelCap={territoryState.fortressLevel}
+        onRestart={() => handleTerritoryBattleEnd(worldPlayerUnits, false)}
+        onBattleEnd={handleTerritoryBattleEnd}
       />
     )
     return null
   }
   if (screen === 'campaign-victory') {
-    const nonTown = WORLD_NODES.filter(n => n.id !== 'town')
-    const cleared = nonTown.filter(n => worldMapState.statuses[n.id] === 'cleared' || worldMapState.statuses[n.id] === 'collected').length
-    const alive   = (worldPlayerUnits ?? []).length
+    const playerCount = Object.values(territoryState.ownership).filter(o => o === 'player').length
+    const alive = (worldPlayerUnits ?? []).length
     return (
       <div style={{
         maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
@@ -2330,13 +1708,13 @@ export default function SacredGame() {
         <div style={{ fontSize: 52, marginBottom: 12 }}>🏆</div>
         <div style={{ fontSize: 26, fontWeight: 800, color: '#d4a85a', marginBottom: 6 }}>Кампанію завершено!</div>
         <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 32 }}>
-          Цитадель Тьми повалена. Світ вільний.
+          Бебе впало. Світ вільний.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%', maxWidth: 320, marginBottom: 32 }}>
           {[
-            ['Ходів витрачено', worldMapState.turn],
-            ['Золото зібрано', `${worldMapState.gold} 💰`],
-            ['Вузлів зачищено', `${cleared}/${nonTown.length}`],
+            ['Ходів витрачено', territoryState.turn],
+            ['Золото зібрано', `${territoryState.gold} 💰`],
+            ['Регіонів захоплено', `${playerCount}/${TERRITORIES.length}`],
             ['Юнітів вижило', alive],
           ].map(([label, value]) => (
             <div key={label as string} style={{
@@ -2368,7 +1746,7 @@ export default function SacredGame() {
           </div>
         )}
         <button
-          onClick={() => { clearCampaignSave(); setWorldMapState(createInitialMapState()); setWorldPlayerUnits(null); setScreen('landing') }}
+          onClick={() => { clearCampaignSave(); setTerritoryState(createInitialTerritoryState()); setWorldPlayerUnits(null); setScreen('landing') }}
           style={{
             padding: '14px 36px', background: '#d4a85a', color: '#0f0e09',
             border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer',
@@ -2394,37 +1772,6 @@ export default function SacredGame() {
       counts={counts!}
       onStart={handlePlacementDone}
       onBack={() => setScreen('army-builder')}
-    />
-  )
-  if (screen === 'tower-map') return (
-    <TowerMap
-      floorIdx={towerFloorIdx}
-      playerUnits={towerUnits!}
-      onEnterBattle={() => setScreen('tower-battle')}
-      onBackToMenu={() => setScreen('landing')}
-    />
-  )
-  if (screen === 'tower-battle') return (
-    <Battle
-      counts={towerCounts!}
-      playerUnits={towerUnits!}
-      onRestart={() => {}}
-      towerFloor={TOWER_FLOORS[towerFloorIdx]}
-      onTowerWin={handleTowerWin}
-      onTowerLose={handleTowerLose}
-    />
-  )
-  if (screen === 'recruitment') return (
-    <RecruitmentScreen
-      options={pendingRecruitmentOptions!}
-      onPick={(cls) => handleRecruitmentComplete(cls)}
-      onSkip={() => handleRecruitmentComplete(null)}
-    />
-  )
-  if (screen === 'arrange') return (
-    <ArrangeScreen
-      units={towerUnits!}
-      onDone={handleArrangeComplete}
     />
   )
   return <Battle counts={counts!} playerUnits={playerUnits ?? undefined} prebuiltAiUnits={freeBattleAiUnits ?? undefined} onRestart={() => setScreen('landing')} />
