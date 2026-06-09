@@ -74,7 +74,7 @@ interface Props {
   onClearBattleResult?: () => void
 }
 
-type FortressTab = 'army' | 'hire' | 'upgrade' | 'revive'
+type FortressTab = 'army' | 'upgrade' | 'revive'
 
 const MIN_SCALE = 0.12
 const MAX_SCALE = 4
@@ -89,6 +89,9 @@ export default function WorldMap({
   const [popupTerritoryId, setPopupTerritoryId] = useState<string | null>(null)
   const [fortressOpen,  setFortressOpen]  = useState(false)
   const [fortressTab,   setFortressTab]   = useState<FortressTab>('army')
+  useEffect(() => {
+    if (fortressTab === 'revive' && deadUnits.length === 0) setFortressTab('army')
+  }, [deadUnits.length])
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
   const [hirePopup,     setHirePopup]     = useState<{ row: number; slot: number } | null>(null)
 
@@ -464,8 +467,8 @@ export default function WorldMap({
               </div>
               {/* Tabs */}
               <div style={{ display: 'flex', gap: 2, marginBottom: 14 }}>
-                {(['army', 'hire', 'upgrade', 'revive'] as FortressTab[]).map(tab => {
-                  const labels: Record<FortressTab, string> = { army: 'Армія', hire: 'Найняти', upgrade: 'Апгрейд', revive: `Воскресити (${deadUnits.length})` }
+                {(['army', 'upgrade', ...(deadUnits.length > 0 ? ['revive'] : [])] as FortressTab[]).map(tab => {
+                  const labels: Record<FortressTab, string> = { army: 'Армія', upgrade: 'Апгрейд', revive: `Воскресити (${deadUnits.length})` }
                   return (
                     <button key={tab} onClick={() => setFortressTab(tab)} style={{
                       flex: 1, padding: '7px 0', borderRadius: 6, fontSize: 10, fontWeight: 600,
@@ -483,7 +486,7 @@ export default function WorldMap({
 
             <div style={{ padding: '0 16px 40px' }}>
               {/* Army tab */}
-              {fortressTab === 'army' && ([0, 1] as const).map(row => (
+              {fortressTab === 'army' && !hirePopup && ([0, 1] as const).map(row => (
                 <div key={row} style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(240,232,216,0.35)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
                     {ROW_LABEL[row]}
@@ -494,12 +497,13 @@ export default function WorldMap({
                       const unit     = playerUnits.find(u => u.row === row && u.slot === slot)
                       const isSel    = unit?.id === selectedUnitId
                       if (!unlocked) return (
-                        <div key={slot} style={{ flex: 1, height: 74, borderRadius: 8, background: 'rgba(240,232,216,0.02)', border: '1px dashed rgba(240,232,216,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div key={slot} onClick={() => setFortressTab('upgrade')} style={{ flex: 1, height: 74, borderRadius: 8, background: 'rgba(240,232,216,0.02)', border: '1px dashed rgba(240,232,216,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer' }}>
                           <span style={{ fontSize: 14, color: 'rgba(240,232,216,0.15)' }}>🔒</span>
+                          <span style={{ fontSize: 8, color: 'rgba(240,232,216,0.2)' }}>💰 {SLOT_COSTS[maxArmySlots] ?? '—'}</span>
                         </div>
                       )
                       if (!unit) return (
-                        <div key={slot} onClick={() => { setFortressTab('hire'); setHirePopup({ row, slot }) }} style={{ flex: 1, height: 74, borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px dashed rgba(240,232,216,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <div key={slot} onClick={() => setHirePopup({ row, slot })} style={{ flex: 1, height: 74, borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px dashed rgba(240,232,216,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                           <span style={{ fontSize: 20, color: 'rgba(240,232,216,0.22)' }}>+</span>
                         </div>
                       )
@@ -515,54 +519,47 @@ export default function WorldMap({
                   </div>
                 </div>
               ))}
-              {fortressTab === 'army' && selectedUnitId && (
+              {fortressTab === 'army' && !hirePopup && selectedUnitId && (
                 <div style={{ fontSize: 11, color: '#b07850', textAlign: 'center', marginTop: 4 }}>
                   Натисни інший слот у тому ж ряду для переставлення
                 </div>
               )}
 
-              {/* Hire tab */}
-              {fortressTab === 'hire' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {hirePopup && (
-                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 4 }}>
-                      Ряд: {ROW_LABEL[hirePopup.row]} · Слот {hirePopup.slot + 1}
-                    </div>
-                  )}
-                  {HIRE_INFO
-                    .filter(h => !hirePopup || (hirePopup.row === 0 ? h.cls === 'warrior' || h.cls === 'catapult' : h.cls !== 'warrior'))
-                    .map(h => {
-                      if (hirePopup) {
+              {/* Inline hire panel (shown within army tab) */}
+              {fortressTab === 'army' && hirePopup && (
+                <div>
+                  <button onClick={() => setHirePopup(null)} style={{ marginBottom: 12, padding: '5px 12px', borderRadius: 6, background: 'none', border: '1px solid rgba(240,232,216,0.1)', color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 11 }}>← Скасувати</button>
+                  <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginBottom: 12 }}>
+                    {ROW_LABEL[hirePopup.row]} · Слот {hirePopup.slot + 1}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {HIRE_INFO
+                      .filter(h => hirePopup.row === 0 ? h.cls === 'warrior' || h.cls === 'catapult' : h.cls !== 'warrior')
+                      .map(h => {
                         const hasCat     = playerUnits.some(u => u.class === 'catapult')
                         const catBlocked = h.cls === 'catapult' && (hasCat || playerUnits.some(u => u.row === 0 && u.slot === 3))
                         if (catBlocked) return null
-                      }
-                      const canAfford = gold >= h.cost
-                      return (
-                        <button
-                          key={h.cls}
-                          disabled={!canAfford}
-                          onClick={() => {
-                            if (!canAfford || !hirePopup) return
-                            onHireUnit(h.cls, hirePopup.row, hirePopup.slot)
-                            setHirePopup(null)
-                            setFortressTab('army')
-                          }}
-                          style={{ padding: '11px 14px', borderRadius: 9, background: canAfford ? 'rgba(240,232,216,0.06)' : 'rgba(240,232,216,0.02)', border: `1px solid ${canAfford ? 'rgba(240,232,216,0.14)' : 'rgba(240,232,216,0.05)'}`, color: canAfford ? '#f0e8d8' : 'rgba(240,232,216,0.25)', cursor: canAfford ? 'pointer' : 'not-allowed', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                        >
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>{h.label}</div>
-                            <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginTop: 1 }}>{h.desc}</div>
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: canAfford ? '#d4a85a' : 'rgba(240,232,216,0.2)' }}>💰 {h.cost}</div>
-                        </button>
-                      )
-                    })}
-                  {!hirePopup && (
-                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.3)', textAlign: 'center', marginTop: 8 }}>
-                      Перейди на вкладку Армія і натисни порожній слот
-                    </div>
-                  )}
+                        const canAfford = gold >= h.cost
+                        return (
+                          <button
+                            key={h.cls}
+                            disabled={!canAfford}
+                            onClick={() => {
+                              if (!canAfford) return
+                              onHireUnit(h.cls, hirePopup.row, hirePopup.slot)
+                              setHirePopup(null)
+                            }}
+                            style={{ padding: '11px 14px', borderRadius: 9, background: canAfford ? 'rgba(240,232,216,0.06)' : 'rgba(240,232,216,0.02)', border: `1px solid ${canAfford ? 'rgba(240,232,216,0.14)' : 'rgba(240,232,216,0.05)'}`, color: canAfford ? '#f0e8d8' : 'rgba(240,232,216,0.25)', cursor: canAfford ? 'pointer' : 'not-allowed', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                          >
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{h.label}</div>
+                              <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginTop: 1 }}>{h.desc}</div>
+                            </div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: canAfford ? '#d4a85a' : 'rgba(240,232,216,0.2)' }}>💰 {h.cost}</div>
+                          </button>
+                        )
+                      })}
+                  </div>
                 </div>
               )}
 
