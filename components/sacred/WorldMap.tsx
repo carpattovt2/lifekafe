@@ -239,7 +239,8 @@ export default function WorldMap({
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', height: '100dvh', background: '#0f0e09', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: '#0f0e09' }}>
+    <div style={{ maxWidth: 560, margin: '0 auto', height: '100%', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
 
       {/* Header */}
       <div style={{ padding: '10px 16px', background: '#17150f', borderBottom: '1px solid rgba(240,232,216,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -664,6 +665,7 @@ export default function WorldMap({
           ))}
         </div>
       )}
+    </div>
     </div>
   )
 }

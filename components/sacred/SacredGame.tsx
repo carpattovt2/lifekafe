@@ -3,7 +3,7 @@
 import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
-  addUnitAtSlot,
+  addUnitAtSlot, buildCustomArmy,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
 import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS } from '@/lib/sacred/types'
@@ -903,8 +903,9 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onFreeBattle, onWorldMap, onContinueCampaign, hasCampaignSave }: {
+function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, hasCampaignSave }: {
   onFreeBattle: () => void
+  onQuickTest: () => void
   onWorldMap: () => void
   onContinueCampaign: () => void
   hasCampaignSave: boolean
@@ -1014,6 +1015,13 @@ function Landing({ onFreeBattle, onWorldMap, onContinueCampaign, hasCampaignSave
           boxShadow: '0 4px 20px rgba(90,106,168,0.4)',
         }}>
           Вільний бій
+        </button>
+        <button onClick={onQuickTest} style={{
+          padding: '10px 0', fontSize: 12, fontWeight: 600,
+          background: 'rgba(240,232,216,0.04)',
+          color: 'rgba(240,232,216,0.3)', border: '1px solid rgba(240,232,216,0.1)', borderRadius: 10, cursor: 'pointer',
+        }}>
+          ⚙ Тест-бій
         </button>
         <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
           v0.9.2
@@ -1261,9 +1269,10 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     : null
 
   return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: '#0f0e09' }}>
     <div style={{
       maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column',
-      height: '100dvh', overflow: 'hidden', background: '#0f0e09', color: '#f0e8d8',
+      height: '100%', overflow: 'hidden', color: '#f0e8d8',
       fontFamily: "'Inter', sans-serif",
     }}>
 
@@ -1509,6 +1518,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
         />
       )}
     </div>
+    </div>
   )
 }
 
@@ -1575,6 +1585,15 @@ export default function SacredGame() {
 
   function handleFreeBattle() {
     setScreen('free-battle')
+  }
+
+  function handleQuickTest() {
+    const pUnits = buildCustomArmy({ warriors: 2, archers: 1, mages: 1, catapults: 1 }, 'player')
+    const aUnits = buildCustomArmy({ warriors: 3, archers: 1, mages: 1, catapults: 0 }, 'ai')
+    setPlayerUnits(pUnits)
+    setFreeBattleAiUnits(aUnits)
+    setCounts({ warriors: 0, archers: 0, mages: 0, catapults: 0 })
+    setScreen('battle')
   }
 
   function handleFreeBattleStart(pUnits: GameUnit[], aUnits: GameUnit[]) {
@@ -1742,6 +1761,7 @@ export default function SacredGame() {
   if (screen === 'landing') return (
     <Landing
       onFreeBattle={handleFreeBattle}
+      onQuickTest={handleQuickTest}
       onWorldMap={handleWorldMap}
       onContinueCampaign={handleContinueCampaign}
       hasCampaignSave={hasCampaignSave}
