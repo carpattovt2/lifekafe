@@ -747,9 +747,12 @@ h1, h2, h3 {
 
 /* ── Seraphites: turn banner ─────────────────────────────────────────────── */
 @keyframes sacred-banner-in {
-  from { opacity: 0; transform: translate(-50%, -50%) scale(0.55); }
-  60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
-  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes sacred-banner-out {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, 4px); }
 }
 
 /* ── Shopping List ────────────────────────────────────────────────────────── */

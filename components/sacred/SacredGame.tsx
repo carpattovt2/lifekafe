@@ -384,9 +384,8 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           cursor: alive ? 'pointer' : 'default',
           opacity: isDying ? 1 : (alive ? 1 : 0.35),
           overflow: 'hidden',
-          transform: isActive ? 'scale(1.06)' : isTargetable ? 'scale(1.03)' : 'scale(1)',
-          boxShadow: isTargetable && !isActive ? `0 2px 8px ${color}44` : '0 1px 3px rgba(0,0,0,0.08)',
-          transition: 'border-color 0.15s, transform 0.1s',
+          boxShadow: isTargetable && !isActive ? `0 0 10px 2px ${color}55` : '0 1px 3px rgba(0,0,0,0.08)',
+          transition: 'border-color 0.25s, box-shadow 0.25s',
           position: 'relative',
         }}
       >
@@ -557,8 +556,7 @@ function TurnQueue({ queue, units, currentIdx }: { queue: string[]; units: GameU
               border: `2px solid ${isCurrent ? '#b07850' : u.side === 'player' ? '#6fa67a' : '#c07070'}`,
               overflow: 'hidden',
               opacity: isCurrent ? 1 : 0.5,
-              transform: isCurrent ? 'scale(1.15)' : 'scale(1)',
-              transition: 'transform 0.2s',
+              transition: 'border-color 0.25s, box-shadow 0.25s, opacity 0.25s',
               background: 'rgba(240,232,216,0.06)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               boxShadow: isCurrent ? '0 0 6px rgba(176,120,80,0.5)' : 'none',
@@ -607,7 +605,7 @@ function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
       style={{
-        flex: '1 1 calc(50% - 4px)', padding: '9px 11px', borderRadius: 8, textAlign: 'left',
+        flex: '0 0 auto', width: 110, padding: '9px 11px', borderRadius: 8, textAlign: 'left',
         background: selected ? 'rgba(176,120,80,0.22)' : 'rgba(240,232,216,0.05)',
         border: `1px solid ${selected ? '#b07850' : 'rgba(240,232,216,0.1)'}`,
         color: '#f0e8d8', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -1174,8 +1172,9 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
   )
   const [floats, setFloats]         = useState<BattleEvent[]>([])
   const [infoUnit, setInfoUnit]     = useState<GameUnit | null>(null)
-  const [bannerText, setBannerText] = useState<string | null>(null)
-  const [toastText, setToastText]   = useState<string | null>(null)
+  const [bannerText, setBannerText]   = useState<string | null>(null)
+  const [bannerFading, setBannerFading] = useState(false)
+  const [toastText, setToastText]     = useState<string | null>(null)
   const battlefieldRef = useRef<HTMLDivElement>(null)
   const prevPhase  = useRef(state.phase)
   const prevRound  = useRef(state.round)
@@ -1212,9 +1211,11 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     prevPhase.current = state.phase
     prevRound.current = state.round
     if (phaseChanged || roundChanged) {
+      setBannerFading(false)
       setBannerText(state.phase === 'player-turn' ? '🛡 Твоя черга' : '⚔ Хід ворога')
-      const t = setTimeout(() => setBannerText(null), 1600)
-      return () => clearTimeout(t)
+      const t1 = setTimeout(() => setBannerFading(true), 1200)
+      const t2 = setTimeout(() => { setBannerText(null); setBannerFading(false) }, 1600)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
     }
   }, [state.phase, state.round])
 
@@ -1283,7 +1284,9 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
           pointerEvents: 'none', padding: '12px 28px', borderRadius: 10,
           background: bannerBg, color: '#fff', fontSize: 17, fontWeight: 700,
           letterSpacing: '-0.01em', boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-          animation: 'sacred-banner-in 0.3s cubic-bezier(0.4,0,0.2,1) forwards',
+          animation: bannerFading
+            ? 'sacred-banner-out 0.4s ease-in forwards'
+            : 'sacred-banner-in 0.35s ease-out forwards',
         }}>
           {bannerText}
         </div>
@@ -1349,15 +1352,14 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
           <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 15, background: '#0f0e09', padding: '0 8px', color: 'rgba(240,232,216,0.2)' }}>
             ⚔
           </div>
-          {toastText && (
-            <div style={{
-              position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 6,
-              fontSize: 10, color: 'rgba(240,232,216,0.45)', whiteSpace: 'nowrap',
-              pointerEvents: 'none', zIndex: 5,
-            }}>
-              {toastText}
-            </div>
-          )}
+          <div style={{
+            position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 6,
+            fontSize: 10, color: 'rgba(240,232,216,0.45)', whiteSpace: 'nowrap',
+            pointerEvents: 'none', zIndex: 5,
+            opacity: toastText ? 1 : 0, transition: 'opacity 0.35s',
+          }}>
+            {toastText ?? ' '}
+          </div>
         </div>
 
         {/* Player zone — label on left, rows on right, glow when player is active (F) */}
@@ -1404,7 +1406,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
       }}>
         {/* Action area */}
         <div style={{
-          minHeight: 88, display: 'flex', flexDirection: 'column', justifyContent: 'center',
+          height: 108, display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden',
         }}>
         {state.phase === 'game-over' ? (
             <div style={{ padding: '16px 20px', textAlign: 'center' }}>
@@ -1453,7 +1455,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
               )}
             </div>
             {!state.needsTarget ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'flex-start', scrollbarWidth: 'none' } as React.CSSProperties}>
                 <button
                   onClick={() => dispatch({ type: 'ADVANCE_QUEUE' })}
                   style={{ padding: '8px 14px', background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.12)', borderRadius: 8, color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
