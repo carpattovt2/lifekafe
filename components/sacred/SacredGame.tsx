@@ -258,7 +258,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
       lastDmgId.current = maxId
       setIsShaking(true)
       setHitFlash(true)
-      const t = setTimeout(() => { setIsShaking(false); setHitFlash(false) }, 450)
+      const t = setTimeout(() => { setIsShaking(false); setHitFlash(false) }, 700)
       return () => clearTimeout(t)
     }
   }, [floats])
@@ -268,7 +268,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     if (maxId > lastMissId.current) {
       lastMissId.current = maxId
       setMissFlash(true)
-      const t = setTimeout(() => setMissFlash(false), 520)
+      const t = setTimeout(() => setMissFlash(false), 780)
       return () => clearTimeout(t)
     }
   }, [floats])
@@ -278,7 +278,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     if (maxId > lastEvadeId.current) {
       lastEvadeId.current = maxId
       setEvadeDodge(true)
-      const t = setTimeout(() => setEvadeDodge(false), 450)
+      const t = setTimeout(() => setEvadeDodge(false), 700)
       return () => clearTimeout(t)
     }
   }, [floats])
