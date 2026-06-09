@@ -572,6 +572,11 @@ export function executeAction(
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
+      if (res.thornsDmg && res.thornsDmg > 0) {
+        const atker = getUnit(actor.id)
+        update({ ...atker, hp: Math.max(0, atker.hp - res.thornsDmg) })
+        if (getUnit(actor.id).hp === 0) newLogs.push(log(`☠ ${actor.name} гине від терній!`, 'death'))
+      }
       if (res.hit && !res.evaded) {
         const tgt = getUnit(target.id)
         if (tgt.hp > 0) {
@@ -625,16 +630,27 @@ export function executeAction(
         update({ ...target, hp: Math.max(0, target.hp - res1.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
+      if (res1.thornsDmg && res1.thornsDmg > 0) {
+        const atker = getUnit(actor.id)
+        update({ ...atker, hp: Math.max(0, atker.hp - res1.thornsDmg) })
+        if (getUnit(actor.id).hp === 0) newLogs.push(log(`☠ ${actor.name} гине від терній!`, 'death'))
+      }
       if (res1.hit && !res1.evaded) hitLanded = true
-      // Second hit (only if target still alive)
-      const tgt2 = getUnit(target.id)
-      if (tgt2.hp > 0) {
-        const res2 = resolveAttack(actor, tgt2, units)
+      // Second hit (only if both units still alive)
+      const tgt2    = getUnit(target.id)
+      const actor2  = getUnit(actor.id)
+      if (tgt2.hp > 0 && actor2.hp > 0) {
+        const res2 = resolveAttack(actor2, tgt2, units)
         newLogs.push(...res2.logs)
         newEvents.push(...res2.events)
         if (res2.damage > 0) {
           update({ ...tgt2, hp: Math.max(0, tgt2.hp - res2.damage) })
           if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+        }
+        if (res2.thornsDmg && res2.thornsDmg > 0) {
+          const atker = getUnit(actor.id)
+          update({ ...atker, hp: Math.max(0, atker.hp - res2.thornsDmg) })
+          if (getUnit(actor.id).hp === 0) newLogs.push(log(`☠ ${actor.name} гине від терній!`, 'death'))
         }
         if (res2.hit && !res2.evaded) hitLanded = true
       }
