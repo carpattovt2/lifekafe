@@ -245,10 +245,13 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const [hitFlash,   setHitFlash]   = useState(false)
   const [missFlash,  setMissFlash]  = useState(false)
   const [evadeDodge, setEvadeDodge] = useState(false)
-  const lastDmgId   = useRef(0)
-  const lastMissId  = useRef(0)
-  const lastEvadeId = useRef(0)
-  const prevHp      = useRef(unit.hp)
+  const [buffGlow,   setBuffGlow]   = useState<string | null>(null)
+  const lastDmgId    = useRef(0)
+  const lastMissId   = useRef(0)
+  const lastEvadeId  = useRef(0)
+  const prevHp       = useRef(unit.hp)
+  const seenBuffIds  = useRef<Set<string>>(new Set(unit.buffs.map(b => b.id)))
+  const buffGlowTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
     const maxId = floats
@@ -284,9 +287,26 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   }, [floats])
 
   useEffect(() => {
-    if (prevHp.current > 0 && unit.hp === 0) setIsDying(true)
+    if (prevHp.current > 0 && unit.hp === 0) {
+      setIsDying(true)
+      const t = setTimeout(() => setIsDying(false), 1200)
+      return () => clearTimeout(t)
+    }
     prevHp.current = unit.hp
   }, [unit.hp])
+
+  useEffect(() => {
+    const newBuff = unit.buffs.find(b => b.type !== 'cooldown' && !seenBuffIds.current.has(b.id))
+    if (newBuff) {
+      unit.buffs.forEach(b => seenBuffIds.current.add(b.id))
+      const glowType = BUFF_PRIORITY.find(bp => bp === newBuff.type) ?? null
+      if (glowType) {
+        setBuffGlow(glowType)
+        clearTimeout(buffGlowTimer.current)
+        buffGlowTimer.current = setTimeout(() => setBuffGlow(null), 3000)
+      }
+    }
+  }, [unit.buffs])
 
   const alive = unit.hp > 0
   const color  = SIDE_COLOR[unit.side]
@@ -338,9 +358,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   }
 
   const outerClass = [
-    isShaking   ? 'unit-shake'    : '',
-    evadeDodge  ? 'unit-evade-dodge' : '',
-    dominantBuff ? `unit-buff-${dominantBuff}` : '',
+    isShaking  ? 'unit-shake'     : '',
+    evadeDodge ? 'unit-evade-dodge' : '',
+    buffGlow   ? `unit-buff-${buffGlow}` : '',
   ].filter(Boolean).join(' ') || undefined
 
   return (
@@ -362,7 +382,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           border: `2px solid ${borderColor}`,
           borderRadius: 8,
           cursor: alive ? 'pointer' : 'default',
-          opacity: alive ? 1 : 0.35,
+          opacity: isDying ? 1 : (alive ? 1 : 0.35),
           overflow: 'hidden',
           transform: isActive ? 'scale(1.06)' : isTargetable ? 'scale(1.03)' : 'scale(1)',
           boxShadow: isTargetable && !isActive ? `0 2px 8px ${color}44` : '0 1px 3px rgba(0,0,0,0.08)',
@@ -377,7 +397,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
             style={{ position: 'absolute', inset: 0, zIndex: 6, pointerEvents: 'none', borderRadius: 6 }} />
         )}
 
-        {!alive && (
+        {!alive && !isDying && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3, pointerEvents: 'none' }}>
             <span style={{ fontSize: 26, opacity: 0.75, filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}>✝</span>
           </div>
@@ -385,9 +405,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
         {portraitSrc ? (
           <>
             {/* Full-bleed portrait */}
-            <img src={portraitSrc} alt="" className={alive ? portraitAnimClass : undefined} style={{
+            <img src={portraitSrc} alt="" className={alive || isDying ? portraitAnimClass : undefined} style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-              filter: alive ? undefined : 'grayscale(1)',
+              filter: (!alive && !isDying) ? 'grayscale(1)' : undefined,
             }} />
             {/* Gradient overlay for text readability */}
             <div style={{
@@ -1281,33 +1301,45 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
       >
         <ProjectileLayer battlefieldRef={battlefieldRef} events={state.events} />
 
-        {/* AI side label */}
-        <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(192,112,112,0.6)', textTransform: 'uppercase', letterSpacing: '0.07em', paddingLeft: 2 }}>
-          Ворог
-        </div>
-
-        {/* AI rows 1→0 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {([1, 0] as Row[]).map(row => {
-            const hasUnits = state.units.some(u => u.side === 'ai' && u.row === row)
-            if (!hasUnits) return null
-            return (
-              <UnitRow key={row}
-                units={state.units} side="ai" row={row}
-                activeId={actor?.side === 'ai' ? actorId : null}
-                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-              />
-            )
-          })}
+        {/* AI zone — label on left, rows on right, glow when AI is active (F) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            writingMode: 'vertical-lr', transform: 'rotate(180deg)',
+            fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+            color: actor?.side === 'ai' ? 'rgba(192,112,112,0.9)' : 'rgba(192,112,112,0.35)',
+            textTransform: 'uppercase', userSelect: 'none', flexShrink: 0,
+            transition: 'color 0.4s',
+          }}>
+            Ворог
+          </div>
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column', gap: 3,
+            borderRadius: 8, padding: '4px',
+            boxShadow: actor?.side === 'ai'
+              ? '0 0 0 1px rgba(192,112,112,0.25), 0 0 18px 0 rgba(192,112,112,0.18)'
+              : 'none',
+            transition: 'box-shadow 0.4s',
+          }}>
+            {([1, 0] as Row[]).map(row => {
+              const hasUnits = state.units.some(u => u.side === 'ai' && u.row === row)
+              if (!hasUnits) return null
+              return (
+                <UnitRow key={row}
+                  units={state.units} side="ai" row={row}
+                  activeId={actor?.side === 'ai' ? actorId : null}
+                  targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+                />
+              )
+            })}
+          </div>
         </div>
 
         {/* Divider */}
         <div style={{ borderTop: '1px solid rgba(240,232,216,0.08)', margin: '2px 0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 15, background: '#0f0e09', padding: '0 8px', color: 'rgba(240,232,216,0.25)' }}>
+          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 15, background: '#0f0e09', padding: '0 8px', color: 'rgba(240,232,216,0.2)' }}>
             ⚔
           </div>
-          {/* Toast */}
           {toastText && (
             <div style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 6,
@@ -1319,25 +1351,38 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
           )}
         </div>
 
-        {/* Player rows 0→1 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {([0, 1] as Row[]).map(row => {
-            const hasUnits = state.units.some(u => u.side === 'player' && u.row === row)
-            if (!hasUnits) return null
-            return (
-              <UnitRow key={row}
-                units={state.units} side="player" row={row}
-                activeId={actor?.side === 'player' ? actorId : null}
-                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-              />
-            )
-          })}
-        </div>
-
-        {/* Player side label */}
-        <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(111,166,122,0.6)', textTransform: 'uppercase', letterSpacing: '0.07em', paddingLeft: 2 }}>
-          Твоя армія
+        {/* Player zone — label on left, rows on right, glow when player is active (F) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            writingMode: 'vertical-lr', transform: 'rotate(180deg)',
+            fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+            color: actor?.side === 'player' ? 'rgba(111,166,122,0.9)' : 'rgba(111,166,122,0.35)',
+            textTransform: 'uppercase', userSelect: 'none', flexShrink: 0,
+            transition: 'color 0.4s',
+          }}>
+            Армія
+          </div>
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column', gap: 3,
+            borderRadius: 8, padding: '4px',
+            boxShadow: actor?.side === 'player'
+              ? '0 0 0 1px rgba(111,166,122,0.25), 0 0 18px 0 rgba(111,166,122,0.18)'
+              : 'none',
+            transition: 'box-shadow 0.4s',
+          }}>
+            {([0, 1] as Row[]).map(row => {
+              const hasUnits = state.units.some(u => u.side === 'player' && u.row === row)
+              if (!hasUnits) return null
+              return (
+                <UnitRow key={row}
+                  units={state.units} side="player" row={row}
+                  activeId={actor?.side === 'player' ? actorId : null}
+                  targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+                />
+              )
+            })}
+          </div>
         </div>
       </div>
 
