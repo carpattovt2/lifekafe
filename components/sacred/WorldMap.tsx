@@ -86,7 +86,7 @@ export default function WorldMap({
   onUpgradeFortress, onPurchaseSlot, onReviveUnit,
   battleResult, onClearBattleResult,
 }: Props) {
-  const [selectedId,    setSelectedId]    = useState<string | null>(null)
+  const [popupTerritoryId, setPopupTerritoryId] = useState<string | null>(null)
   const [fortressOpen,  setFortressOpen]  = useState(false)
   const [fortressTab,   setFortressTab]   = useState<FortressTab>('army')
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
@@ -97,9 +97,7 @@ export default function WorldMap({
   const movable     = getMovableTerritories(ownership, armyNodeId)
   const atDans      = armyNodeId === 'dans'
   const playerCount = Object.values(ownership).filter(o => o === 'player').length
-  const selectedTerritory = selectedId ? TERRITORIES.find(t => t.id === selectedId) : null
-  const isAttackable = !!selectedId && attackable.has(selectedId)
-  const isMovable    = !!selectedId && movable.has(selectedId)
+  const popupTerritory = popupTerritoryId ? TERRITORIES.find(t => t.id === popupTerritoryId) : null
 
   useEffect(() => {
     if (!battleResult) return
@@ -195,6 +193,29 @@ export default function WorldMap({
   }
   function onMapMU() { dragRef.current.down = false }
 
+  function centerOnArmy() {
+    const t = TERRITORIES.find(t => t.id === armyNodeId)
+    if (!t || !mapContainerRef.current) return
+    const [cx, cy] = polyCentroid(t.polygon)
+    const W = mapContainerRef.current.clientWidth
+    const H = mapContainerRef.current.clientHeight
+    applyT({ x: W / 2 - cx * transformRef.current.scale, y: H / 2 - cy * transformRef.current.scale, scale: transformRef.current.scale })
+  }
+
+  function handleTerritoryTap(territoryId: string) {
+    if (dragRef.current.moved) return
+    if (movable.has(territoryId)) {
+      if (ap > 0) { onMove(territoryId); setPopupTerritoryId(null) }
+      else setPopupTerritoryId(territoryId)
+      return
+    }
+    if (attackable.has(territoryId)) {
+      setPopupTerritoryId(prev => prev === territoryId ? null : territoryId)
+      return
+    }
+    setPopupTerritoryId(null)
+  }
+
   function closeFortress() {
     setFortressOpen(false)
     setHirePopup(null)
@@ -254,24 +275,32 @@ export default function WorldMap({
             draggable={false}
             style={{ position: 'absolute', top: 0, left: 0, width: MAP_WIDTH, height: MAP_HEIGHT, display: 'block', userSelect: 'none' }}
           />
-          <svg width={MAP_WIDTH} height={MAP_HEIGHT} style={{ position: 'absolute', top: 0, left: 0 }}>
+          <svg width={MAP_WIDTH} height={MAP_HEIGHT} style={{ position: 'absolute', top: 0, left: 0 }}
+            onClick={() => setPopupTerritoryId(null)}>
+            <defs>
+              <filter id="lbl" x="-15%" y="-40%" width="130%" height="180%">
+                <feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#000" floodOpacity="0.95" />
+              </filter>
+            </defs>
             {TERRITORIES.map(t => {
               const isPlayer   = ownership[t.id] === 'player'
-              const isSelected = selectedId === t.id
+              const isPopup    = popupTerritoryId === t.id
               const isAtk      = attackable.has(t.id)
               const isMov      = movable.has(t.id)
               const isArmy     = armyNodeId === t.id
               const [cx, cy]   = polyCentroid(t.polygon)
               const pts        = t.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+              const labelSize  = Math.round(14 / mapTransform.scale)
 
               const fillColor     = isPlayer ? '#6fa67a' : '#c07070'
-              const fillOpacity   = isSelected ? 0.6 : isAtk ? 0.45 : isMov ? 0.4 : 0.15
-              const strokeColor   = isSelected ? '#fff' : isAtk ? '#ffd700' : isMov ? '#88ccff' : (isPlayer ? '#8fd49a' : '#e08080')
-              const strokeW       = isSelected ? 4 : (isAtk || isMov) ? 3 : 2
-              const strokeOpacity = isSelected ? 1 : (isAtk || isMov) ? 1 : 0.75
+              const fillOpacity   = isPopup ? 0.6 : isAtk ? 0.45 : isMov ? 0.4 : 0.15
+              const strokeColor   = isPopup ? '#fff' : isAtk ? '#ffd700' : isMov ? '#88ccff' : (isPlayer ? '#8fd49a' : '#e08080')
+              const strokeW       = isPopup ? 4 : (isAtk || isMov) ? 3 : 2
+              const strokeOpacity = isPopup ? 1 : (isAtk || isMov) ? 1 : 0.75
 
               return (
-                <g key={t.id} onClick={() => { if (!dragRef.current.moved) setSelectedId(prev => prev === t.id ? null : t.id) }} style={{ cursor: 'pointer' }}>
+                <g key={t.id} onClick={e => { e.stopPropagation(); handleTerritoryTap(t.id) }}
+                  style={{ cursor: isAtk || isMov ? 'pointer' : 'default' }}>
                   <polygon
                     points={pts}
                     fill={fillColor}
@@ -290,105 +319,130 @@ export default function WorldMap({
                   {t.isStart && !isArmy && (
                     <text x={cx} y={cy + 60} textAnchor="middle" dominantBaseline="middle" fontSize={80} style={{ pointerEvents: 'none' }}>🏰</text>
                   )}
+                  <text
+                    x={cx} y={cy - 40}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize={labelSize}
+                    fontWeight="700"
+                    fontFamily="Inter, sans-serif"
+                    fill={isAtk ? '#ffd700' : isMov ? '#88ccff' : isPlayer ? '#b8e8c0' : '#f0e8d8'}
+                    filter="url(#lbl)"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {t.name}
+                  </text>
                 </g>
               )
             })}
           </svg>
         </div>
-      </div>
 
-      {/* Bottom panel */}
-      <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        {selectedTerritory ? (
-          <div style={{ padding: '14px 16px 24px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: selectedTerritory.isBoss ? '#c07070' : ownership[selectedTerritory.id] === 'player' ? '#6fa67a' : '#f0e8d8' }}>
-                  {selectedTerritory.isBoss ? '💀 ' : ''}{selectedTerritory.name}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginTop: 2 }}>
-                  {ownership[selectedTerritory.id] === 'player' ? '🟢 Твій регіон' : '🔴 Ворожий регіон'}
-                  {selectedTerritory.goldReward > 0 ? ` · 💰 +${selectedTerritory.goldReward} за перемогу` : ''}
-                </div>
-                {ownership[selectedTerritory.id] === 'enemy' && selectedTerritory.army.length > 0 && (
-                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)', marginTop: 4, lineHeight: 1.5 }}>
-                    {selectedTerritory.army.map(u => `${CLASS_UA[u.class]} lv${u.level}`).join(' · ')}
+        {/* Floating attack popup */}
+        {popupTerritory && (() => {
+          const [cx, cy] = polyCentroid(popupTerritory.polygon)
+          const sx = cx * mapTransform.scale + mapTransform.x
+          const sy = cy * mapTransform.scale + mapTransform.y
+          const cw = mapContainerRef.current?.clientWidth ?? 360
+          const popupW = 210
+          const left = Math.max(8, Math.min(cw - popupW - 8, sx - popupW / 2))
+          const top  = Math.max(8, sy - 160)
+          const isAtk = attackable.has(popupTerritory.id)
+          const isMov = movable.has(popupTerritory.id)
+          return (
+            <div style={{
+              position: 'absolute', left, top, width: popupW, zIndex: 20,
+              background: '#1c1a12', border: `1px solid ${isAtk ? 'rgba(255,215,0,0.35)' : 'rgba(136,204,255,0.3)'}`,
+              borderRadius: 12, padding: '12px 14px',
+              boxShadow: '0 6px 28px rgba(0,0,0,0.65)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: isAtk ? '#ffd700' : '#88ccff' }}>
+                    {popupTerritory.isBoss ? '💀 ' : ''}{popupTerritory.name}
                   </div>
-                )}
+                  <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginTop: 2 }}>
+                    {ownership[popupTerritory.id] === 'player' ? '🟢 Твій' : '🔴 Ворожий'}
+                    {popupTerritory.goldReward > 0 ? ` · 💰 +${popupTerritory.goldReward}` : ''}
+                  </div>
+                  {ownership[popupTerritory.id] === 'enemy' && popupTerritory.army.length > 0 && (
+                    <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.3)', marginTop: 3, lineHeight: 1.5 }}>
+                      {popupTerritory.army.map(u => `${CLASS_UA[u.class]} lv${u.level}`).join(' · ')}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setPopupTerritoryId(null)}
+                  style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.35)', cursor: 'pointer', fontSize: 16, padding: '0 0 0 8px', flexShrink: 0 }}>✕</button>
               </div>
-              <button onClick={() => setSelectedId(null)} style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 18, padding: '0 0 0 12px', flexShrink: 0 }}>✕</button>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {isAttackable && (
+              {isAtk && (
                 <button
-                  onClick={() => { onAttack(selectedId!); setSelectedId(null) }}
                   disabled={ap <= 0}
+                  onClick={() => { if (ap > 0) { onAttack(popupTerritory.id); setPopupTerritoryId(null) } }}
                   style={{
-                    flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700,
-                    background: ap <= 0 ? 'rgba(192,112,112,0.12)' : 'linear-gradient(135deg, #c07070, #8a3030)',
+                    width: '100%', padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    background: ap <= 0 ? 'rgba(192,112,112,0.1)' : 'linear-gradient(135deg, #c07070, #8a3030)',
                     color: ap <= 0 ? 'rgba(240,232,216,0.25)' : '#fff',
                     border: `1px solid ${ap <= 0 ? 'rgba(192,112,112,0.2)' : '#c07070'}`,
                     cursor: ap <= 0 ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {ap <= 0 ? 'Немає AP' : `⚔ Атакувати`}
+                  }}>
+                  {ap <= 0 ? 'Немає AP' : '⚔ Атакувати'}
                 </button>
               )}
-              {isMovable && (
-                <button
-                  onClick={() => { onMove(selectedId!); setSelectedId(null) }}
-                  disabled={ap <= 0}
-                  style={{
-                    flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 13, fontWeight: 700,
-                    background: ap <= 0 ? 'rgba(136,204,255,0.08)' : 'rgba(136,204,255,0.12)',
-                    color: ap <= 0 ? 'rgba(240,232,216,0.25)' : '#88ccff',
-                    border: `1px solid ${ap <= 0 ? 'rgba(136,204,255,0.1)' : 'rgba(136,204,255,0.35)'}`,
-                    cursor: ap <= 0 ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {ap <= 0 ? 'Немає AP' : `→ Перемістити армію`}
-                </button>
+              {isMov && ap <= 0 && (
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', textAlign: 'center', padding: '6px 0' }}>
+                  Немає AP для переміщення
+                </div>
               )}
             </div>
-          </div>
-        ) : (
-          <div style={{ padding: '14px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => { setFortressOpen(true); setFortressTab('army') }}
-                style={{ flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 12, fontWeight: 600, background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.12)', color: '#f0e8d8', cursor: 'pointer' }}
-              >
-                🏰 {FORTRESS_NAMES[fortressLevel]} ({playerUnits.length})
-              </button>
-              <button
-                onClick={() => {
-                  if (!restedThisTurn && (atDans || gold >= 1)) onRest()
-                }}
-                disabled={restedThisTurn || (!atDans && gold < 1)}
-                style={{
-                  flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
-                  background: restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.03)' : 'rgba(111,166,122,0.12)',
-                  border: `1px solid ${restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.07)' : 'rgba(111,166,122,0.3)'}`,
-                  color: restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.22)' : '#6fa67a',
-                  cursor: restedThisTurn || (!atDans && gold < 1) ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {restedThisTurn ? '😴 Вже відпочили' : atDans ? '😴 Відпочити' : `😴 Відпочити (-1💰)`}
-              </button>
-            </div>
+          )
+        })()}
+
+        {/* Center-on-army button */}
+        <button
+          onClick={centerOnArmy}
+          title="Знайти армію"
+          style={{
+            position: 'absolute', bottom: 12, right: 12, zIndex: 10,
+            width: 38, height: 38, borderRadius: '50%',
+            background: 'rgba(15,14,9,0.85)', border: '1px solid rgba(240,232,216,0.2)',
+            color: '#d4a85a', fontSize: 18, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+          }}>
+          ⊕
+        </button>
+      </div>
+
+      {/* Bottom panel — always static */}
+      <div style={{ background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', flexShrink: 0, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div style={{ padding: '12px 16px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
-              onClick={onEndTurn}
-              style={{ width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg, #7a5a30, #4a3018)', border: '1px solid rgba(212,168,90,0.3)', color: '#f0e8d8', cursor: 'pointer' }}
+              onClick={() => { setFortressOpen(true); setFortressTab('army') }}
+              style={{ flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 12, fontWeight: 600, background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.12)', color: '#f0e8d8', cursor: 'pointer' }}
             >
-              Кінець дня → (+{Object.values(ownership).filter(o => o === 'player').length}💰)
+              🏰 {FORTRESS_NAMES[fortressLevel]} ({playerUnits.length})
             </button>
-            {ap > 0 && attackable.size > 0 && (
-              <div style={{ fontSize: 11, color: '#ffd700', textAlign: 'center' }}>
-                ⚔ Можна атакувати: {Array.from(attackable).map(id => TERRITORIES.find(t => t.id === id)?.name).filter(Boolean).join(', ')}
-              </div>
-            )}
+            <button
+              onClick={() => { if (!restedThisTurn && (atDans || gold >= 1)) onRest() }}
+              disabled={restedThisTurn || (!atDans && gold < 1)}
+              style={{
+                flex: 1, padding: '11px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
+                background: restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.03)' : 'rgba(111,166,122,0.12)',
+                border: `1px solid ${restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.07)' : 'rgba(111,166,122,0.3)'}`,
+                color: restedThisTurn || (!atDans && gold < 1) ? 'rgba(240,232,216,0.22)' : '#6fa67a',
+                cursor: restedThisTurn || (!atDans && gold < 1) ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {restedThisTurn ? '😴 Відпочили' : atDans ? '😴 Відпочити' : `😴 Відпочити (-1💰)`}
+            </button>
           </div>
-        )}
+          <button
+            onClick={onEndTurn}
+            style={{ width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg, #7a5a30, #4a3018)', border: '1px solid rgba(212,168,90,0.3)', color: '#f0e8d8', cursor: 'pointer' }}
+          >
+            Кінець дня → (+{playerCount}💰)
+          </button>
+        </div>
       </div>
 
       {/* Fortress sheet */}
