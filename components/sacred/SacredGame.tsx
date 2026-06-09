@@ -347,7 +347,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     <div
       data-unit-id={unit.id}
       className={outerClass}
-      style={{ flexShrink: 0, width: 68, borderRadius: 8, position: 'relative' }}
+      style={{ flexShrink: 0, width: 80, borderRadius: 8, position: 'relative' }}
     >
       {/* Floats live here — outside overflow:hidden so they show above the card */}
       {floats.filter(f => f.text).map(f => (
@@ -357,7 +357,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
         onClick={handleClick}
         className={pulseClass}
         style={{
-          width: 68, height: 80,
+          width: 80, height: 88,
           background: portraitSrc ? 'transparent' : (alive ? 'rgba(240,232,216,0.06)' : 'rgba(240,232,216,0.02)'),
           border: `2px solid ${borderColor}`,
           borderRadius: 8,
@@ -437,16 +437,6 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
                     transition: 'width 0.3s',
                   }} />
                 </div>
-                {/* XP bar */}
-                {unit.xpToNext !== undefined && unit.xpToNext !== Infinity && (
-                  <div style={{ width: '100%', height: 3, background: 'rgba(176,120,80,0.3)', borderRadius: 2, marginTop: 2 }}>
-                    <div style={{
-                      width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
-                      height: '100%', background: '#b07850', borderRadius: 2, transition: 'width 0.4s',
-                      boxShadow: '0 0 4px rgba(176,120,80,0.6)',
-                    }} />
-                  </div>
-                )}
               </div>
             </div>
           </>
@@ -494,13 +484,13 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
   const sideColor = SIDE_COLOR[side]
 
   return (
-    <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', minHeight: 82 }}>
+    <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', minHeight: 92 }}>
       {Array.from({ length: maxSlots }, (_, i) => {
         if (catapult && i === 3) {
           const alive = catapult.hp > 0
           return (
             <div key={i} style={{
-              width: 68, minHeight: 76, flexShrink: 0,
+              width: 80, minHeight: 88, flexShrink: 0,
               border: `2px dashed ${alive ? sideColor + '44' : 'rgba(240,232,216,0.1)'}`,
               borderRadius: 8,
               background: alive ? `${sideColor}06` : 'rgba(240,232,216,0.02)',
@@ -514,7 +504,7 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
         }
         const unit = rowUnits.find(u => u.slot === i)
         if (!unit) return (
-          <div key={i} style={{ width: 68, height: 76, border: '1px dashed rgba(240,232,216,0.08)', borderRadius: 8, flexShrink: 0 }} />
+          <div key={i} style={{ width: 80, height: 88, border: '1px dashed rgba(240,232,216,0.08)', borderRadius: 8, flexShrink: 0 }} />
         )
         return (
           <UnitCard key={unit.id} unit={unit}
@@ -543,19 +533,19 @@ function TurnQueue({ queue, units, currentIdx }: { queue: string[]; units: GameU
           const AvatarSVG = CLASS_SVG[u.class]
           return (
             <div key={`${id}-${i}`} style={{
-              width: 32, height: 32, borderRadius: 7, flexShrink: 0,
+              width: 26, height: 26, borderRadius: 6, flexShrink: 0,
               border: `2px solid ${isCurrent ? '#b07850' : u.side === 'player' ? '#6fa67a' : '#c07070'}`,
               overflow: 'hidden',
-              opacity: isCurrent ? 1 : 0.55,
-              transform: isCurrent ? 'scale(1.2)' : 'scale(1)',
+              opacity: isCurrent ? 1 : 0.5,
+              transform: isCurrent ? 'scale(1.15)' : 'scale(1)',
               transition: 'transform 0.2s',
               background: 'rgba(240,232,216,0.06)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: isCurrent ? '0 0 8px rgba(176,120,80,0.5)' : 'none',
+              boxShadow: isCurrent ? '0 0 6px rgba(176,120,80,0.5)' : 'none',
             }}>
               {portrait
                 ? <img src={portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                : <AvatarSVG color={isCurrent ? '#fff' : SIDE_COLOR[u.side]} size={16} />
+                : <AvatarSVG color={isCurrent ? '#fff' : SIDE_COLOR[u.side]} size={13} />
               }
             </div>
           )
@@ -1154,12 +1144,14 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     undefined as unknown as ArmyCounts,
     () => createInitialState(counts, playerUnits, undefined, prebuiltAiUnits, fortressLevelCap),
   )
-  const [floats, setFloats]       = useState<BattleEvent[]>([])
-  const [infoUnit, setInfoUnit]   = useState<GameUnit | null>(null)
+  const [floats, setFloats]         = useState<BattleEvent[]>([])
+  const [infoUnit, setInfoUnit]     = useState<GameUnit | null>(null)
   const [bannerText, setBannerText] = useState<string | null>(null)
+  const [toastText, setToastText]   = useState<string | null>(null)
   const battlefieldRef = useRef<HTMLDivElement>(null)
-  const prevPhase = useRef(state.phase)
-  const prevRound = useRef(state.round)
+  const prevPhase  = useRef(state.phase)
+  const prevRound  = useRef(state.round)
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
@@ -1197,6 +1189,15 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
       return () => clearTimeout(t)
     }
   }, [state.phase, state.round])
+
+  // Toast: last log entry
+  useEffect(() => {
+    const last = state.log[state.log.length - 1]
+    if (!last || last.type === 'info') return
+    setToastText(last.text)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToastText(null), 2800)
+  }, [state.log.length])
 
   // AI turn trigger
   useEffect(() => {
@@ -1242,7 +1243,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
   return (
     <div style={{
       maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column',
-      minHeight: '100vh', background: '#0f0e09', color: '#f0e8d8',
+      height: '100dvh', overflow: 'hidden', background: '#0f0e09', color: '#f0e8d8',
       fontFamily: "'Inter', sans-serif",
     }}>
 
@@ -1259,15 +1260,14 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
         </div>
       )}
 
-      {/* Header */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a' }}>✦ Серафити</div>
-          </div>
-          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.4)' }}>
-            Раунд {state.round}
-          </div>
+      {/* Header — title row + turn queue */}
+      <div style={{ borderBottom: '1px solid rgba(240,232,216,0.1)', background: '#17150f', flexShrink: 0 }}>
+        <div style={{ padding: '8px 14px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#d4a85a' }}>✦ Серафити</div>
+          <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>Раунд {state.round}</div>
+        </div>
+        <div style={{ padding: '0 14px 6px' }}>
+          <TurnQueue queue={state.queue} units={state.units} currentIdx={state.queueIdx} />
         </div>
       </div>
 
@@ -1275,86 +1275,82 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
       <div
         ref={battlefieldRef}
         style={{
-          flex: 1, padding: '8px 12px 300px', display: 'flex', flexDirection: 'column', gap: 2,
-          position: 'relative',
-          backgroundImage: [
-            'repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(212,168,90,0.025) 23px, rgba(212,168,90,0.025) 24px)',
-            'repeating-linear-gradient(0deg,  transparent, transparent 23px, rgba(212,168,90,0.025) 23px, rgba(212,168,90,0.025) 24px)',
-          ].join(','),
+          flex: 1, minHeight: 0, padding: '8px 10px', display: 'flex', flexDirection: 'column',
+          justifyContent: 'center', gap: 4, position: 'relative', overflow: 'hidden',
         }}
       >
         <ProjectileLayer battlefieldRef={battlefieldRef} events={state.events} />
 
-        {/* AI side: rows 1→0 */}
-        <div style={{
-          borderRadius: 8, padding: '6px 4px 4px',
-          background: 'rgba(192,112,112,0.04)',
-          border: '1px solid rgba(192,112,112,0.1)',
-        }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(192,112,112,0.8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingLeft: 2 }}>
-            Ворог
-          </div>
+        {/* AI side label */}
+        <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(192,112,112,0.6)', textTransform: 'uppercase', letterSpacing: '0.07em', paddingLeft: 2 }}>
+          Ворог
+        </div>
+
+        {/* AI rows 1→0 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {([1, 0] as Row[]).map(row => {
             const hasUnits = state.units.some(u => u.side === 'ai' && u.row === row)
             if (!hasUnits) return null
             return (
-              <div key={row}>
-                <div style={{ fontSize: 9, color: 'rgba(192,112,112,0.5)', marginBottom: 1, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
-                <UnitRow
-                  units={state.units} side="ai" row={row}
-                  activeId={actor?.side === 'ai' ? actorId : null}
-                  targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-                />
-              </div>
+              <UnitRow key={row}
+                units={state.units} side="ai" row={row}
+                activeId={actor?.side === 'ai' ? actorId : null}
+                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+              />
             )
           })}
         </div>
 
         {/* Divider */}
-        <div style={{ borderTop: '1px solid rgba(240,232,216,0.1)', margin: '2px 0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 16, background: '#0f0e09', padding: '0 8px', color: 'rgba(240,232,216,0.3)' }}>
+        <div style={{ borderTop: '1px solid rgba(240,232,216,0.08)', margin: '2px 0', position: 'relative' }}>
+          <div style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', fontSize: 15, background: '#0f0e09', padding: '0 8px', color: 'rgba(240,232,216,0.25)' }}>
             ⚔
           </div>
+          {/* Toast */}
+          {toastText && (
+            <div style={{
+              position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 6,
+              fontSize: 10, color: 'rgba(240,232,216,0.45)', whiteSpace: 'nowrap',
+              pointerEvents: 'none', zIndex: 5,
+            }}>
+              {toastText}
+            </div>
+          )}
         </div>
 
-        {/* Player side: rows 0→1 */}
-        <div style={{
-          borderRadius: 8, padding: '4px 4px 6px',
-          background: 'rgba(111,166,122,0.04)',
-          border: '1px solid rgba(111,166,122,0.1)',
-        }}>
+        {/* Player rows 0→1 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {([0, 1] as Row[]).map(row => {
             const hasUnits = state.units.some(u => u.side === 'player' && u.row === row)
             if (!hasUnits) return null
             return (
-              <div key={row}>
-                <div style={{ fontSize: 9, color: 'rgba(111,166,122,0.6)', marginBottom: 1, paddingLeft: 2 }}>{ROW_LABEL[row]}</div>
-                <UnitRow
-                  units={state.units} side="player" row={row}
-                  activeId={actor?.side === 'player' ? actorId : null}
-                  targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
-                />
-              </div>
+              <UnitRow key={row}
+                units={state.units} side="player" row={row}
+                activeId={actor?.side === 'player' ? actorId : null}
+                targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
+                floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+              />
             )
           })}
-          <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(111,166,122,0.8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, paddingLeft: 2 }}>
-            Твоя армія
-          </div>
+        </div>
+
+        {/* Player side label */}
+        <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(111,166,122,0.6)', textTransform: 'uppercase', letterSpacing: '0.07em', paddingLeft: 2 }}>
+          Твоя армія
         </div>
       </div>
 
-      {/* Fixed bottom panel */}
+      {/* Bottom panel — part of normal flow, no scroll needed */}
       <div style={{
-        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 560, zIndex: 20,
+        flexShrink: 0,
         background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)',
         boxShadow: '0 -4px 24px rgba(0,0,0,0.4)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
       }}>
         {/* Action area */}
         <div style={{
-          minHeight: 118, display: 'flex', flexDirection: 'column', justifyContent: 'center',
+          minHeight: 88, display: 'flex', flexDirection: 'column', justifyContent: 'center',
         }}>
         {state.phase === 'game-over' ? (
             <div style={{ padding: '16px 20px', textAlign: 'center' }}>
@@ -1446,13 +1442,6 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
         )}
         </div>
 
-        {/* Turn queue */}
-        <div style={{ padding: '6px 12px 4px', borderTop: '1px solid rgba(240,232,216,0.07)' }}>
-          <TurnQueue queue={state.queue} units={state.units} currentIdx={state.queueIdx} />
-        </div>
-
-        {/* Compact battle log */}
-        <BattleLog entries={state.log} />
       </div>
 
       {infoUnit && <UnitInfoSheet unit={infoUnit} onClose={() => setInfoUnit(null)} />}
