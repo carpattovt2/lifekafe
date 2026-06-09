@@ -605,15 +605,14 @@ function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
       style={{
-        flex: '0 0 auto', width: 110, padding: '9px 11px', borderRadius: 8, textAlign: 'left',
+        flex: '1 1 calc(50% - 3px)', padding: '8px 10px', borderRadius: 8, textAlign: 'left',
         background: selected ? 'rgba(176,120,80,0.22)' : 'rgba(240,232,216,0.05)',
         border: `1px solid ${selected ? '#b07850' : 'rgba(240,232,216,0.1)'}`,
         color: '#f0e8d8', cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1, transition: 'all 0.12s',
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{def.label}</div>
-      <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.45)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{def.desc}</div>
+      <div style={{ fontSize: 12, fontWeight: 600 }}>{def.label}</div>
     </button>
   )
 }
@@ -1406,7 +1405,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
       }}>
         {/* Action area */}
         <div style={{
-          height: 108, display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden',
+          height: 162, display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden',
         }}>
         {state.phase === 'game-over' ? (
             <div style={{ padding: '16px 20px', textAlign: 'center' }}>
@@ -1455,10 +1454,10 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
               )}
             </div>
             {!state.needsTarget ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'flex-start', scrollbarWidth: 'none' } as React.CSSProperties}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <button
                   onClick={() => dispatch({ type: 'ADVANCE_QUEUE' })}
-                  style={{ padding: '8px 14px', background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.12)', borderRadius: 8, color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
+                  style={{ flex: '1 1 calc(50% - 3px)', padding: '8px 10px', background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.12)', borderRadius: 8, color: 'rgba(240,232,216,0.4)', cursor: 'pointer', fontSize: 12 }}
                 >
                   Пропустити
                 </button>
