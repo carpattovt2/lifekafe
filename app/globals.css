@@ -694,8 +694,8 @@ h1, h2, h3 {
 /* ── Seraphites: hit flash on portrait (overrides persistent state) ───────── */
 @keyframes unit-hit-flash {
   0%  { filter: brightness(1) saturate(1); }
-  12% { filter: brightness(3) saturate(0.1) sepia(1) hue-rotate(-20deg); }
-  35% { filter: brightness(1.5) saturate(0.5); }
+  12% { filter: brightness(1.5) saturate(3) hue-rotate(-30deg) contrast(1.1); }
+  40% { filter: brightness(1.2) saturate(1.8) hue-rotate(-15deg); }
   100%{ filter: brightness(1) saturate(1); }
 }
 .unit-hit-flash { animation: unit-hit-flash 0.45s ease-out forwards !important; }

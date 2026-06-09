@@ -347,8 +347,12 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     <div
       data-unit-id={unit.id}
       className={outerClass}
-      style={{ flexShrink: 0, width: 68, borderRadius: 8 }}
+      style={{ flexShrink: 0, width: 68, borderRadius: 8, position: 'relative' }}
     >
+      {/* Floats live here — outside overflow:hidden so they show above the card */}
+      {floats.filter(f => f.text).map(f => (
+        <span key={f.id} className={`float-${f.type}`}>{f.text}</span>
+      ))}
       <div
         onClick={handleClick}
         className={pulseClass}
@@ -366,9 +370,6 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           position: 'relative',
         }}
       >
-        {floats.filter(f => f.text).map(f => (
-          <span key={f.id} className={`float-${f.type}`}>{f.text}</span>
-        ))}
 
         {/* Miss / evade flash overlay */}
         {(missFlash || evadeDodge) && (
