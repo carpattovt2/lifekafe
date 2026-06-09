@@ -626,6 +626,119 @@ h1, h2, h3 {
 .unit-active-player { animation: unit-pulse-player 1.5s ease-in-out infinite; }
 .unit-active-ai     { animation: unit-pulse-ai 1.5s ease-in-out infinite; }
 
+/* ── Seraphites: unit portrait idle/catapult ─────────────────────────────── */
+@keyframes unit-breathe {
+  0%,100% { transform: scale(1) translateY(0); }
+  50%     { transform: scale(1.04) translateY(-1px); }
+}
+.unit-portrait-idle { animation: unit-breathe 3.5s ease-in-out infinite; transform-origin: center bottom; }
+
+@keyframes unit-catapult-vibe {
+  0%   { transform: translateX(0) rotate(0deg); }
+  1%   { transform: translateX(-1.5px) rotate(-0.5deg); }
+  2%   { transform: translateX(1.5px) rotate(0.5deg); }
+  3%   { transform: translateX(-1.2px) rotate(-0.4deg); }
+  4%   { transform: translateX(1px) rotate(0.3deg); }
+  5%   { transform: translateX(-0.5px) rotate(-0.2deg); }
+  6%,100% { transform: translateX(0) rotate(0deg); }
+}
+.unit-portrait-catapult { animation: unit-catapult-vibe 5s ease-in-out infinite; }
+
+/* ── Seraphites: portrait debuff states (filter animations on <img>) ──────── */
+@keyframes unit-frozen-flicker {
+  0%,100% { filter: brightness(0.85) saturate(0.5) hue-rotate(175deg); }
+  30%     { filter: brightness(1.10) saturate(0.8) hue-rotate(190deg); }
+  65%     { filter: brightness(0.75) saturate(0.4) hue-rotate(165deg); }
+}
+.unit-portrait-frozen { animation: unit-frozen-flicker 2s ease-in-out infinite; }
+
+@keyframes unit-burning-flicker {
+  0%,100% { filter: brightness(1.15) saturate(1.6) hue-rotate(-10deg); }
+  25%     { filter: brightness(1.40) saturate(2.2) hue-rotate(-20deg); }
+  60%     { filter: brightness(1.05) saturate(1.3) hue-rotate(-5deg); }
+}
+.unit-portrait-burning { animation: unit-burning-flicker 0.7s ease-in-out infinite; }
+
+@keyframes unit-poison-flicker {
+  0%,100% { filter: brightness(0.90) saturate(1.3) hue-rotate(85deg); }
+  35%     { filter: brightness(1.10) saturate(1.8) hue-rotate(100deg); }
+  70%     { filter: brightness(0.85) saturate(1.1) hue-rotate(80deg); }
+}
+.unit-portrait-poison { animation: unit-poison-flicker 1.8s ease-in-out infinite; }
+
+@keyframes unit-accuracy-down-flicker {
+  0%,100% { filter: brightness(0.80) saturate(0.20); }
+  45%     { filter: brightness(1.00) saturate(0.40); }
+}
+.unit-portrait-accuracy_down { animation: unit-accuracy-down-flicker 2.2s ease-in-out infinite; }
+
+@keyframes unit-armor-break-flicker {
+  0%,100% { filter: brightness(0.95) saturate(1.5) hue-rotate(-15deg); }
+  25%     { filter: brightness(1.30) saturate(2.0) hue-rotate(-25deg); }
+  60%     { filter: brightness(0.90) saturate(1.2) hue-rotate(-10deg); }
+}
+.unit-portrait-armor_break { animation: unit-armor-break-flicker 1.1s ease-in-out infinite; }
+
+@keyframes unit-initiative-down-flicker {
+  0%,100% { filter: brightness(0.80) saturate(0.7) hue-rotate(240deg); }
+  50%     { filter: brightness(1.00) saturate(1.1) hue-rotate(260deg); }
+}
+.unit-portrait-initiative_down { animation: unit-initiative-down-flicker 2.8s ease-in-out infinite; }
+
+@keyframes unit-cooldown-flicker {
+  0%,100% { filter: brightness(0.45) saturate(0.2); }
+  50%     { filter: brightness(0.60) saturate(0.3); }
+}
+.unit-portrait-cooldown { animation: unit-cooldown-flicker 2s ease-in-out infinite; }
+
+/* ── Seraphites: hit flash on portrait (overrides persistent state) ───────── */
+@keyframes unit-hit-flash {
+  0%  { filter: brightness(1) saturate(1); }
+  12% { filter: brightness(3) saturate(0.1) sepia(1) hue-rotate(-20deg); }
+  35% { filter: brightness(1.5) saturate(0.5); }
+  100%{ filter: brightness(1) saturate(1); }
+}
+.unit-hit-flash { animation: unit-hit-flash 0.45s ease-out forwards !important; }
+
+/* ── Seraphites: miss/evade trigger flash overlay ────────────────────────── */
+@keyframes unit-trigger-flash {
+  0%   { opacity: 0; }
+  12%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+.unit-miss-flash-overlay  { background: rgba(255,255,255,1); animation: unit-trigger-flash 0.5s ease-out forwards; }
+.unit-evade-flash-overlay { background: rgba(60,220,200,1);  animation: unit-trigger-flash 0.5s ease-out forwards; }
+
+/* ── Seraphites: evade dodge (on outer wrapper) ──────────────────────────── */
+@keyframes unit-evade-dodge {
+  0%   { transform: translateX(0) translateY(0) rotate(0deg); }
+  30%  { transform: translateX(5px) translateY(-5px) rotate(2deg); }
+  65%  { transform: translateX(3px) translateY(-2px) rotate(1deg); }
+  100% { transform: translateX(0) translateY(0) rotate(0deg); }
+}
+.unit-evade-dodge { animation: unit-evade-dodge 0.42s ease-out; }
+
+/* ── Seraphites: buff glow on outer wrapper ──────────────────────────────── */
+/* declared BEFORE unit-shake so shake wins in the rare conflict */
+@keyframes unit-glow-gold   { 0%,100%{box-shadow:0 0 8px 3px rgba(220,180,60,0.5)} 50%{box-shadow:0 0 20px 6px rgba(220,180,60,0.9)} }
+@keyframes unit-glow-green  { 0%,100%{box-shadow:0 0 7px 2px rgba(80,200,100,0.45)} 50%{box-shadow:0 0 18px 5px rgba(80,200,100,0.85)} }
+@keyframes unit-glow-blue   { 0%,100%{box-shadow:0 0 7px 2px rgba(80,160,220,0.45)} 50%{box-shadow:0 0 18px 5px rgba(80,160,220,0.85)} }
+@keyframes unit-glow-yellow { 0%,100%{box-shadow:0 0 8px 2px rgba(240,210,50,0.5)} 50%{box-shadow:0 0 20px 6px rgba(240,210,50,0.95)} }
+@keyframes unit-glow-red    { 0%,100%{box-shadow:0 0 7px 2px rgba(220,80,80,0.5)} 50%{box-shadow:0 0 18px 5px rgba(220,80,80,0.9)} }
+@keyframes unit-glow-cyan   { 0%,100%{box-shadow:0 0 7px 2px rgba(60,220,200,0.45)} 50%{box-shadow:0 0 18px 5px rgba(60,220,200,0.85)} }
+@keyframes unit-glow-spike  { 0%,100%{box-shadow:0 0 6px 2px rgba(120,180,80,0.4)} 50%{box-shadow:0 0 16px 5px rgba(120,180,80,0.8)} }
+@keyframes unit-glow-bigold { 0%,100%{box-shadow:0 0 12px 4px rgba(255,200,50,0.65)} 50%{box-shadow:0 0 28px 8px rgba(255,200,50,0.95)} }
+.unit-buff-defense_up    { animation: unit-glow-gold   1.4s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-fortress_buff { animation: unit-glow-bigold 1.5s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-wind_shield   { animation: unit-glow-blue   1.6s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-regen         { animation: unit-glow-green  1.8s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-aimed         { animation: unit-glow-yellow 1.2s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-morale_up     { animation: unit-glow-gold   2s   ease-in-out infinite; border-radius: 8px; }
+.unit-buff-taunt         { animation: unit-glow-red    1s   ease-in-out infinite; border-radius: 8px; }
+.unit-buff-thorns        { animation: unit-glow-spike  2s   ease-in-out infinite; border-radius: 8px; }
+.unit-buff-accuracy_up   { animation: unit-glow-yellow 1s   ease-in-out infinite; border-radius: 8px; }
+.unit-buff-initiative_up { animation: unit-glow-cyan   1.2s ease-in-out infinite; border-radius: 8px; }
+
 /* ── Seraphites: projectile ──────────────────────────────────────────────── */
 @keyframes proj-fly {
   from { opacity: 1;   transform: translate(-50%, -50%) translate(0, 0) scale(1.2); }

@@ -437,6 +437,7 @@ function resolveAttack(
   if (Math.random() > acc) {
     logs.push(log(`${atk.name} промахується!`, 'miss'))
     events.push(ev(atk.id, 'Промах!', 'miss'))
+    events.push(ev(def.id, '', 'miss', atk.id))
     return { hit: false, evaded: false, crit: false, damage: 0, logs, events }
   }
 
@@ -615,6 +616,7 @@ export function executeAction(
 
     case 'shkvall': {
       if (!target) break
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'shkvall')) break
       // First hit
       const res1 = resolveAttack(actor, target, units)
       newLogs.push(...res1.logs)

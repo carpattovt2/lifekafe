@@ -232,15 +232,23 @@ function ProjectileLayer({ battlefieldRef, events }: {
 }
 
 // ── Unit card ──────────────────────────────────────────────────────────────────
+const DEBUFF_PRIORITY = ['frozen','burning','poison','accuracy_down','armor_break','initiative_down','cooldown'] as const
+const BUFF_PRIORITY   = ['defense_up','fortress_buff','wind_shield','regen','aimed','morale_up','taunt','thorns','accuracy_up','initiative_up'] as const
+
 function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   unit: GameUnit; isActive: boolean; isTargetable: boolean
   onSelect?: () => void; onInfo?: () => void
   floats: BattleEvent[]
 }) {
-  const [isShaking, setIsShaking] = useState(false)
-  const [isDying,   setIsDying]   = useState(false)
-  const lastDmgId = useRef(0)
-  const prevHp    = useRef(unit.hp)
+  const [isShaking,  setIsShaking]  = useState(false)
+  const [isDying,    setIsDying]    = useState(false)
+  const [hitFlash,   setHitFlash]   = useState(false)
+  const [missFlash,  setMissFlash]  = useState(false)
+  const [evadeDodge, setEvadeDodge] = useState(false)
+  const lastDmgId   = useRef(0)
+  const lastMissId  = useRef(0)
+  const lastEvadeId = useRef(0)
+  const prevHp      = useRef(unit.hp)
 
   useEffect(() => {
     const maxId = floats
@@ -249,7 +257,28 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     if (maxId > lastDmgId.current) {
       lastDmgId.current = maxId
       setIsShaking(true)
-      const t = setTimeout(() => setIsShaking(false), 450)
+      setHitFlash(true)
+      const t = setTimeout(() => { setIsShaking(false); setHitFlash(false) }, 450)
+      return () => clearTimeout(t)
+    }
+  }, [floats])
+
+  useEffect(() => {
+    const maxId = floats.filter(f => f.type === 'miss').reduce((m, f) => Math.max(m, f.id), 0)
+    if (maxId > lastMissId.current) {
+      lastMissId.current = maxId
+      setMissFlash(true)
+      const t = setTimeout(() => setMissFlash(false), 520)
+      return () => clearTimeout(t)
+    }
+  }, [floats])
+
+  useEffect(() => {
+    const maxId = floats.filter(f => f.type === 'evade').reduce((m, f) => Math.max(m, f.id), 0)
+    if (maxId > lastEvadeId.current) {
+      lastEvadeId.current = maxId
+      setEvadeDodge(true)
+      const t = setTimeout(() => setEvadeDodge(false), 450)
       return () => clearTimeout(t)
     }
   }, [floats])
@@ -263,6 +292,16 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
   const color  = SIDE_COLOR[unit.side]
   const borderColor = isActive ? '#b07850' : isTargetable ? color : 'rgba(240,232,216,0.14)'
   const AvatarSVG = CLASS_SVG[unit.class]
+
+  const dominantDebuff = alive ? DEBUFF_PRIORITY.find(d => unit.buffs.some(b => b.type === d)) ?? null : null
+  const dominantBuff   = alive && !isActive ? BUFF_PRIORITY.find(b => unit.buffs.some(buf => buf.type === b)) ?? null : null
+  const portraitAnimClass = hitFlash
+    ? 'unit-hit-flash'
+    : dominantDebuff
+      ? `unit-portrait-${dominantDebuff}`
+      : unit.class === 'catapult'
+        ? 'unit-portrait-catapult'
+        : 'unit-portrait-idle'
   const unitLevelName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
                         ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
                       : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
@@ -298,11 +337,17 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
     else onInfo?.()
   }
 
+  const outerClass = [
+    isShaking   ? 'unit-shake'    : '',
+    evadeDodge  ? 'unit-evade-dodge' : '',
+    dominantBuff ? `unit-buff-${dominantBuff}` : '',
+  ].filter(Boolean).join(' ') || undefined
+
   return (
     <div
       data-unit-id={unit.id}
-      className={isShaking ? 'unit-shake' : ''}
-      style={{ flexShrink: 0, width: 68 }}
+      className={outerClass}
+      style={{ flexShrink: 0, width: 68, borderRadius: 8 }}
     >
       <div
         onClick={handleClick}
@@ -321,9 +366,15 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
           position: 'relative',
         }}
       >
-        {floats.map(f => (
+        {floats.filter(f => f.text).map(f => (
           <span key={f.id} className={`float-${f.type}`}>{f.text}</span>
         ))}
+
+        {/* Miss / evade flash overlay */}
+        {(missFlash || evadeDodge) && (
+          <div className={missFlash ? 'unit-miss-flash-overlay' : 'unit-evade-flash-overlay'}
+            style={{ position: 'absolute', inset: 0, zIndex: 6, pointerEvents: 'none', borderRadius: 6 }} />
+        )}
 
         {!alive && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3, pointerEvents: 'none' }}>
@@ -333,9 +384,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
         {portraitSrc ? (
           <>
             {/* Full-bleed portrait */}
-            <img src={portraitSrc} alt="" style={{
+            <img src={portraitSrc} alt="" className={alive ? portraitAnimClass : undefined} style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-              filter: alive ? 'none' : 'grayscale(1)',
+              filter: alive ? undefined : 'grayscale(1)',
             }} />
             {/* Gradient overlay for text readability */}
             <div style={{
@@ -350,9 +401,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
               {/* Top row: buff icons + ХОДА badge */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  {unit.buffs.length > 0 && (
+                  {unit.buffs.some(b => b.type !== 'cooldown') && (
                     <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                      {unit.buffs.map(b => (
+                      {unit.buffs.filter(b => b.type !== 'cooldown').map(b => (
                         <span key={b.id} style={{ fontSize: 7, color: '#fff', background: 'rgba(0,0,0,0.45)', borderRadius: 2, padding: '1px 2px' }}>
                           {BUFF_ICON[b.type] ?? '✦'}
                         </span>
@@ -415,9 +466,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
               {unit.hp}/{unit.maxHp}
             </div>
             <HpBar hp={unit.hp} maxHp={unit.maxHp} />
-            {unit.buffs.length > 0 && (
+            {unit.buffs.some(b => b.type !== 'cooldown') && (
               <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap' }}>
-                {unit.buffs.map(b => (
+                {unit.buffs.filter(b => b.type !== 'cooldown').map(b => (
                   <span key={b.id} style={{ fontSize: 8, padding: '1px 2px', borderRadius: 3, background: 'rgba(240,232,216,0.08)', color: 'rgba(240,232,216,0.5)' }}>
                     {BUFF_ICON[b.type] ?? '✦'}{b.turnsLeft}
                   </span>
@@ -1367,7 +1418,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
                   if (a === 'aim' && actor) {
                     disabled = actor.buffs.some(b => b.type === 'aimed')
                   }
-                  if ((a === 'hurricane' || a === 'armageddon' || a === 'earthquake' || a === 'fortress_aura' || a === 'blizzard') && actor) {
+                  if ((a === 'hurricane' || a === 'armageddon' || a === 'earthquake' || a === 'fortress_aura' || a === 'blizzard' || a === 'shkvall' || a === 'double_shot' || a === 'tailwind' || a === 'twin_bolt') && actor) {
                     disabled = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
                   }
                   if (a === 'tailwind' && actor) {
