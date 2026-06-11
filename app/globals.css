@@ -589,13 +589,13 @@ h1, h2, h3 {
   font-family: 'Inter', sans-serif;
   z-index: 10;
 }
-.float-damage { font-size: 18px; color: #c0392b; animation: float-damage-up 4.2s ease-out forwards; text-shadow: 0 1px 4px rgba(192,57,43,0.3); }
-.float-crit   { font-size: 22px; color: #b07850; animation: float-crit-up 4.5s ease-out forwards;  text-shadow: 0 0 12px rgba(176,120,80,0.5); }
-.float-miss   { font-size: 12px; color: #9b9289; animation: float-miss-up 3.75s ease-out forwards; }
-.float-evade  { font-size: 13px; color: #4a86a8; animation: float-evade-up 3.3s ease-out forwards; }
-.float-heal   { font-size: 15px; color: #5a9a6a; animation: float-up 4.5s ease-out forwards;       text-shadow: 0 1px 4px rgba(90,154,106,0.3); }
-.float-buff   { font-size: 12px; color: #8060a8; animation: float-up 5.25s ease-out forwards; }
-.float-debuff { font-size: 12px; color: #c07070; animation: float-up 5.25s ease-out forwards; }
+.float-damage { font-size: 18px; color: #c0392b; animation: float-damage-up 6.3s ease-out forwards; text-shadow: 0 1px 4px rgba(192,57,43,0.3); }
+.float-crit   { font-size: 22px; color: #b07850; animation: float-crit-up 6.75s ease-out forwards;  text-shadow: 0 0 12px rgba(176,120,80,0.5); }
+.float-miss   { font-size: 12px; color: #9b9289; animation: float-miss-up 5.6s ease-out forwards; }
+.float-evade  { font-size: 13px; color: #4a86a8; animation: float-evade-up 5.0s ease-out forwards; }
+.float-heal   { font-size: 15px; color: #5a9a6a; animation: float-up 6.75s ease-out forwards;       text-shadow: 0 1px 4px rgba(90,154,106,0.3); }
+.float-buff   { font-size: 12px; color: #8060a8; animation: float-up 7.9s ease-out forwards; }
+.float-debuff { font-size: 12px; color: #c07070; animation: float-up 7.9s ease-out forwards; }
 
 /* ── Seraphites: unit state animations ───────────────────────────────────── */
 @keyframes unit-shake {
@@ -605,7 +605,7 @@ h1, h2, h3 {
   55%  { transform: translateX(-4px); }
   75%  { transform: translateX(4px); }
 }
-.unit-shake { animation: unit-shake 0.65s ease-in-out; }
+.unit-shake { animation: unit-shake 1.0s ease-in-out; }
 
 @keyframes unit-die {
   0%   { opacity: 1;    transform: scale(1);    filter: none; }
@@ -613,7 +613,7 @@ h1, h2, h3 {
   65%  { opacity: 0.5;  transform: scale(0.95); filter: grayscale(0.6) brightness(0.9); }
   100% { opacity: 0.35; transform: scale(1);    filter: grayscale(1); }
 }
-.unit-die { animation: unit-die 1.1s ease-out forwards; }
+.unit-die { animation: unit-die 1.65s ease-out forwards; }
 
 @keyframes unit-pulse-player {
   0%, 100% { box-shadow: 0 2px 10px rgba(111,166,122,0.45); }
@@ -623,15 +623,15 @@ h1, h2, h3 {
   0%, 100% { box-shadow: 0 2px 10px rgba(192,112,112,0.45); }
   50%       { box-shadow: 0 2px 22px rgba(192,112,112,0.85), 0 0 8px rgba(192,112,112,0.4); }
 }
-.unit-active-player { animation: unit-pulse-player 2.2s ease-in-out infinite; }
-.unit-active-ai     { animation: unit-pulse-ai 2.2s ease-in-out infinite; }
+.unit-active-player { animation: unit-pulse-player 3.3s ease-in-out infinite; }
+.unit-active-ai     { animation: unit-pulse-ai 3.3s ease-in-out infinite; }
 
 /* ── Seraphites: unit portrait idle/catapult ─────────────────────────────── */
 @keyframes unit-breathe {
   0%,100% { transform: scale(1) translateY(0); }
   50%     { transform: scale(1.04) translateY(-1px); }
 }
-.unit-portrait-idle { animation: unit-breathe 5s ease-in-out infinite; transform-origin: center bottom; }
+.unit-portrait-idle { animation: unit-breathe 7.5s ease-in-out infinite; transform-origin: center bottom; }
 
 @keyframes unit-catapult-vibe {
   0%   { transform: translateX(0) rotate(0deg); }
@@ -642,7 +642,7 @@ h1, h2, h3 {
   5%   { transform: translateX(-0.5px) rotate(-0.2deg); }
   6%,100% { transform: translateX(0) rotate(0deg); }
 }
-.unit-portrait-catapult { animation: unit-catapult-vibe 7s ease-in-out infinite; }
+.unit-portrait-catapult { animation: unit-catapult-vibe 10.5s ease-in-out infinite; }
 
 /* ── Seraphites: portrait debuff states (filter animations on <img>) ──────── */
 @keyframes unit-frozen-flicker {
@@ -650,46 +650,55 @@ h1, h2, h3 {
   30%     { filter: brightness(1.10) saturate(0.8) hue-rotate(190deg); }
   65%     { filter: brightness(0.75) saturate(0.4) hue-rotate(165deg); }
 }
-.unit-portrait-frozen { animation: unit-frozen-flicker 3s ease-in-out infinite; }
+.unit-portrait-frozen { animation: unit-frozen-flicker 4.5s ease-in-out infinite; }
 
 @keyframes unit-burning-flicker {
   0%,100% { filter: brightness(1.15) saturate(1.6) hue-rotate(-10deg); }
   25%     { filter: brightness(1.40) saturate(2.2) hue-rotate(-20deg); }
   60%     { filter: brightness(1.05) saturate(1.3) hue-rotate(-5deg); }
 }
-.unit-portrait-burning { animation: unit-burning-flicker 1.1s ease-in-out infinite; }
+.unit-portrait-burning { animation: unit-burning-flicker 1.65s ease-in-out infinite; }
 
 @keyframes unit-poison-flicker {
   0%,100% { filter: brightness(0.90) saturate(1.3) hue-rotate(85deg); }
   35%     { filter: brightness(1.10) saturate(1.8) hue-rotate(100deg); }
   70%     { filter: brightness(0.85) saturate(1.1) hue-rotate(80deg); }
 }
-.unit-portrait-poison { animation: unit-poison-flicker 2.7s ease-in-out infinite; }
+.unit-portrait-poison { animation: unit-poison-flicker 4.05s ease-in-out infinite; }
 
 @keyframes unit-accuracy-down-flicker {
   0%,100% { filter: brightness(0.80) saturate(0.20); }
   45%     { filter: brightness(1.00) saturate(0.40); }
 }
-.unit-portrait-accuracy_down { animation: unit-accuracy-down-flicker 3.3s ease-in-out infinite; }
+.unit-portrait-accuracy_down { animation: unit-accuracy-down-flicker 4.95s ease-in-out infinite; }
 
 @keyframes unit-armor-break-flicker {
   0%,100% { filter: brightness(0.95) saturate(1.5) hue-rotate(-15deg); }
   25%     { filter: brightness(1.30) saturate(2.0) hue-rotate(-25deg); }
   60%     { filter: brightness(0.90) saturate(1.2) hue-rotate(-10deg); }
 }
-.unit-portrait-armor_break { animation: unit-armor-break-flicker 1.7s ease-in-out infinite; }
+.unit-portrait-armor_break { animation: unit-armor-break-flicker 2.55s ease-in-out infinite; }
 
 @keyframes unit-initiative-down-flicker {
   0%,100% { filter: brightness(0.80) saturate(0.7) hue-rotate(240deg); }
   50%     { filter: brightness(1.00) saturate(1.1) hue-rotate(260deg); }
 }
-.unit-portrait-initiative_down { animation: unit-initiative-down-flicker 4.2s ease-in-out infinite; }
+.unit-portrait-initiative_down { animation: unit-initiative-down-flicker 6.3s ease-in-out infinite; }
 
 @keyframes unit-cooldown-flicker {
   0%,100% { filter: brightness(0.45) saturate(0.2); }
   50%     { filter: brightness(0.60) saturate(0.3); }
 }
-.unit-portrait-cooldown { animation: unit-cooldown-flicker 3s ease-in-out infinite; }
+.unit-portrait-cooldown { animation: unit-cooldown-flicker 4.5s ease-in-out infinite; }
+
+/* ── Seraphites: damage card red flash overlay ───────────────────────────── */
+@keyframes unit-damage-card {
+  0%   { opacity: 0; }
+  8%   { opacity: 0.55; }
+  55%  { opacity: 0.25; }
+  100% { opacity: 0; }
+}
+.unit-damage-card-overlay { background: rgba(220,50,50,1); animation: unit-damage-card 1.05s ease-out forwards; }
 
 /* ── Seraphites: hit flash on portrait (overrides persistent state) ───────── */
 @keyframes unit-hit-flash {
@@ -698,7 +707,7 @@ h1, h2, h3 {
   40% { filter: brightness(1.2) saturate(1.8) hue-rotate(-15deg); }
   100%{ filter: brightness(1) saturate(1); }
 }
-.unit-hit-flash { animation: unit-hit-flash 0.7s ease-out forwards !important; }
+.unit-hit-flash { animation: unit-hit-flash 1.05s ease-out forwards !important; }
 
 /* ── Seraphites: miss/evade trigger flash overlay ────────────────────────── */
 @keyframes unit-trigger-flash {
@@ -706,8 +715,8 @@ h1, h2, h3 {
   12%  { opacity: 0.85; }
   100% { opacity: 0; }
 }
-.unit-miss-flash-overlay  { background: rgba(255,255,255,1); animation: unit-trigger-flash 0.75s ease-out forwards; }
-.unit-evade-flash-overlay { background: rgba(60,220,200,1);  animation: unit-trigger-flash 0.75s ease-out forwards; }
+.unit-miss-flash-overlay  { background: rgba(255,255,255,1); animation: unit-trigger-flash 1.1s ease-out forwards; }
+.unit-evade-flash-overlay { background: rgba(60,220,200,1);  animation: unit-trigger-flash 1.1s ease-out forwards; }
 
 /* ── Seraphites: evade dodge (on outer wrapper) ──────────────────────────── */
 @keyframes unit-evade-dodge {
@@ -716,7 +725,7 @@ h1, h2, h3 {
   65%  { transform: translateX(3px) translateY(-2px) rotate(1deg); }
   100% { transform: translateX(0) translateY(0) rotate(0deg); }
 }
-.unit-evade-dodge { animation: unit-evade-dodge 0.65s ease-out; }
+.unit-evade-dodge { animation: unit-evade-dodge 1.0s ease-out; }
 
 /* ── Seraphites: buff glow on outer wrapper ──────────────────────────────── */
 /* declared BEFORE unit-shake so shake wins in the rare conflict */
@@ -728,16 +737,16 @@ h1, h2, h3 {
 @keyframes unit-glow-cyan   { 0%,100%{box-shadow:0 0 7px 2px rgba(60,220,200,0.45)} 50%{box-shadow:0 0 18px 5px rgba(60,220,200,0.85)} }
 @keyframes unit-glow-spike  { 0%,100%{box-shadow:0 0 6px 2px rgba(120,180,80,0.4)} 50%{box-shadow:0 0 16px 5px rgba(120,180,80,0.8)} }
 @keyframes unit-glow-bigold { 0%,100%{box-shadow:0 0 12px 4px rgba(255,200,50,0.65)} 50%{box-shadow:0 0 28px 8px rgba(255,200,50,0.95)} }
-.unit-buff-defense_up    { animation: unit-glow-gold   1.4s ease-in-out infinite; border-radius: 8px; }
-.unit-buff-fortress_buff { animation: unit-glow-bigold 1.5s ease-in-out infinite; border-radius: 8px; }
-.unit-buff-wind_shield   { animation: unit-glow-blue   1.6s ease-in-out infinite; border-radius: 8px; }
-.unit-buff-regen         { animation: unit-glow-green  1.8s ease-in-out infinite; border-radius: 8px; }
-.unit-buff-aimed         { animation: unit-glow-yellow 1.2s ease-in-out infinite; border-radius: 8px; }
-.unit-buff-morale_up     { animation: unit-glow-gold   2s   ease-in-out infinite; border-radius: 8px; }
-.unit-buff-taunt         { animation: unit-glow-red    1s   ease-in-out infinite; border-radius: 8px; }
-.unit-buff-thorns        { animation: unit-glow-spike  2s   ease-in-out infinite; border-radius: 8px; }
-.unit-buff-accuracy_up   { animation: unit-glow-yellow 1s   ease-in-out infinite; border-radius: 8px; }
-.unit-buff-initiative_up { animation: unit-glow-cyan   1.2s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-defense_up    { animation: unit-glow-gold   2.1s  ease-in-out infinite; border-radius: 8px; }
+.unit-buff-fortress_buff { animation: unit-glow-bigold 2.25s ease-in-out infinite; border-radius: 8px; }
+.unit-buff-wind_shield   { animation: unit-glow-blue   2.4s  ease-in-out infinite; border-radius: 8px; }
+.unit-buff-regen         { animation: unit-glow-green  2.7s  ease-in-out infinite; border-radius: 8px; }
+.unit-buff-aimed         { animation: unit-glow-yellow 1.8s  ease-in-out infinite; border-radius: 8px; }
+.unit-buff-morale_up     { animation: unit-glow-gold   3s    ease-in-out infinite; border-radius: 8px; }
+.unit-buff-taunt         { animation: unit-glow-red    1.5s  ease-in-out infinite; border-radius: 8px; }
+.unit-buff-thorns        { animation: unit-glow-spike  3s    ease-in-out infinite; border-radius: 8px; }
+.unit-buff-accuracy_up   { animation: unit-glow-yellow 1.5s  ease-in-out infinite; border-radius: 8px; }
+.unit-buff-initiative_up { animation: unit-glow-cyan   1.8s  ease-in-out infinite; border-radius: 8px; }
 
 /* ── Seraphites: projectile ──────────────────────────────────────────────── */
 @keyframes proj-fly {
@@ -762,13 +771,13 @@ h1, h2, h3 {
   65%  { opacity: 0.75; }
   100% { opacity: 0; }
 }
-.cast-eye { position: absolute; inset: 0; z-index: 5; pointer-events: none; mix-blend-mode: screen; animation: cast-eye-pulse 1.6s ease-out forwards; }
+.cast-eye { position: absolute; inset: 0; z-index: 5; pointer-events: none; mix-blend-mode: screen; animation: cast-eye-pulse 2.4s ease-out forwards; }
 .cast-eye-fire     { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(255,70,0,1) 0%, rgba(255,130,0,0.55) 38%, transparent 65%); }
 .cast-eye-ice      { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(30,170,255,1) 0%, rgba(100,210,255,0.55) 38%, transparent 65%); }
 .cast-eye-earth    { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(90,185,30,1) 0%, rgba(150,210,70,0.55) 38%, transparent 65%); }
 .cast-eye-air      { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(250,220,30,1) 0%, rgba(200,235,255,0.55) 38%, transparent 65%); }
 .cast-eye-holy     { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(255,205,80,1) 0%, rgba(255,170,50,0.55) 38%, transparent 65%); }
-.cast-eye-physical { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(240,240,200,0.8) 0%, rgba(200,200,200,0.3) 38%, transparent 65%); animation-duration: 0.75s; }
+.cast-eye-physical { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(240,240,200,0.8) 0%, rgba(200,200,200,0.3) 38%, transparent 65%); animation-duration: 1.1s; }
 
 /* ── Seraphites: cast particles ──────────────────────────────────────────── */
 @keyframes cast-spark-0 { to { transform: translate(-18px,-52px) scale(0); opacity: 0; } }
@@ -783,11 +792,11 @@ h1, h2, h3 {
   transform: scale(1.6); opacity: 1;
   animation-timing-function: ease-out; animation-fill-mode: forwards;
 }
-.cast-spark-0 { top: 30%; left: 28%; animation-name: cast-spark-0; animation-duration: 0.95s; animation-delay: 0.08s; }
-.cast-spark-1 { top: 31%; left: 40%; animation-name: cast-spark-1; animation-duration: 1.10s; animation-delay: 0.04s; }
-.cast-spark-2 { top: 29%; left: 50%; animation-name: cast-spark-2; animation-duration: 1.20s; animation-delay: 0.18s; }
-.cast-spark-3 { top: 31%; left: 60%; animation-name: cast-spark-3; animation-duration: 1.05s; animation-delay: 0.00s; }
-.cast-spark-4 { top: 30%; left: 72%; animation-name: cast-spark-4; animation-duration: 0.88s; animation-delay: 0.12s; }
+.cast-spark-0 { top: 30%; left: 28%; animation-name: cast-spark-0; animation-duration: 1.425s; animation-delay: 0.12s; }
+.cast-spark-1 { top: 31%; left: 40%; animation-name: cast-spark-1; animation-duration: 1.65s;  animation-delay: 0.06s; }
+.cast-spark-2 { top: 29%; left: 50%; animation-name: cast-spark-2; animation-duration: 1.80s;  animation-delay: 0.27s; }
+.cast-spark-3 { top: 31%; left: 60%; animation-name: cast-spark-3; animation-duration: 1.575s; animation-delay: 0.00s; }
+.cast-spark-4 { top: 30%; left: 72%; animation-name: cast-spark-4; animation-duration: 1.32s;  animation-delay: 0.18s; }
 
 .cast-spark-fire     { background: #ff7020; box-shadow: 0 0 6px #ff5000, 0 0 12px #ff2000; }
 .cast-spark-ice      { background: #50d0ff; box-shadow: 0 0 6px #20a8ff, 0 0 12px #0060ff; }

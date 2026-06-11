@@ -281,7 +281,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
       lastDmgId.current = maxId
       setIsShaking(true)
       setHitFlash(true)
-      const t = setTimeout(() => { setIsShaking(false); setHitFlash(false) }, 700)
+      const t = setTimeout(() => { setIsShaking(false); setHitFlash(false) }, 1050)
       return () => clearTimeout(t)
     }
   }, [floats])
@@ -291,7 +291,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
     if (maxId > lastMissId.current) {
       lastMissId.current = maxId
       setMissFlash(true)
-      const t = setTimeout(() => setMissFlash(false), 780)
+      const t = setTimeout(() => setMissFlash(false), 1170)
       return () => clearTimeout(t)
     }
   }, [floats])
@@ -301,7 +301,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
     if (maxId > lastEvadeId.current) {
       lastEvadeId.current = maxId
       setEvadeDodge(true)
-      const t = setTimeout(() => setEvadeDodge(false), 700)
+      const t = setTimeout(() => setEvadeDodge(false), 1050)
       return () => clearTimeout(t)
     }
   }, [floats])
@@ -309,7 +309,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
   useEffect(() => {
     if (prevHp.current > 0 && unit.hp === 0) {
       setIsDying(true)
-      const t = setTimeout(() => setIsDying(false), 1200)
+      const t = setTimeout(() => setIsDying(false), 1800)
       return () => clearTimeout(t)
     }
     prevHp.current = unit.hp
@@ -323,7 +323,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
       if (glowType) {
         setBuffGlow(glowType)
         clearTimeout(buffGlowTimer.current)
-        buffGlowTimer.current = setTimeout(() => setBuffGlow(null), 3000)
+        buffGlowTimer.current = setTimeout(() => setBuffGlow(null), 4500)
       }
     }
   }, [unit.buffs])
@@ -409,6 +409,12 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
           position: 'relative',
         }}
       >
+
+        {/* Damage card red flash overlay */}
+        {hitFlash && (
+          <div className="unit-damage-card-overlay"
+            style={{ position: 'absolute', inset: 0, zIndex: 6, pointerEvents: 'none', borderRadius: 6 }} />
+        )}
 
         {/* Miss / evade flash overlay */}
         {(missFlash || evadeDodge) && (
@@ -1242,7 +1248,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     if (!effectType) return
     setCastEffect({ unitId: state.lastActorId, type: effectType })
     clearTimeout(castEffectTimer.current)
-    castEffectTimer.current = setTimeout(() => setCastEffect(null), 1700)
+    castEffectTimer.current = setTimeout(() => setCastEffect(null), 2600)
   }, [state.events])
 
   // Turn change banner
@@ -1255,8 +1261,8 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     if (phaseChanged || roundChanged) {
       setBannerFading(false)
       setBannerText(state.phase === 'player-turn' ? '🛡 Твоя черга' : '⚔ Хід ворога')
-      const t1 = setTimeout(() => setBannerFading(true), 1200)
-      const t2 = setTimeout(() => { setBannerText(null); setBannerFading(false) }, 1600)
+      const t1 = setTimeout(() => setBannerFading(true), 1800)
+      const t2 = setTimeout(() => { setBannerText(null); setBannerFading(false) }, 2400)
       return () => { clearTimeout(t1); clearTimeout(t2) }
     }
   }, [state.phase, state.round])
@@ -1267,7 +1273,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     if (!last || last.type === 'info') return
     setToastText(last.text)
     clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToastText(null), 2800)
+    toastTimer.current = setTimeout(() => setToastText(null), 4200)
   }, [state.log.length])
 
   // AI turn trigger
@@ -1279,7 +1285,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
       (state.pendingMageLevelUp     && state.units.find(u => u.id === state.pendingMageLevelUp)?.side     === 'player') ||
       (state.pendingCatapultLevelUp && state.units.find(u => u.id === state.pendingCatapultLevelUp)?.side === 'player')
     if (pendingPlayerChoice) return
-    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1200)
+    const t = setTimeout(() => dispatch({ type: 'AI_TAKE_TURN' }), 1800)
     return () => clearTimeout(t)
   }, [state.phase, state.queueIdx, state.pendingWarriorLevelUp, state.pendingMageLevelUp, state.pendingCatapultLevelUp])
 
@@ -1327,8 +1333,8 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
           background: bannerBg, color: '#fff', fontSize: 17, fontWeight: 700,
           letterSpacing: '-0.01em', boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
           animation: bannerFading
-            ? 'sacred-banner-out 0.4s ease-in forwards'
-            : 'sacred-banner-in 0.35s ease-out forwards',
+            ? 'sacred-banner-out 0.6s ease-in forwards'
+            : 'sacred-banner-in 0.525s ease-out forwards',
         }}>
           {bannerText}
         </div>
