@@ -52,6 +52,25 @@ const FLOAT_COLOR: Record<BattleEvent['type'], string> = {
   evade: '#4a86a8', heal: '#5a9a6a', buff: '#8060a8', debuff: '#c07070',
 }
 
+type CastEffectType = 'fire' | 'ice' | 'earth' | 'air' | 'holy' | 'physical'
+const ACTION_EFFECT_MAP: Partial<Record<ActionKey, CastEffectType>> = {
+  // fire
+  fireball: 'fire', fire_orb: 'fire', armageddon: 'fire',
+  // ice/water
+  freeze: 'ice', blizzard: 'ice',
+  // earth
+  rock_throw: 'earth', stone_skin: 'earth', earthquake: 'earth', fortress_aura: 'earth',
+  // air
+  gust: 'air', tailwind: 'air', hurricane: 'air',
+  // holy/warrior
+  sacred_strike: 'holy', consecration: 'holy', battle_cry: 'holy', shield: 'holy', provoke: 'holy',
+  // physical
+  strike: 'physical', shot: 'physical', aim: 'physical', double_shot: 'physical',
+  poison_shot: 'physical', magic_bolt: 'physical', shkvall: 'physical',
+  barrage: 'physical', grapeshot: 'physical', ballista_shot: 'physical',
+  twin_bolt: 'physical', trebuchet_volley: 'physical', plague_volley: 'physical',
+}
+
 // ── SVG Avatars ────────────────────────────────────────────────────────────────
 function WarriorSVG({ color, size = 28 }: { color: string; size?: number }) {
   return (
@@ -235,10 +254,11 @@ function ProjectileLayer({ battlefieldRef, events }: {
 const DEBUFF_PRIORITY = ['frozen','burning','poison','accuracy_down','armor_break','initiative_down','cooldown'] as const
 const BUFF_PRIORITY   = ['defense_up','fortress_buff','wind_shield','regen','aimed','morale_up','taunt','thorns','accuracy_up','initiative_up'] as const
 
-function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
+function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, castEffect }: {
   unit: GameUnit; isActive: boolean; isTargetable: boolean
   onSelect?: () => void; onInfo?: () => void
   floats: BattleEvent[]
+  castEffect?: CastEffectType | null
 }) {
   const [isShaking,  setIsShaking]  = useState(false)
   const [isDying,    setIsDying]    = useState(false)
@@ -408,6 +428,15 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
               position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
               filter: (!alive && !isDying) ? 'grayscale(1)' : undefined,
             }} />
+            {/* Cast eye glow + particles */}
+            {castEffect && alive && (
+              <>
+                <div className={`cast-eye cast-eye-${castEffect}`} />
+                {[0,1,2,3,4].map(i => (
+                  <div key={i} className={`cast-spark cast-spark-${i} cast-spark-${castEffect}`} />
+                ))}
+              </>
+            )}
             {/* Gradient overlay for text readability */}
             <div style={{
               position: 'absolute', inset: 0,
@@ -493,9 +522,10 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats }: {
 }
 
 // ── Unit row ───────────────────────────────────────────────────────────────────
-function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, onSelectUnit, onInfoUnit }: {
+function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, castEffect, onSelectUnit, onInfoUnit }: {
   units: GameUnit[]; side: Side; row: Row; activeId: string | null
   targetIds: string[]; maxSlots: number; floatsMap: Map<string, BattleEvent[]>
+  castEffect?: { unitId: string; type: CastEffectType } | null
   onSelectUnit: (id: string) => void; onInfoUnit: (id: string) => void
 }) {
   const rowUnits = units.filter(u => u.side === side && u.row === row)
@@ -530,6 +560,7 @@ function UnitRow({ units, side, row, activeId, targetIds, maxSlots, floatsMap, o
             isActive={unit.id === activeId}
             isTargetable={targetIds.includes(unit.id)}
             floats={floatsMap.get(unit.id) ?? []}
+            castEffect={castEffect?.unitId === unit.id ? castEffect.type : null}
             onSelect={() => onSelectUnit(unit.id)}
             onInfo={() => onInfoUnit(unit.id)}
           />
@@ -1174,6 +1205,8 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
   const [bannerText, setBannerText]   = useState<string | null>(null)
   const [bannerFading, setBannerFading] = useState(false)
   const [toastText, setToastText]     = useState<string | null>(null)
+  const [castEffect, setCastEffect]   = useState<{ unitId: string; type: CastEffectType } | null>(null)
+  const castEffectTimer = useRef<ReturnType<typeof setTimeout>>()
   const battlefieldRef = useRef<HTMLDivElement>(null)
   const prevPhase  = useRef(state.phase)
   const prevRound  = useRef(state.round)
@@ -1201,6 +1234,16 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
     m.set(e.unitId, [...(m.get(e.unitId) ?? []), e])
     return m
   }, new Map<string, BattleEvent[]>())
+
+  // Cast eye effects
+  useEffect(() => {
+    if (!state.events.length || !state.lastActorId || !state.lastActionKey) return
+    const effectType = ACTION_EFFECT_MAP[state.lastActionKey]
+    if (!effectType) return
+    setCastEffect({ unitId: state.lastActorId, type: effectType })
+    clearTimeout(castEffectTimer.current)
+    castEffectTimer.current = setTimeout(() => setCastEffect(null), 1700)
+  }, [state.events])
 
   // Turn change banner
   useEffect(() => {
@@ -1339,7 +1382,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
                   units={state.units} side="ai" row={row}
                   activeId={actor?.side === 'ai' ? actorId : null}
                   targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+                  floatsMap={floatsMap} castEffect={castEffect} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
                 />
               )
             })}
@@ -1388,7 +1431,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
                   units={state.units} side="player" row={row}
                   activeId={actor?.side === 'player' ? actorId : null}
                   targetIds={targetIds} maxSlots={ROW_SLOTS[row]}
-                  floatsMap={floatsMap} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
+                  floatsMap={floatsMap} castEffect={castEffect} onSelectUnit={handleUnitClick} onInfoUnit={handleUnitInfo}
                 />
               )
             })}

@@ -1664,7 +1664,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
         const ticked = tickBuffs(actor)
         const s0 = { ...state, units: state.units.map(u => u.id === actor.id ? ticked : u) }
         const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s0, ticked, a, null)
-        const next = advanceQueue({ ...s0, units, log: [...s0.log, ...newLogs], ...TURN_RESET, events: newEvents })
+        const next = advanceQueue({ ...s0, units, log: [...s0.log, ...newLogs], ...TURN_RESET, events: newEvents, lastActionKey: a, lastActorId: actor.id })
         if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
         if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
         return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
@@ -1684,7 +1684,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const mainTarget = s1.pendingFirstTarget ?? action.targetId
       const second     = s1.pendingFirstTarget ? action.targetId : undefined
       const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s1, ticked1, s1.selectedAction!, mainTarget, second)
-      const next = advanceQueue({ ...s1, units, log: [...s1.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined })
+      const next = advanceQueue({ ...s1, units, log: [...s1.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined, lastActionKey: s1.selectedAction!, lastActorId: actor.id })
       if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
       if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
@@ -1784,7 +1784,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const ticked2 = tickBuffs(actor)
       const s2 = { ...state, units: state.units.map(u => u.id === actorId ? ticked2 : u) }
       const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s2, ticked2, act, targetId, secondTargetId)
-      const next = advanceQueue({ ...s2, units, log: [...s2.log, ...newLogs], ...TURN_RESET, events: newEvents })
+      const next = advanceQueue({ ...s2, units, log: [...s2.log, ...newLogs], ...TURN_RESET, events: newEvents, lastActionKey: act, lastActorId: actorId })
       if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
       if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next

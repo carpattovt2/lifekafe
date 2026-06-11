@@ -755,6 +755,47 @@ h1, h2, h3 {
   to   { opacity: 0; transform: translate(-50%, 4px); }
 }
 
+/* ── Seraphites: cast eye glow ───────────────────────────────────────────── */
+@keyframes cast-eye-pulse {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  65%  { opacity: 0.75; }
+  100% { opacity: 0; }
+}
+.cast-eye { position: absolute; inset: 0; z-index: 5; pointer-events: none; mix-blend-mode: screen; animation: cast-eye-pulse 1.6s ease-out forwards; }
+.cast-eye-fire     { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(255,70,0,1) 0%, rgba(255,130,0,0.55) 38%, transparent 65%); }
+.cast-eye-ice      { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(30,170,255,1) 0%, rgba(100,210,255,0.55) 38%, transparent 65%); }
+.cast-eye-earth    { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(90,185,30,1) 0%, rgba(150,210,70,0.55) 38%, transparent 65%); }
+.cast-eye-air      { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(250,220,30,1) 0%, rgba(200,235,255,0.55) 38%, transparent 65%); }
+.cast-eye-holy     { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(255,205,80,1) 0%, rgba(255,170,50,0.55) 38%, transparent 65%); }
+.cast-eye-physical { background: radial-gradient(ellipse 85% 55% at 50% 30%, rgba(240,240,200,0.8) 0%, rgba(200,200,200,0.3) 38%, transparent 65%); animation-duration: 0.75s; }
+
+/* ── Seraphites: cast particles ──────────────────────────────────────────── */
+@keyframes cast-spark-0 { to { transform: translate(-18px,-52px) scale(0); opacity: 0; } }
+@keyframes cast-spark-1 { to { transform: translate(-6px, -60px) scale(0); opacity: 0; } }
+@keyframes cast-spark-2 { to { transform: translate( 0px, -64px) scale(0); opacity: 0; } }
+@keyframes cast-spark-3 { to { transform: translate( 7px, -58px) scale(0); opacity: 0; } }
+@keyframes cast-spark-4 { to { transform: translate(20px, -50px) scale(0); opacity: 0; } }
+
+.cast-spark {
+  position: absolute; width: 5px; height: 5px; border-radius: 50%;
+  z-index: 7; pointer-events: none;
+  transform: scale(1.6); opacity: 1;
+  animation-timing-function: ease-out; animation-fill-mode: forwards;
+}
+.cast-spark-0 { top: 30%; left: 28%; animation-name: cast-spark-0; animation-duration: 0.95s; animation-delay: 0.08s; }
+.cast-spark-1 { top: 31%; left: 40%; animation-name: cast-spark-1; animation-duration: 1.10s; animation-delay: 0.04s; }
+.cast-spark-2 { top: 29%; left: 50%; animation-name: cast-spark-2; animation-duration: 1.20s; animation-delay: 0.18s; }
+.cast-spark-3 { top: 31%; left: 60%; animation-name: cast-spark-3; animation-duration: 1.05s; animation-delay: 0.00s; }
+.cast-spark-4 { top: 30%; left: 72%; animation-name: cast-spark-4; animation-duration: 0.88s; animation-delay: 0.12s; }
+
+.cast-spark-fire     { background: #ff7020; box-shadow: 0 0 6px #ff5000, 0 0 12px #ff2000; }
+.cast-spark-ice      { background: #50d0ff; box-shadow: 0 0 6px #20a8ff, 0 0 12px #0060ff; }
+.cast-spark-earth    { background: #78c030; box-shadow: 0 0 6px #50900a, 0 0 12px #306000; }
+.cast-spark-air      { background: #ffe040; box-shadow: 0 0 6px #ffc000, 0 0 12px #ff9000; }
+.cast-spark-holy     { background: #ffd060; box-shadow: 0 0 6px #ffb020, 0 0 12px #ff8800; }
+.cast-spark-physical { background: #e8e8d0; box-shadow: 0 0 4px #ffffff, 0 0 8px #c8c8b0; }
+
 /* ── Shopping List ────────────────────────────────────────────────────────── */
 @keyframes shopping-slide-in {
   from { opacity: 0; transform: translateY(-12px); }

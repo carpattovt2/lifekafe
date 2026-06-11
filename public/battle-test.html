@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seraphites — Battle Test</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0f0e09;color:#f0e8d8;font-family:'Inter',system-ui,sans-serif}
+
+/* ── Layout ── */
+.page{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding-bottom:40px}
+h1{font-size:13px;color:#b07850;padding:12px 16px 2px}
+.subtitle{font-size:10px;color:#5a5248;padding:0 16px 16px}
+.section{margin-bottom:32px}
+.sec-title{font-size:9px;text-transform:uppercase;letter-spacing:1.4px;color:#5a5248;padding:0 16px 8px;border-bottom:1px solid rgba(240,232,216,0.06);margin-bottom:12px}
+
+/* ── Battlefield layout ── */
+.battlefield{padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:#0f0e09}
+.zone{display:flex;align-items:center;gap:6px;border-radius:8px;padding:4px;transition:box-shadow 0.4s}
+.zone.ai-active{box-shadow:0 0 0 1px rgba(192,112,112,0.25), 0 0 18px rgba(192,112,112,0.18)}
+.zone.player-active{box-shadow:0 0 0 1px rgba(111,166,122,0.25), 0 0 18px rgba(111,166,122,0.18)}
+.zone-label{writing-mode:vertical-lr;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;user-select:none;flex-shrink:0;transition:color .4s;color:rgba(192,112,112,0.35)}
+.zone.ai-active   .zone-label{color:rgba(192,112,112,0.9)}
+.zone.player-active .zone-label{color:rgba(111,166,122,0.9)}
+.zone-label.player{color:rgba(111,166,122,0.35)}
+.rows{flex:1;display:flex;flex-direction:column;gap:3px}
+.unit-row{display:flex;gap:3px;justify-content:center;min-height:92px;align-items:center}
+
+.divider{border-top:1px solid rgba(240,232,216,0.08);margin:2px 0;position:relative;display:flex;align-items:center;justify-content:center}
+.divider::after{content:'⚔';position:absolute;left:50%;transform:translateX(-50%);font-size:15px;background:#0f0e09;padding:0 8px;color:rgba(240,232,216,0.2)}
+
+/* ── Unit card ── */
+.ucard-wrap{position:relative;width:80px;flex-shrink:0;border-radius:8px}
+.ucard{
+  width:80px;height:88px;border-radius:8px;border:2px solid rgba(240,232,216,0.14);
+  overflow:hidden;position:relative;cursor:pointer;
+  background:#1a1810;transition:border-color .15s,transform .1s;
+}
+.ucard img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top}
+.ucard .grad{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.15) 0%,rgba(0,0,0,0.2) 40%,rgba(0,0,0,0.72) 100%);pointer-events:none}
+.ucard .uname{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;z-index:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+.hpbar{position:absolute;bottom:3px;left:5px;right:5px;height:3px;background:rgba(255,255,255,.2);border-radius:2px;z-index:2}
+.hpbar-fill{height:100%;background:#7aaa82;border-radius:2px;transition:width .3s}
+.flash-overlay{display:none;position:absolute;inset:0;z-index:6;pointer-events:none;border-radius:6px}
+.dead-cross{display:none;position:absolute;inset:0;align-items:center;justify-content:center;z-index:3;pointer-events:none;font-size:26px;opacity:.75;filter:drop-shadow(0 1px 3px rgba(0,0,0,.9))}
+
+.ucard.selected{border-color:#d4a85a!important;transform:scale(1.06)}
+.ucard.dead{opacity:.35}
+.ucard.dead img{filter:grayscale(1)}
+.ucard.dead .dead-cross{display:flex}
+
+/* HP bar color based on data attribute */
+.ucard[data-hp="high"]  .hpbar-fill{background:#7aaa82}
+.ucard[data-hp="mid"]   .hpbar-fill{background:#c4a040}
+.ucard[data-hp="low"]   .hpbar-fill{background:#c07070}
+
+/* ── Buff icon row ── */
+.buff-icons{position:absolute;top:4px;left:4px;display:flex;gap:2px;flex-wrap:wrap;z-index:3;pointer-events:none}
+.buff-icon{font-size:7px;color:#fff;background:rgba(0,0,0,.5);border-radius:2px;padding:1px 2px}
+
+/* Active turn pulse (on .ucard-wrap, not on .ucard) */
+@keyframes pulse-player{0%,100%{box-shadow:0 2px 10px rgba(111,166,122,.45)} 50%{box-shadow:0 2px 22px rgba(111,166,122,.85),0 0 8px rgba(111,166,122,.4)}}
+@keyframes pulse-ai    {0%,100%{box-shadow:0 2px 10px rgba(192,112,112,.45)} 50%{box-shadow:0 2px 22px rgba(192,112,112,.85),0 0 8px rgba(192,112,112,.4)}}
+.turn-player{animation:pulse-player 2.2s ease-in-out infinite;border-radius:8px}
+.turn-ai    {animation:pulse-ai     2.2s ease-in-out infinite;border-radius:8px}
+
+/* ── Debuff portrait filters ── */
+@keyframes dbuff-frozen  {0%,100%{filter:brightness(.85) saturate(.5) hue-rotate(175deg)} 30%{filter:brightness(1.1) saturate(.8) hue-rotate(190deg)} 65%{filter:brightness(.75) saturate(.4) hue-rotate(165deg)}}
+@keyframes dbuff-burning {0%,100%{filter:brightness(1.15) saturate(1.6) hue-rotate(-10deg)} 25%{filter:brightness(1.4) saturate(2.2) hue-rotate(-20deg)} 60%{filter:brightness(1.05) saturate(1.3) hue-rotate(-5deg)}}
+@keyframes dbuff-poison  {0%,100%{filter:brightness(.9) saturate(1.3) hue-rotate(85deg)} 35%{filter:brightness(1.1) saturate(1.8) hue-rotate(100deg)} 70%{filter:brightness(.85) saturate(1.1) hue-rotate(80deg)}}
+@keyframes dbuff-acc_dn  {0%,100%{filter:brightness(.8) saturate(.2)} 45%{filter:brightness(1) saturate(.4)}}
+@keyframes dbuff-arm_brk {0%,100%{filter:brightness(.95) saturate(1.5) hue-rotate(-15deg)} 25%{filter:brightness(1.3) saturate(2) hue-rotate(-25deg)} 60%{filter:brightness(.9) saturate(1.2) hue-rotate(-10deg)}}
+@keyframes dbuff-ini_dn  {0%,100%{filter:brightness(.8) saturate(.7) hue-rotate(240deg)} 50%{filter:brightness(1) saturate(1.1) hue-rotate(260deg)}}
+@keyframes dbuff-cooldown{0%,100%{filter:brightness(.45) saturate(.2)} 50%{filter:brightness(.6) saturate(.3)}}
+@keyframes dbuff-idle    {0%,100%{transform:scale(1) translateY(0)} 50%{transform:scale(1.04) translateY(-1px)}}
+@keyframes dbuff-catapult{0%{transform:translateX(0) rotate(0)} 1%{transform:translateX(-1.5px) rotate(-.5deg)} 2%{transform:translateX(1.5px) rotate(.5deg)} 3%{transform:translateX(-1.2px) rotate(-.4deg)} 4%{transform:translateX(1px) rotate(.3deg)} 5%{transform:translateX(-.5px) rotate(-.2deg)} 6%,100%{transform:translateX(0) rotate(0)}}
+.df-frozen   img{animation:dbuff-frozen   3s ease-in-out infinite}
+.df-burning  img{animation:dbuff-burning  1.1s ease-in-out infinite}
+.df-poison   img{animation:dbuff-poison   2.7s ease-in-out infinite}
+.df-acc_dn   img{animation:dbuff-acc_dn   3.3s ease-in-out infinite}
+.df-arm_brk  img{animation:dbuff-arm_brk  1.7s ease-in-out infinite}
+.df-ini_dn   img{animation:dbuff-ini_dn   4.2s ease-in-out infinite}
+.df-cooldown img{animation:dbuff-cooldown 3s ease-in-out infinite}
+.df-idle     img{animation:dbuff-idle     5s ease-in-out infinite;transform-origin:center bottom}
+.df-catapult img{animation:dbuff-catapult 7s ease-in-out infinite}
+
+/* ── Buff glows ── */
+@keyframes glow-gold  {0%,100%{box-shadow:0 0 8px 3px rgba(220,180,60,.5)}  50%{box-shadow:0 0 20px 6px rgba(220,180,60,.9)}}
+@keyframes glow-green {0%,100%{box-shadow:0 0 7px 2px rgba(80,200,100,.45)} 50%{box-shadow:0 0 18px 5px rgba(80,200,100,.85)}}
+@keyframes glow-blue  {0%,100%{box-shadow:0 0 7px 2px rgba(80,160,220,.45)} 50%{box-shadow:0 0 18px 5px rgba(80,160,220,.85)}}
+@keyframes glow-yell  {0%,100%{box-shadow:0 0 8px 2px rgba(240,210,50,.5)}  50%{box-shadow:0 0 20px 6px rgba(240,210,50,.95)}}
+@keyframes glow-red   {0%,100%{box-shadow:0 0 7px 2px rgba(220,80,80,.5)}   50%{box-shadow:0 0 18px 5px rgba(220,80,80,.9)}}
+@keyframes glow-cyan  {0%,100%{box-shadow:0 0 7px 2px rgba(60,220,200,.45)} 50%{box-shadow:0 0 18px 5px rgba(60,220,200,.85)}}
+@keyframes glow-spike {0%,100%{box-shadow:0 0 6px 2px rgba(120,180,80,.4)}  50%{box-shadow:0 0 16px 5px rgba(120,180,80,.8)}}
+@keyframes glow-bigol {0%,100%{box-shadow:0 0 12px 4px rgba(255,200,50,.65)} 50%{box-shadow:0 0 28px 8px rgba(255,200,50,.95)}}
+.bg-defense_up   {animation:glow-gold  1.4s ease-in-out infinite;border-radius:8px}
+.bg-fortress_buff{animation:glow-bigol 1.5s ease-in-out infinite;border-radius:8px}
+.bg-wind_shield  {animation:glow-blue  1.6s ease-in-out infinite;border-radius:8px}
+.bg-regen        {animation:glow-green 1.8s ease-in-out infinite;border-radius:8px}
+.bg-aimed        {animation:glow-yell  1.2s ease-in-out infinite;border-radius:8px}
+.bg-morale_up    {animation:glow-gold  2s   ease-in-out infinite;border-radius:8px}
+.bg-taunt        {animation:glow-red   1s   ease-in-out infinite;border-radius:8px}
+.bg-thorns       {animation:glow-spike 2s   ease-in-out infinite;border-radius:8px}
+.bg-accuracy_up  {animation:glow-yell  1s   ease-in-out infinite;border-radius:8px}
+.bg-initiative_up{animation:glow-cyan  1.2s ease-in-out infinite;border-radius:8px}
+
+/* ── One-shot events ── */
+@keyframes shake{0%,100%{transform:translateX(0)} 15%{transform:translateX(-6px)} 35%{transform:translateX(6px)} 55%{transform:translateX(-4px)} 75%{transform:translateX(4px)}}
+@keyframes hit-flash{0%{filter:brightness(1) saturate(1)} 12%{filter:brightness(1.5) saturate(3) hue-rotate(-30deg) contrast(1.1)} 40%{filter:brightness(1.2) saturate(1.8) hue-rotate(-15deg)} 100%{filter:brightness(1) saturate(1)}}
+@keyframes miss-flash{0%{opacity:0} 12%{opacity:.85} 100%{opacity:0}}
+@keyframes evade-flash{0%{opacity:0} 12%{opacity:.85} 100%{opacity:0}}
+@keyframes evade-dodge{0%{transform:translateX(0) translateY(0) rotate(0)} 30%{transform:translateX(5px) translateY(-5px) rotate(2deg)} 65%{transform:translateX(3px) translateY(-2px) rotate(1deg)} 100%{transform:translateX(0) translateY(0) rotate(0)}}
+@keyframes die{0%{opacity:1;transform:scale(1);filter:none} 25%{opacity:.9;transform:scale(1.07);filter:brightness(1.4) saturate(.5)} 65%{opacity:.5;transform:scale(.95);filter:grayscale(.6) brightness(.9)} 100%{opacity:.35;transform:scale(1);filter:grayscale(1)}}
+.do-shake     {animation:shake      .65s ease-in-out!important}
+.do-hit-flash img{animation:hit-flash .7s ease-out forwards!important}
+.do-evade-dodge{animation:evade-dodge .65s ease-out!important}
+.do-die       {animation:die 1.1s ease-out forwards!important}
+.flash-miss   {display:block!important;background:rgba(255,255,255,1);animation:miss-flash .75s ease-out forwards}
+.flash-evade  {display:block!important;background:rgba(60,220,200,1); animation:evade-flash .75s ease-out forwards}
+
+/* ── Float numbers ── */
+@keyframes float-dmg {0%{opacity:1;transform:translateX(-50%) translateY(0) scale(1.15)} 20%{opacity:1;transform:translateX(-50%) translateY(-16px) scale(1)} 100%{opacity:0;transform:translateX(-50%) translateY(-60px) scale(.85)}}
+@keyframes float-crit{0%{opacity:1;transform:translateX(-50%) translateY(0) scale(1.45)} 15%{opacity:1;transform:translateX(-50%) translateY(-10px) scale(1.2)} 100%{opacity:0;transform:translateX(-50%) translateY(-68px) scale(.9)}}
+@keyframes float-up  {0%{opacity:1;transform:translateX(-50%) translateY(0)} 100%{opacity:0;transform:translateX(-50%) translateY(-50px)}}
+.float{position:absolute;left:50%;pointer-events:none;white-space:nowrap;font-weight:700;font-family:'Inter',sans-serif;z-index:20;top:-4px}
+.float.damage{font-size:18px;color:#c0392b;animation:float-dmg  4.2s ease-out forwards;text-shadow:0 1px 4px rgba(192,57,43,.4)}
+.float.crit  {font-size:22px;color:#b07850;animation:float-crit 4.5s ease-out forwards;text-shadow:0 0 12px rgba(176,120,80,.6)}
+.float.miss  {font-size:12px;color:#9b9289;animation:float-up   3.75s ease-out forwards}
+.float.evade {font-size:12px;color:#4a86a8;animation:float-up   3.3s ease-out forwards}
+.float.heal  {font-size:15px;color:#5a9a6a;animation:float-up   4.5s ease-out forwards}
+.float.buff  {font-size:12px;color:#8060a8;animation:float-up   5s   ease-out forwards}
+.float.debuff{font-size:12px;color:#c07070;animation:float-up   5s   ease-out forwards}
+
+/* ── Banner ── */
+@keyframes banner-in{from{opacity:0;transform:translate(-50%,-50%) scale(.9)} to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+.banner{display:none;position:fixed;top:42%;left:50%;z-index:50;pointer-events:none;padding:12px 28px;border-radius:10px;font-size:17px;font-weight:700;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.25);animation:banner-in .3s cubic-bezier(.4,0,.2,1) forwards}
+
+/* ── Controls ── */
+.ctrl-panel{background:#17150f;border:1px solid rgba(240,232,216,.1);border-radius:10px;padding:12px 14px;margin:0 12px 12px;display:flex;flex-direction:column;gap:8px}
+.ctrl-unit-info{font-size:12px;color:#d4a85a;font-weight:600}
+.ctrl-unit-info span{font-weight:400;color:rgba(240,232,216,.4);font-size:10px;margin-left:6px}
+.ctrl-row{display:flex;gap:6px;flex-wrap:wrap}
+.ctrl-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:rgba(240,232,216,.3);margin-top:2px;width:100%}
+.btn{padding:5px 10px;border-radius:7px;font-size:11px;font-weight:600;border:1px solid;cursor:pointer;transition:opacity .15s;background:transparent;color:#f0e8d8}
+.btn:hover{opacity:.75}
+.btn:active{transform:scale(.96)}
+.btn.red  {color:#e07070;border-color:rgba(220,80,80,.4)}
+.btn.gold {color:#d4a85a;border-color:rgba(212,168,90,.4)}
+.btn.green{color:#7aaa82;border-color:rgba(111,166,122,.4)}
+.btn.blue {color:#88ccff;border-color:rgba(136,204,255,.4)}
+.btn.dim  {color:rgba(240,232,216,.35);border-color:rgba(240,232,216,.1)}
+.btn.on   {background:rgba(212,168,90,.18);color:#d4a85a;border-color:rgba(212,168,90,.5)}
+.btn.on.red  {background:rgba(220,80,80,.15); color:#e07070;border-color:rgba(220,80,80,.5)}
+.btn.on.green{background:rgba(111,166,122,.15);color:#7aaa82;border-color:rgba(111,166,122,.5)}
+.btn.on.blue {background:rgba(136,204,255,.15);color:#88ccff;border-color:rgba(136,204,255,.5)}
+.no-selection{padding:10px;text-align:center;font-size:11px;color:rgba(240,232,216,.25)}
+
+/* ── Turn toggle ── */
+.turn-toggle{display:flex;gap:8px;align-items:center;padding:0 12px 8px}
+.turn-toggle label{font-size:10px;color:rgba(240,232,216,.35)}
+.turn-btn{padding:6px 14px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(240,232,216,.12);background:rgba(240,232,216,.04);color:rgba(240,232,216,.4);transition:all .3s}
+.turn-btn.active-ai    {background:rgba(192,112,112,.15);color:#e07070;border-color:rgba(192,112,112,.4)}
+.turn-btn.active-player{background:rgba(111,166,122,.15);color:#7aaa82;border-color:rgba(111,166,122,.4)}
+
+/* ── Cast eye glow ── */
+@keyframes cast-eye-pulse{0%{opacity:0}18%{opacity:1}65%{opacity:.75}100%{opacity:0}}
+.cast-eye{position:absolute;inset:0;z-index:5;pointer-events:none;mix-blend-mode:screen;animation:cast-eye-pulse 1.6s ease-out forwards}
+.cast-eye-fire    {background:radial-gradient(ellipse 85% 55% at 50% 30%,rgba(255,70,0,1) 0%,rgba(255,130,0,.55) 38%,transparent 65%)}
+.cast-eye-ice     {background:radial-gradient(ellipse 85% 55% at 50% 30%,rgba(30,170,255,1) 0%,rgba(100,210,255,.55) 38%,transparent 65%)}
+.cast-eye-earth   {background:radial-gradient(ellipse 85% 55% at 50% 30%,rgba(90,185,30,1) 0%,rgba(150,210,70,.55) 38%,transparent 65%)}
+.cast-eye-air     {background:radial-gradient(ellipse 85% 55% at 50% 30%,rgba(250,220,30,1) 0%,rgba(200,235,255,.55) 38%,transparent 65%)}
+.cast-eye-holy    {background:radial-gradient(ellipse 85% 55% at 50% 30%,rgba(255,205,80,1) 0%,rgba(255,170,50,.55) 38%,transparent 65%)}
+.cast-eye-physical{background:radial-gradient(ellipse 85% 55% at 50% 30%,rgba(240,240,200,.8) 0%,rgba(200,200,200,.3) 38%,transparent 65%);animation-duration:.75s}
+
+/* ── Cast particles ── */
+@keyframes cast-spark-0{to{transform:translate(-18px,-52px) scale(0);opacity:0}}
+@keyframes cast-spark-1{to{transform:translate(-6px,-60px)  scale(0);opacity:0}}
+@keyframes cast-spark-2{to{transform:translate( 0px,-64px)  scale(0);opacity:0}}
+@keyframes cast-spark-3{to{transform:translate( 7px,-58px)  scale(0);opacity:0}}
+@keyframes cast-spark-4{to{transform:translate(20px,-50px)  scale(0);opacity:0}}
+.cast-spark{position:absolute;width:5px;height:5px;border-radius:50%;z-index:7;pointer-events:none;transform:scale(1.6);opacity:1;animation-timing-function:ease-out;animation-fill-mode:forwards}
+.cast-spark-0{top:30%;left:28%;animation-name:cast-spark-0;animation-duration:.95s;animation-delay:.08s}
+.cast-spark-1{top:31%;left:40%;animation-name:cast-spark-1;animation-duration:1.1s;animation-delay:.04s}
+.cast-spark-2{top:29%;left:50%;animation-name:cast-spark-2;animation-duration:1.2s;animation-delay:.18s}
+.cast-spark-3{top:31%;left:60%;animation-name:cast-spark-3;animation-duration:1.05s;animation-delay:0s}
+.cast-spark-4{top:30%;left:72%;animation-name:cast-spark-4;animation-duration:.88s;animation-delay:.12s}
+.cast-spark-fire    {background:#ff7020;box-shadow:0 0 6px #ff5000,0 0 12px #ff2000}
+.cast-spark-ice     {background:#50d0ff;box-shadow:0 0 6px #20a8ff,0 0 12px #0060ff}
+.cast-spark-earth   {background:#78c030;box-shadow:0 0 6px #50900a,0 0 12px #306000}
+.cast-spark-air     {background:#ffe040;box-shadow:0 0 6px #ffc000,0 0 12px #ff9000}
+.cast-spark-holy    {background:#ffd060;box-shadow:0 0 6px #ffb020,0 0 12px #ff8800}
+.cast-spark-physical{background:#e8e8d0;box-shadow:0 0 4px #fff,0 0 8px #c8c8b0}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>⚔ Seraphites — Battle Test</h1>
+  <p class="subtitle">Натисни на юніта → керуй через панель нижче</p>
+
+  <!-- BATTLEFIELD -->
+  <div class="battlefield section">
+    <div class="sec-title">Поле бою</div>
+
+    <!-- AI zone -->
+    <div class="zone" id="zone-ai">
+      <div class="zone-label">Ворог</div>
+      <div class="rows">
+        <div class="unit-row" id="ai-row1">
+          <!-- AI back row: archer, mage -->
+          <div class="ucard-wrap df-idle" id="w-ai-archer">
+            <div class="ucard" onclick="selectUnit('ai-archer')" data-hp="high">
+              <img src="/sacred/archers/level2.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-ai-archer"></div>
+              <div class="flash-overlay" id="fo-ai-archer"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Лучник lv2</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-ai-archer" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="ucard-wrap df-idle" id="w-ai-mage">
+            <div class="ucard" onclick="selectUnit('ai-mage')" data-hp="high">
+              <img src="/sacred/mages/fire/level2.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-ai-mage"></div>
+              <div class="flash-overlay" id="fo-ai-mage"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Пірелія lv2</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-ai-mage" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="unit-row" id="ai-row0">
+          <!-- AI front row: warriors, catapult -->
+          <div class="ucard-wrap df-idle" id="w-ai-w1">
+            <div class="ucard" onclick="selectUnit('ai-w1')" data-hp="high">
+              <img src="/sacred/warriors/level2.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-ai-w1"></div>
+              <div class="flash-overlay" id="fo-ai-w1"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Воїн lv2</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-ai-w1" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="ucard-wrap df-idle" id="w-ai-w2">
+            <div class="ucard" onclick="selectUnit('ai-w2')" data-hp="high">
+              <img src="/sacred/warriors/level3.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-ai-w2"></div>
+              <div class="flash-overlay" id="fo-ai-w2"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Воїн lv3</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-ai-w2" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="ucard-wrap df-catapult" id="w-ai-cat">
+            <div class="ucard" onclick="selectUnit('ai-cat')" data-hp="high">
+              <img src="/sacred/catapults/level1.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-ai-cat"></div>
+              <div class="flash-overlay" id="fo-ai-cat"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Катапульта</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-ai-cat" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Player zone -->
+    <div class="zone" id="zone-player">
+      <div class="zone-label player">Армія</div>
+      <div class="rows">
+        <div class="unit-row" id="pl-row0">
+          <div class="ucard-wrap df-idle" id="w-pl-w1">
+            <div class="ucard" onclick="selectUnit('pl-w1')" data-hp="high">
+              <img src="/sacred/warriors/level4.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-pl-w1"></div>
+              <div class="flash-overlay" id="fo-pl-w1"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Паладин lv4</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-pl-w1" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="ucard-wrap df-idle" id="w-pl-w2">
+            <div class="ucard" onclick="selectUnit('pl-w2')" data-hp="high">
+              <img src="/sacred/warriors/champion/level3.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-pl-w2"></div>
+              <div class="flash-overlay" id="fo-pl-w2"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Чемпіон lv3</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-pl-w2" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="ucard-wrap df-catapult" id="w-pl-cat">
+            <div class="ucard" onclick="selectUnit('pl-cat')" data-hp="high">
+              <img src="/sacred/catapults/ballista/level2.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-pl-cat"></div>
+              <div class="flash-overlay" id="fo-pl-cat"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Балліста lv2</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-pl-cat" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="unit-row" id="pl-row1">
+          <div class="ucard-wrap df-idle" id="w-pl-archer">
+            <div class="ucard" onclick="selectUnit('pl-archer')" data-hp="high">
+              <img src="/sacred/archers/level3.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-pl-archer"></div>
+              <div class="flash-overlay" id="fo-pl-archer"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Лучниця lv3</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-pl-archer" style="width:100%"></div></div>
+            </div>
+          </div>
+          <div class="ucard-wrap df-idle" id="w-pl-mage">
+            <div class="ucard" onclick="selectUnit('pl-mage')" data-hp="high">
+              <img src="/sacred/mages/water/level3.jpg" alt="">
+              <div class="grad"></div>
+              <div class="buff-icons" id="bi-pl-mage"></div>
+              <div class="flash-overlay" id="fo-pl-mage"></div>
+              <div class="dead-cross">✝</div>
+              <div class="uname">Хладомант lv3</div>
+              <div class="hpbar"><div class="hpbar-fill" id="hp-pl-mage" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TURN TOGGLE -->
+  <div class="turn-toggle">
+    <label>Чия хода:</label>
+    <button class="turn-btn" id="tb-none"   onclick="setTurn('none')">Ніхто</button>
+    <button class="turn-btn" id="tb-ai"     onclick="setTurn('ai')">Ворог</button>
+    <button class="turn-btn" id="tb-player" onclick="setTurn('player')">Армія</button>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="ctrl-panel" id="ctrl-panel">
+    <div class="no-selection">← Натисни на будь-якого юніта</div>
+  </div>
+
+  <!-- CAST EFFECTS DEMO -->
+  <div class="section" style="padding:0 12px;margin-bottom:24px">
+    <div class="sec-title">Каст-ефекти — демо</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:12px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="ucard-wrap" id="demo-wrap-fire">
+          <div class="ucard" style="width:72px;height:82px;cursor:default" id="demo-card-fire">
+            <img src="/sacred/mages/fire/level2.jpg" alt="">
+            <div class="grad"></div>
+            <div class="uname">Вогонь</div>
+          </div>
+        </div>
+        <button class="btn" style="font-size:10px;color:#ff8030;border-color:rgba(255,120,50,.4)" onclick="triggerCastEffect('demo-fire','fire')">🔥</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="ucard-wrap" id="demo-wrap-ice">
+          <div class="ucard" style="width:72px;height:82px;cursor:default" id="demo-card-ice">
+            <img src="/sacred/mages/water/level2.jpg" alt="">
+            <div class="grad"></div>
+            <div class="uname">Лід</div>
+          </div>
+        </div>
+        <button class="btn" style="font-size:10px;color:#60d0ff;border-color:rgba(80,200,255,.4)" onclick="triggerCastEffect('demo-ice','ice')">❄</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="ucard-wrap" id="demo-wrap-earth">
+          <div class="ucard" style="width:72px;height:82px;cursor:default" id="demo-card-earth">
+            <img src="/sacred/mages/earth/level2.jpg" alt="">
+            <div class="grad"></div>
+            <div class="uname">Земля</div>
+          </div>
+        </div>
+        <button class="btn" style="font-size:10px;color:#78c030;border-color:rgba(120,180,50,.4)" onclick="triggerCastEffect('demo-earth','earth')">🌿</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="ucard-wrap" id="demo-wrap-air">
+          <div class="ucard" style="width:72px;height:82px;cursor:default" id="demo-card-air">
+            <img src="/sacred/mages/air/level2.jpg" alt="">
+            <div class="grad"></div>
+            <div class="uname">Повітря</div>
+          </div>
+        </div>
+        <button class="btn" style="font-size:10px;color:#ffe040;border-color:rgba(255,210,50,.4)" onclick="triggerCastEffect('demo-air','air')">💨</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="ucard-wrap" id="demo-wrap-holy">
+          <div class="ucard" style="width:72px;height:82px;cursor:default" id="demo-card-holy">
+            <img src="/sacred/warriors/paladin/level4.jpg" alt="">
+            <div class="grad"></div>
+            <div class="uname">Свята</div>
+          </div>
+        </div>
+        <button class="btn" style="font-size:10px;color:#ffd060;border-color:rgba(255,200,80,.4)" onclick="triggerCastEffect('demo-holy','holy')">✦</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="ucard-wrap" id="demo-wrap-physical">
+          <div class="ucard" style="width:72px;height:82px;cursor:default" id="demo-card-physical">
+            <img src="/sacred/warriors/level3.jpg" alt="">
+            <div class="grad"></div>
+            <div class="uname">Фізична</div>
+          </div>
+        </div>
+        <button class="btn dim" style="font-size:10px" onclick="triggerCastEffect('demo-physical','physical')">⚔</button>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:center">
+      <button class="btn gold" style="padding:8px 24px;font-size:12px" onclick="demoAll()">▶ Всі одразу</button>
+    </div>
+  </div>
+
+  <!-- PERSISTENT STATES DEMO -->
+  <div class="section" style="padding:0 12px">
+    <div class="sec-title">Дебаф-стани (persistent)</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-idle"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/warriors/level2.jpg" alt=""><div class="grad"></div><div class="uname">Idle</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Idle</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-frozen"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/archers/level2.jpg" alt=""><div class="grad"></div><div class="uname">Заморожено</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Frozen</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-burning"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/mages/fire/level2.jpg" alt=""><div class="grad"></div><div class="uname">Горить</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Burning</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-poison"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/mages/earth/level2.jpg" alt=""><div class="grad"></div><div class="uname">Отруєно</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Poison</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-arm_brk"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/warriors/level3.jpg" alt=""><div class="grad"></div><div class="uname">Зламаний броню</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Armor break</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-acc_dn"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/archers/level1.jpg" alt=""><div class="grad"></div><div class="uname">Неточний</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Acc. down</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div class="ucard-wrap df-ini_dn"><div class="ucard" style="width:64px;height:76px"><img src="/sacred/mages/water/level2.jpg" alt=""><div class="grad"></div><div class="uname">Уповільнений</div></div></div>
+        <div style="font-size:9px;color:#5a5248">Init. down</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Banner overlay -->
+<div class="banner" id="banner"></div>
+
+<script>
+const units = {
+  'ai-archer':  {name:'Лучник lv2',  hp:100, maxHp:100, side:'ai'},
+  'ai-mage':    {name:'Пірелія lv2', hp:75,  maxHp:75,  side:'ai'},
+  'ai-w1':      {name:'Воїн lv2',    hp:120, maxHp:120, side:'ai'},
+  'ai-w2':      {name:'Воїн lv3',    hp:140, maxHp:140, side:'ai'},
+  'ai-cat':     {name:'Катапульта',  hp:180, maxHp:180, side:'ai'},
+  'pl-w1':      {name:'Паладін lv4', hp:160, maxHp:160, side:'player'},
+  'pl-w2':      {name:'Чемпіон lv3', hp:140, maxHp:140, side:'player'},
+  'pl-cat':     {name:'Балліста lv2',hp:160, maxHp:160, side:'player'},
+  'pl-archer':  {name:'Лучниця lv3', hp:90,  maxHp:90,  side:'player'},
+  'pl-mage':    {name:'Хладомант lv3',hp:100,maxHp:100, side:'player'},
+}
+const activeDebuffs = {}  // unitId → Set of debuff names
+const activeBuffs   = {}  // unitId → Set of buff names
+
+const BUFF_ICONS = {
+  defense_up:'🛡',fortress_buff:'🏰',wind_shield:'💨',regen:'💚',
+  aimed:'🎯',morale_up:'⚡',taunt:'🔥',thorns:'🌿',accuracy_up:'✦',initiative_up:'⚡'
+}
+const DEBUFF_CLASSES = {
+  frozen:'df-frozen', burning:'df-burning', poison:'df-poison',
+  accuracy_down:'df-acc_dn', armor_break:'df-arm_brk',
+  initiative_down:'df-ini_dn', cooldown:'df-cooldown'
+}
+
+let selectedId = null
+
+function selectUnit(id) {
+  // Deselect prev
+  if (selectedId) {
+    document.querySelector(`[onclick="selectUnit('${selectedId}')"]`)?.classList.remove('selected')
+  }
+  selectedId = id
+  document.querySelector(`[onclick="selectUnit('${id}')"]`)?.classList.add('selected')
+  renderControls()
+}
+
+function renderControls() {
+  const panel = document.getElementById('ctrl-panel')
+  if (!selectedId) { panel.innerHTML = '<div class="no-selection">← Натисни на будь-якого юніта</div>'; return }
+  const u = units[selectedId]
+  const pct = Math.round(u.hp / u.maxHp * 100)
+  const dbs = activeDebuffs[selectedId] || new Set()
+  const bfs = activeBuffs[selectedId]   || new Set()
+
+  panel.innerHTML = `
+    <div class="ctrl-unit-info">${u.name} <span>HP ${u.hp}/${u.maxHp} (${pct}%)</span></div>
+
+    <div class="ctrl-label">Бойові події</div>
+    <div class="ctrl-row">
+      <button class="btn red"   onclick="doHit(15,35,'damage')">Удар</button>
+      <button class="btn gold"  onclick="doHit(50,90,'crit')">Крит</button>
+      <button class="btn dim"   onclick="doMiss()">Промах</button>
+      <button class="btn blue"  onclick="doEvade()">Ухил</button>
+      <button class="btn green" onclick="doHeal(20,40)">Лікування</button>
+      <button class="btn red"   onclick="doKill()">💀 Вбити</button>
+      <button class="btn green" onclick="doRevive()">✦ Воскресити</button>
+    </div>
+
+    <div class="ctrl-label">Дебаффи (тогл)</div>
+    <div class="ctrl-row">
+      ${[['frozen','❄ Заморозка'],['burning','🔥 Горить'],['poison','☠ Отрута'],
+         ['accuracy_down','👁 -Точність'],['armor_break','💔 Броня'],
+         ['initiative_down','🐢 -Ініціатива'],['cooldown','⏳ Кулдаун']].map(([k,l]) =>
+        `<button class="btn ${dbs.has(k)?'on red':''}" onclick="toggleDebuff('${k}')">${l}</button>`
+      ).join('')}
+    </div>
+
+    <div class="ctrl-label">Баффи (3 сек)</div>
+    <div class="ctrl-row">
+      ${[['defense_up','🛡 Захист'],['wind_shield','💨 Щит'],['regen','💚 Реген'],
+         ['aimed','🎯 Прицілено'],['taunt','🔥 Провокація'],['thorns','🌿 Шипи'],
+         ['accuracy_up','✦ +Точність'],['initiative_up','⚡ +Ініціатива'],
+         ['fortress_buff','🏰 Фортеця'],['morale_up','⚡ Мораль']].map(([k,l]) =>
+        `<button class="btn ${bfs.has(k)?'on':''}" onclick="triggerBuff('${k}')">${l}</button>`
+      ).join('')}
+    </div>
+
+    <div class="ctrl-label">Каст-ефект очей (1.7 сек)</div>
+    <div class="ctrl-row">
+      ${EFFECT_DEMO.map(([type, label, color, border]) =>
+        `<button class="btn" style="color:${color};border-color:${border}" onclick="triggerCastEffect('${selectedId}','${type}')">${label}</button>`
+      ).join('')}
+    </div>
+
+    <div class="ctrl-row" style="margin-top:4px">
+      <button class="btn dim" onclick="resetUnit()">↺ Скинути юніта</button>
+    </div>
+  `
+}
+
+function doHit(minDmg, maxDmg, type) {
+  if (!selectedId) return
+  const u = units[selectedId]
+  if (u.hp <= 0) return
+  const dmg = Math.floor(Math.random() * (maxDmg - minDmg + 1)) + minDmg
+  u.hp = Math.max(0, u.hp - dmg)
+  addFloat(selectedId, type === 'crit' ? `💥${dmg}` : `-${dmg}`, type)
+  const card = document.querySelector(`[onclick="selectUnit('${selectedId}')"]`)
+  // shake
+  card.parentElement.classList.remove('do-shake'); void card.parentElement.offsetWidth
+  card.parentElement.classList.add('do-shake')
+  setTimeout(() => card.parentElement.classList.remove('do-shake'), 700)
+  // hit flash on img
+  const img = card.querySelector('img')
+  img.style.animation = 'none'; void img.offsetWidth
+  img.style.animation = 'hit-flash .7s ease-out forwards'
+  setTimeout(() => img.style.animation = '', 750)
+  updateHp(selectedId)
+  if (u.hp === 0) setTimeout(() => doKill(), 200)
+  else renderControls()
+}
+
+function doMiss() {
+  if (!selectedId) return
+  addFloat(selectedId, 'Промах', 'miss')
+  const fo = document.getElementById('fo-'+selectedId)
+  fo.className = 'flash-overlay flash-miss'
+  setTimeout(() => fo.className = 'flash-overlay', 800)
+}
+
+function doEvade() {
+  if (!selectedId) return
+  addFloat(selectedId, 'Ухил', 'evade')
+  const wrap = document.getElementById('w-'+selectedId)
+  wrap.classList.remove('do-evade-dodge'); void wrap.offsetWidth
+  wrap.classList.add('do-evade-dodge')
+  setTimeout(() => wrap.classList.remove('do-evade-dodge'), 700)
+  const fo = document.getElementById('fo-'+selectedId)
+  fo.className = 'flash-overlay flash-evade'
+  setTimeout(() => fo.className = 'flash-overlay', 800)
+}
+
+function doHeal(min, max) {
+  if (!selectedId) return
+  const u = units[selectedId]
+  if (u.hp <= 0) return
+  const amt = Math.floor(Math.random() * (max - min + 1)) + min
+  u.hp = Math.min(u.maxHp, u.hp + amt)
+  addFloat(selectedId, `+${amt}`, 'heal')
+  updateHp(selectedId)
+  renderControls()
+}
+
+function doKill() {
+  if (!selectedId) return
+  const u = units[selectedId]
+  u.hp = 0
+  updateHp(selectedId)
+  const card = document.querySelector(`[onclick="selectUnit('${selectedId}')"]`)
+  // Play die animation before applying dead class
+  card.style.animation = 'die 1.1s ease-out forwards'
+  setTimeout(() => {
+    card.style.animation = ''
+    card.classList.add('dead')
+    renderControls()
+  }, 1200)
+}
+
+function doRevive() {
+  if (!selectedId) return
+  const u = units[selectedId]
+  u.hp = Math.round(u.maxHp * 0.5)
+  const card = document.querySelector(`[onclick="selectUnit('${selectedId}')"]`)
+  card.classList.remove('dead')
+  card.style.animation = ''
+  updateHp(selectedId)
+  renderControls()
+}
+
+function toggleDebuff(key) {
+  if (!selectedId) return
+  if (!activeDebuffs[selectedId]) activeDebuffs[selectedId] = new Set()
+  const dbs = activeDebuffs[selectedId]
+  const wrap = document.getElementById('w-'+selectedId)
+  const cls  = DEBUFF_CLASSES[key]
+  if (dbs.has(key)) {
+    dbs.delete(key)
+    wrap.classList.remove(cls)
+    // restore idle or catapult
+    const isCat = selectedId.includes('cat')
+    wrap.classList.add(isCat ? 'df-catapult' : 'df-idle')
+  } else {
+    // remove all existing debuff classes first
+    Object.values(DEBUFF_CLASSES).forEach(c => wrap.classList.remove(c))
+    wrap.classList.remove('df-idle','df-catapult')
+    dbs.add(key)
+    wrap.classList.add(cls)
+    addFloat(selectedId, `↓${key.replace('_',' ')}`, 'debuff')
+  }
+  renderControls()
+}
+
+function triggerBuff(key) {
+  if (!selectedId) return
+  if (!activeBuffs[selectedId]) activeBuffs[selectedId] = new Set()
+  const bfs = activeBuffs[selectedId]
+  const wrap = document.getElementById('w-'+selectedId)
+  // Remove previous buff glow
+  bfs.forEach(b => wrap.classList.remove('bg-'+b))
+  bfs.clear()
+  // Add new
+  bfs.add(key)
+  wrap.classList.add('bg-'+key)
+  addFloat(selectedId, `↑${BUFF_ICONS[key]||'✦'}`, 'buff')
+  // Add icon
+  const biEl = document.getElementById('bi-'+selectedId)
+  const ico = document.createElement('span')
+  ico.className = 'buff-icon'; ico.textContent = BUFF_ICONS[key]||'✦'; ico.id = 'bico-'+selectedId+'-'+key
+  biEl.appendChild(ico)
+  // Auto-remove after 3s
+  setTimeout(() => {
+    wrap.classList.remove('bg-'+key)
+    bfs.delete(key)
+    ico.remove()
+    renderControls()
+  }, 3000)
+  renderControls()
+}
+
+function resetUnit() {
+  if (!selectedId) return
+  const u = units[selectedId]
+  u.hp = u.maxHp
+  const card = document.querySelector(`[onclick="selectUnit('${selectedId}')"]`)
+  card.classList.remove('dead')
+  card.style.animation = ''
+  const wrap = document.getElementById('w-'+selectedId)
+  // clear debuffs
+  Object.values(DEBUFF_CLASSES).forEach(c => wrap.classList.remove(c))
+  if (activeDebuffs[selectedId]) activeDebuffs[selectedId].clear()
+  // clear buffs
+  if (activeBuffs[selectedId]) {
+    activeBuffs[selectedId].forEach(b => wrap.classList.remove('bg-'+b))
+    activeBuffs[selectedId].clear()
+  }
+  const isCat = selectedId.includes('cat')
+  wrap.classList.add(isCat ? 'df-catapult' : 'df-idle')
+  document.getElementById('bi-'+selectedId).innerHTML = ''
+  updateHp(selectedId)
+  renderControls()
+}
+
+function updateHp(id) {
+  const u = units[id]
+  const pct = u.hp / u.maxHp * 100
+  const fill = document.getElementById('hp-'+id)
+  if (!fill) return
+  fill.style.width = pct + '%'
+  fill.style.background = pct > 50 ? '#7aaa82' : pct > 25 ? '#c4a040' : '#c07070'
+}
+
+let floatId = 0
+function addFloat(id, text, type) {
+  const wrap = document.getElementById('w-'+id)
+  if (!wrap) return
+  const el = document.createElement('span')
+  el.className = 'float ' + type
+  el.textContent = text
+  el.style.top = '-4px'
+  wrap.appendChild(el)
+  setTimeout(() => el.remove(), 5000)
+}
+
+let currentTurn = 'none'
+function setTurn(side) {
+  currentTurn = side
+  document.getElementById('zone-ai').classList.remove('ai-active')
+  document.getElementById('zone-player').classList.remove('player-active')
+  document.querySelectorAll('.ucard-wrap').forEach(w => { w.classList.remove('turn-player','turn-ai') })
+  document.querySelectorAll('.turn-btn').forEach(b => b.className = 'turn-btn')
+
+  if (side === 'ai') {
+    document.getElementById('zone-ai').classList.add('ai-active')
+    document.getElementById('tb-ai').className = 'turn-btn active-ai'
+    // pick a random AI unit as the "active" one
+    const aiIds = Object.keys(units).filter(k => units[k].side === 'ai' && units[k].hp > 0)
+    if (aiIds.length) {
+      const pick = aiIds[Math.floor(Math.random()*aiIds.length)]
+      document.getElementById('w-'+pick)?.classList.add('turn-ai')
+    }
+    showBanner('⚔ Хід ворога', 'rgba(192,112,112,0.95)')
+  } else if (side === 'player') {
+    document.getElementById('zone-player').classList.add('player-active')
+    document.getElementById('tb-player').className = 'turn-btn active-player'
+    const plIds = Object.keys(units).filter(k => units[k].side === 'player' && units[k].hp > 0)
+    if (plIds.length) {
+      const pick = plIds[Math.floor(Math.random()*plIds.length)]
+      document.getElementById('w-'+pick)?.classList.add('turn-player')
+    }
+    showBanner('🛡 Твоя черга', 'rgba(111,166,122,0.95)')
+  } else {
+    document.getElementById('tb-none').className = 'turn-btn'
+  }
+}
+
+function showBanner(text, bg) {
+  const b = document.getElementById('banner')
+  b.textContent = text
+  b.style.background = bg
+  b.style.display = 'block'
+  b.style.animation = 'none'; void b.offsetWidth
+  b.style.animation = 'banner-in .3s cubic-bezier(.4,0,.2,1) forwards'
+  setTimeout(() => { b.style.display = 'none' }, 1600)
+}
+
+function triggerCastEffect(unitId, type) {
+  const card = document.getElementById('demo-card-' + unitId) ||
+               document.querySelector(`[onclick="selectUnit('${unitId}')"]`)
+  if (!card) return
+  // Remove any previous cast overlays
+  card.querySelectorAll('.cast-eye,.cast-spark').forEach(el => el.remove())
+  const img = card.querySelector('img')
+  // Eye glow
+  const eye = document.createElement('div')
+  eye.className = `cast-eye cast-eye-${type}`
+  img.after(eye)
+  // 5 particles
+  for (let i = 0; i < 5; i++) {
+    const sp = document.createElement('div')
+    sp.className = `cast-spark cast-spark-${i} cast-spark-${type}`
+    img.after(sp)
+  }
+  setTimeout(() => card.querySelectorAll('.cast-eye,.cast-spark').forEach(el => el.remove()), 1800)
+}
+
+const EFFECT_DEMO = [
+  ['fire',     '🔥 Вогонь',  '#ff8030', 'rgba(255,120,50,.4)'],
+  ['ice',      '❄ Лід',      '#60d0ff', 'rgba(80,200,255,.4)'],
+  ['earth',    '🌿 Земля',   '#78c030', 'rgba(120,180,50,.4)'],
+  ['air',      '💨 Повітря', '#ffe040', 'rgba(255,210,50,.4)'],
+  ['holy',     '✦ Свята',   '#ffd060', 'rgba(255,200,80,.4)'],
+  ['physical', '⚔ Фізична', 'rgba(240,232,216,.5)', 'rgba(240,232,216,.12)'],
+]
+const DEMO_UNIT_IDS = ['pl-w1','pl-archer','pl-mage','ai-w1','ai-archer','ai-mage']
+
+function demoAll() {
+  EFFECT_DEMO.forEach(([type], i) => {
+    setTimeout(() => triggerCastEffect(type, type), i * 300)
+  })
+}
+</script>
+</body>
+</html>
