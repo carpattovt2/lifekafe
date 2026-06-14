@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seraphites — Animation Test</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #111008;
+  color: #f0e8d8;
+  font-family: Georgia, serif;
+  padding: 24px 20px 60px;
+}
+h1 { font-size: 17px; color: #b07850; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: #6b6258; margin-bottom: 32px; }
+
+/* ── Section ── */
+.section { margin-bottom: 44px; }
+.section-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+  color: #7a6e62; border-bottom: 1px solid rgba(240,232,216,0.07);
+  padding-bottom: 7px; margin-bottom: 18px;
+}
+
+/* ── Row ── */
+.row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+
+/* ── Card wrap ── */
+.cw { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.clabel {
+  font-size: 10px; color: #7a6e62; text-align: center;
+  max-width: 76px; line-height: 1.3;
+}
+.clabel.active { color: #c8b89a; }
+
+/* ── Base card ── */
+.card {
+  position: relative;
+  width: 68px; height: 80px;
+  border: 2px solid rgba(240,232,216,0.13);
+  border-radius: 8px;
+  overflow: visible;   /* allow floats to show outside */
+  cursor: pointer;
+  flex-shrink: 0;
+  isolation: isolate;
+}
+
+.card img.portrait {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: center top;
+  clip-path: inset(0 round 6px);
+}
+.card .grad {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.2) 40%, rgba(0,0,0,0.7) 100%);
+  pointer-events: none;
+}
+.card .uname {
+  position: absolute; bottom: 4px; left: 0; right: 0;
+  text-align: center; font-size: 9px; color: rgba(240,232,216,0.8);
+  z-index: 4; pointer-events: none;
+}
+
+/* ── Overlay layer (for persistent tints) ── */
+.card .tint-layer {
+  position: absolute; inset: 0; z-index: 2;
+  pointer-events: none; border-radius: 6px;
+  opacity: 0;
+}
+
+/* ── Float numbers ── */
+@keyframes float-up-dmg { 0%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)} 20%{opacity:1;transform:translateX(-50%) translateY(-8px) scale(1.15)} 100%{opacity:0;transform:translateX(-50%) translateY(-38px) scale(0.85)} }
+@keyframes float-up-gen { 0%{opacity:1;transform:translateX(-50%) translateY(0)} 100%{opacity:0;transform:translateX(-50%) translateY(-34px)} }
+.floatie {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  font-weight: bold; pointer-events: none; z-index: 20;
+  white-space: nowrap; line-height: 1;
+}
+.floatie.damage { top:6px;  font-size:15px; color:#e04030; text-shadow:0 1px 4px rgba(0,0,0,0.9); animation:float-up-dmg 2s ease-out forwards; }
+.floatie.crit   { top:2px;  font-size:17px; color:#e8a060; text-shadow:0 0 10px rgba(176,120,80,0.8); animation:float-up-dmg 2.2s ease-out forwards; }
+.floatie.miss   { top:12px; font-size:10px; color:#9b9289; text-shadow:0 1px 3px rgba(0,0,0,0.9); animation:float-up-gen 2s ease-out forwards; }
+.floatie.evade  { top:12px; font-size:10px; color:#50c8d8; text-shadow:0 1px 3px rgba(0,0,0,0.9); animation:float-up-gen 2s ease-out forwards; }
+.floatie.heal   { top:8px;  font-size:12px; color:#50c864; text-shadow:0 1px 4px rgba(0,0,0,0.9); animation:float-up-gen 2.2s ease-out forwards; }
+.floatie.buff   { top:10px; font-size:10px; color:#d4a030; text-shadow:0 1px 3px rgba(0,0,0,0.9); animation:float-up-gen 2.2s ease-out forwards; }
+.floatie.debuff { top:10px; font-size:10px; color:#d06070; text-shadow:0 1px 3px rgba(0,0,0,0.9); animation:float-up-gen 2.2s ease-out forwards; }
+
+/* ══════════════════════════════════════════════════════
+   PERSISTENT STATE ANIMATIONS
+   ══════════════════════════════════════════════════════ */
+
+/* ── IDLE: breathe (живі, без ефектів) ── */
+@keyframes breathe {
+  0%,100%{ transform:scale(1) translateY(0) }
+  50%    { transform:scale(1.04) translateY(-1px) }
+}
+.state-idle img.portrait { animation:breathe 3.5s ease-in-out infinite; transform-origin:center bottom; }
+
+/* ── IDLE: catapult pulse-vibrate (burst every ~5s) ── */
+@keyframes catapult-vibe {
+  /* 0–6%: vibration burst (~0.3s of 5s total) */
+  0%   { transform: translateX(0)    rotate(0deg) }
+  1%   { transform: translateX(-1.5px) rotate(-0.5deg) }
+  2%   { transform: translateX(1.5px)  rotate(0.5deg) }
+  3%   { transform: translateX(-1.2px) rotate(-0.4deg) }
+  4%   { transform: translateX(1px)    rotate(0.3deg) }
+  5%   { transform: translateX(-0.5px) rotate(-0.2deg) }
+  6%   { transform: translateX(0)    rotate(0deg) }
+  /* 6–100%: still */
+  100% { transform: translateX(0)    rotate(0deg) }
+}
+.state-catapult img.portrait { animation: catapult-vibe 5s ease-in-out infinite; }
+
+/* ── FROZEN (синій flicker) ── */
+@keyframes frozen-flicker {
+  0%,100%{ filter:brightness(0.85) saturate(0.5) hue-rotate(175deg); }
+  30%    { filter:brightness(1.10) saturate(0.8) hue-rotate(190deg); }
+  65%    { filter:brightness(0.75) saturate(0.4) hue-rotate(165deg); }
+}
+@keyframes frozen-tint {
+  0%,100%{ opacity:0.30 }
+  35%    { opacity:0.60 }
+}
+.state-frozen img.portrait { animation:frozen-flicker 2s ease-in-out infinite; }
+.state-frozen .tint-layer  { background:rgba(100,190,255,0.45); animation:frozen-tint 2s ease-in-out infinite; opacity:0.30; }
+
+/* ── BURNING (помаранчевий flicker) ── */
+@keyframes burn-flicker {
+  0%,100%{ filter:brightness(1.15) saturate(1.6) hue-rotate(-10deg); }
+  25%    { filter:brightness(1.40) saturate(2.2) hue-rotate(-20deg); }
+  60%    { filter:brightness(1.05) saturate(1.3) hue-rotate(-5deg); }
+}
+@keyframes burn-tint {
+  0%,100%{ opacity:0.30 }
+  35%    { opacity:0.60 }
+}
+.state-burning img.portrait { animation:burn-flicker 0.7s ease-in-out infinite; }
+.state-burning .tint-layer  { background:rgba(255,90,10,0.40); animation:burn-tint 0.7s ease-in-out infinite; opacity:0.30; }
+
+/* ── POISON (зелений flicker) ── */
+@keyframes poison-flicker {
+  0%,100%{ filter:brightness(0.90) saturate(1.3) hue-rotate(85deg); }
+  35%    { filter:brightness(1.10) saturate(1.8) hue-rotate(100deg); }
+  70%    { filter:brightness(0.85) saturate(1.1) hue-rotate(80deg); }
+}
+@keyframes poison-tint {
+  0%,100%{ opacity:0.25 }
+  35%    { opacity:0.55 }
+}
+.state-poison img.portrait { animation:poison-flicker 1.8s ease-in-out infinite; }
+.state-poison .tint-layer  { background:rgba(40,210,70,0.40); animation:poison-tint 1.8s ease-in-out infinite; opacity:0.25; }
+
+/* ── ACCURACY_DOWN (сірий flicker) ── */
+@keyframes acc-down-flicker {
+  0%,100%{ filter:brightness(0.80) saturate(0.20); }
+  45%    { filter:brightness(1.00) saturate(0.40); }
+}
+@keyframes acc-down-tint {
+  0%,100%{ opacity:0.25 }
+  45%    { opacity:0.50 }
+}
+.state-accuracy_down img.portrait { animation:acc-down-flicker 2.2s ease-in-out infinite; }
+.state-accuracy_down .tint-layer  { background:rgba(160,160,180,0.40); animation:acc-down-tint 2.2s ease-in-out infinite; opacity:0.25; }
+
+/* ── ARMOR_BREAK (червоний flicker) ── */
+@keyframes armor-break-flicker {
+  0%,100%{ filter:brightness(0.95) saturate(1.5) hue-rotate(-15deg); }
+  25%    { filter:brightness(1.30) saturate(2.0) hue-rotate(-25deg); }
+  60%    { filter:brightness(0.90) saturate(1.2) hue-rotate(-10deg); }
+}
+@keyframes armor-break-tint {
+  0%,100%{ opacity:0.25 }
+  30%    { opacity:0.60 }
+}
+.state-armor_break img.portrait { animation:armor-break-flicker 1.1s ease-in-out infinite; }
+.state-armor_break .tint-layer  { background:rgba(220,40,40,0.40); animation:armor-break-tint 1.1s ease-in-out infinite; opacity:0.25; }
+
+/* ── INITIATIVE_DOWN (фіолетовий flicker) ── */
+@keyframes init-down-flicker {
+  0%,100%{ filter:brightness(0.80) saturate(0.7) hue-rotate(240deg); }
+  50%    { filter:brightness(1.00) saturate(1.1) hue-rotate(260deg); }
+}
+@keyframes init-down-tint {
+  0%,100%{ opacity:0.25 }
+  50%    { opacity:0.50 }
+}
+.state-initiative_down img.portrait { animation:init-down-flicker 2.8s ease-in-out infinite; }
+.state-initiative_down .tint-layer  { background:rgba(110,60,200,0.38); animation:init-down-tint 2.8s ease-in-out infinite; opacity:0.25; }
+
+/* ── COOLDOWN (темний flicker) ── */
+@keyframes cooldown-flicker {
+  0%,100%{ filter:brightness(0.45) saturate(0.2); }
+  50%    { filter:brightness(0.60) saturate(0.3); }
+}
+@keyframes cooldown-tint {
+  0%,100%{ opacity:0.60 }
+  50%    { opacity:0.40 }
+}
+.state-cooldown img.portrait { animation:cooldown-flicker 2s ease-in-out infinite; }
+.state-cooldown .tint-layer  { background:rgba(10,10,20,0.65); animation:cooldown-tint 2s ease-in-out infinite; opacity:0.60; }
+
+/* ══ BUFF BORDER GLOWS ══ */
+@keyframes glow-gold   { 0%,100%{box-shadow:0 0 8px 2px rgba(220,180,60,0.5)} 50%{box-shadow:0 0 18px 5px rgba(220,180,60,0.85)} }
+@keyframes glow-green  { 0%,100%{box-shadow:0 0 7px 2px rgba(80,200,100,0.45)} 50%{box-shadow:0 0 16px 5px rgba(80,200,100,0.8)} }
+@keyframes glow-blue   { 0%,100%{box-shadow:0 0 7px 2px rgba(80,160,220,0.45)} 50%{box-shadow:0 0 16px 5px rgba(80,160,220,0.8)} }
+@keyframes glow-yellow { 0%,100%{box-shadow:0 0 7px 2px rgba(240,210,50,0.5)} 50%{box-shadow:0 0 18px 5px rgba(240,210,50,0.9)} }
+@keyframes glow-red    { 0%,100%{box-shadow:0 0 7px 2px rgba(220,80,80,0.5)} 50%{box-shadow:0 0 16px 5px rgba(220,80,80,0.85)} }
+@keyframes glow-cyan   { 0%,100%{box-shadow:0 0 7px 2px rgba(60,220,200,0.45)} 50%{box-shadow:0 0 16px 5px rgba(60,220,200,0.8)} }
+@keyframes glow-spike  { 0%,100%{box-shadow:0 0 6px 1px rgba(120,180,80,0.4)} 50%{box-shadow:0 0 14px 4px rgba(120,180,80,0.75)} }
+@keyframes glow-bigold { 0%,100%{box-shadow:0 0 12px 4px rgba(255,200,50,0.65)} 50%{box-shadow:0 0 28px 8px rgba(255,200,50,0.95)} }
+
+.buff-defense_up    { border-color:#d4b040 !important; animation:glow-gold   1.4s ease-in-out infinite; }
+.buff-aimed         { border-color:#e8d030 !important; animation:glow-yellow 1.2s ease-in-out infinite; }
+.buff-morale_up     { border-color:#c8a030 !important; animation:glow-gold   2s   ease-in-out infinite; }
+.buff-regen         { border-color:#50c864 !important; animation:glow-green  1.8s ease-in-out infinite; }
+.buff-wind_shield   { border-color:#50a0dc !important; animation:glow-blue   1.6s ease-in-out infinite; }
+.buff-fortress_buff { border-color:#ffd040 !important; animation:glow-bigold 1.5s ease-in-out infinite; }
+.buff-thorns        { border-color:#78b450 !important; animation:glow-spike  2s   ease-in-out infinite; }
+.buff-taunt         { border-color:#dc5050 !important; animation:glow-red    1s   ease-in-out infinite; }
+.buff-accuracy_up   { border-color:#f0e040 !important; animation:glow-yellow 1s   ease-in-out infinite; }
+.buff-initiative_up { border-color:#40d0e0 !important; animation:glow-cyan   1.2s ease-in-out infinite; }
+
+/* ══════════════════════════════════════════════════════
+   TRIGGER (ONE-SHOT) ANIMATIONS
+   These play on top regardless of persistent state
+   ══════════════════════════════════════════════════════ */
+
+/* General trigger: a one-shot overlay flash */
+@keyframes trigger-flash {
+  0%  { opacity:0 }
+  15% { opacity:0.85 }
+  100%{ opacity:0 }
+}
+.trigger-layer {
+  position:absolute; inset:0; z-index:5;
+  border-radius:6px; pointer-events:none;
+  opacity:0;
+}
+.trigger-layer.playing { animation:trigger-flash 0.55s ease-out forwards; }
+
+/* ── Card shake (hit) ── */
+@keyframes card-shake {
+  0%,100%{ transform:translateX(0) rotate(0deg) }
+  15%    { transform:translateX(-7px) rotate(-1.5deg) }
+  35%    { transform:translateX(7px)  rotate(1.5deg) }
+  55%    { transform:translateX(-4px) rotate(-0.8deg) }
+  75%    { transform:translateX(4px)  rotate(0.8deg) }
+}
+@keyframes card-shake-crit {
+  0%,100%{ transform:translateX(0) rotate(0deg) scale(1) }
+  12%    { transform:translateX(-9px) rotate(-2.5deg) scale(1.05) }
+  30%    { transform:translateX(9px)  rotate(2.5deg) scale(1.05) }
+  50%    { transform:translateX(-5px) rotate(-1.2deg) scale(1.02) }
+  70%    { transform:translateX(5px)  rotate(1.2deg) scale(1.02) }
+}
+@keyframes img-hit-flash {
+  0%  { filter:brightness(1) saturate(1) }
+  12% { filter:brightness(3) saturate(0.1) sepia(1) hue-rotate(-20deg) }
+  35% { filter:brightness(1.5) saturate(0.5) }
+  100%{ filter:brightness(1) saturate(1) }
+}
+.hit-shake      { animation:card-shake      0.45s ease-in-out !important; }
+.hit-shake-crit { animation:card-shake-crit 0.5s  ease-in-out !important; }
+.hit-img-flash  { animation:img-hit-flash   0.45s ease-in-out !important; }
+
+/* ── Miss: white flash (both cards) ── */
+@keyframes miss-flash-card {
+  0%  { transform:translateX(0) }
+  25% { transform:translateX(3px) }
+  50% { transform:translateX(-3px) }
+  75% { transform:translateX(2px) }
+  100%{ transform:translateX(0) }
+}
+.miss-shake { animation:miss-flash-card 0.35s ease-in-out !important; }
+
+/* ── Evade: step-back dodge ── */
+@keyframes evade-dodge {
+  0%  { transform:translateX(0) translateY(0) }
+  30% { transform:translateX(5px) translateY(-4px) rotate(2deg) }
+  60% { transform:translateX(2px) translateY(-2px) rotate(1deg) }
+  100%{ transform:translateX(0) translateY(0) rotate(0deg) }
+}
+.evade-dodge { animation:evade-dodge 0.4s ease-out !important; }
+
+/* ── Death ── */
+@keyframes unit-die {
+  0%  { opacity:1;   transform:scale(1) rotate(0deg) translateY(0);    filter:none }
+  20% { opacity:1;   transform:scale(1.08) rotate(-2deg) translateY(-3px); filter:brightness(1.6) saturate(0.4) }
+  55% { opacity:0.6; transform:scale(0.92) rotate(6deg) translateY(4px);  filter:grayscale(0.7) brightness(0.8) }
+  100%{ opacity:0.3; transform:scale(0.88) rotate(8deg) translateY(6px);  filter:grayscale(1) brightness(0.6) }
+}
+.unit-die { animation:unit-die 0.8s ease-out forwards !important; }
+
+/* ── Buttons ── */
+.btn {
+  padding:5px 12px; border-radius:5px;
+  background:rgba(176,120,80,0.15); border:1px solid rgba(176,120,80,0.35);
+  color:#b07850; font-size:11px; cursor:pointer;
+  transition:background 0.15s; user-select:none;
+  white-space:nowrap;
+}
+.btn:hover { background:rgba(176,120,80,0.28); }
+.btn.sm { padding:3px 8px; font-size:10px; }
+.btn.on { background:rgba(176,120,80,0.35); border-color:rgba(176,120,80,0.7); color:#d4a070; }
+
+.btns { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+
+/* ── Combinator panel ── */
+.combo-panel {
+  background:rgba(240,232,216,0.03); border:1px solid rgba(240,232,216,0.07);
+  border-radius:10px; padding:16px;
+}
+.combo-grid { display:flex; gap:24px; flex-wrap:wrap; }
+.combo-col h4 { font-size:11px; color:#7a6e62; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+.toggle-row { display:flex; flex-direction:column; gap:5px; }
+</style>
+</head>
+<body>
+
+<h1>Seraphites — Animation Test</h1>
+<p class="subtitle">Повний тест всіх анімацій. Натискай кнопки та картки.</p>
+
+<!-- ═══════════════════ SECTION 1: IDLE ═══════════════════ -->
+<div class="section">
+  <div class="section-title">1 · Idle animations</div>
+  <div class="row">
+    <div class="cw">
+      <div class="card state-idle" id="idle-warrior">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel">breathe</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle" id="idle-archer" style="animation-delay:-1.1s">
+        <img class="portrait" src="/sacred/archers/level2.jpg" style="animation-delay:-1.1s">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel">breathe</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle" style="">
+        <img class="portrait" src="/sacred/mages/water/level3.jpg" style="animation-delay:-0.7s">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Mage</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel">breathe</div>
+    </div>
+    <div class="cw">
+      <div class="card state-catapult">
+        <img class="portrait" src="/sacred/catapults/level1.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Catapult</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel">vibrate</div>
+    </div>
+    <div class="cw">
+      <div class="card state-catapult">
+        <img class="portrait" src="/sacred/catapults/trebuchet/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Trebuchet</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel">vibrate</div>
+    </div>
+    <div class="cw">
+      <div class="card state-catapult">
+        <img class="portrait" src="/sacred/catapults/ballista/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Ballista</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel">vibrate</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SECTION 2: DEBUFFS ═══════════════════ -->
+<div class="section">
+  <div class="section-title">2 · Persistent debuffs (portrait tint, priority order)</div>
+  <div class="row">
+    <div class="cw">
+      <div class="card state-frozen" id="card-frozen">
+        <img class="portrait" src="/sacred/warriors/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">frozen<br>пріоритет 1</div>
+    </div>
+    <div class="cw">
+      <div class="card state-burning" id="card-burning">
+        <img class="portrait" src="/sacred/mages/fire/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Fire Mage</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">burning<br>пріоритет 2</div>
+    </div>
+    <div class="cw">
+      <div class="card state-poison" id="card-poison">
+        <img class="portrait" src="/sacred/archers/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">poison<br>пріоритет 3</div>
+    </div>
+    <div class="cw">
+      <div class="card state-accuracy_down">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">accuracy_down<br>пріоритет 4</div>
+    </div>
+    <div class="cw">
+      <div class="card state-armor_break">
+        <img class="portrait" src="/sacred/mages/earth/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Earth Mage</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">armor_break<br>пріоритет 5</div>
+    </div>
+    <div class="cw">
+      <div class="card state-initiative_down">
+        <img class="portrait" src="/sacred/archers/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">initiative_down<br>пріоритет 6</div>
+    </div>
+    <div class="cw">
+      <div class="card state-cooldown">
+        <img class="portrait" src="/sacred/catapults/trebuchet/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Trebuchet</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="clabel active">cooldown<br>пріоритет 7</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SECTION 3: BUFFS ═══════════════════ -->
+<div class="section">
+  <div class="section-title">3 · Persistent buffs (border glow, priority order)</div>
+  <div class="row">
+    <div class="cw">
+      <div class="card state-idle buff-defense_up">
+        <img class="portrait" src="/sacred/warriors/level4.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+      </div>
+      <div class="clabel active">defense_up</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-fortress_buff">
+        <img class="portrait" src="/sacred/mages/earth/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Earth Mage</div>
+      </div>
+      <div class="clabel active">fortress_buff</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-wind_shield">
+        <img class="portrait" src="/sacred/mages/air/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Air Mage</div>
+      </div>
+      <div class="clabel active">wind_shield</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-regen">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+      </div>
+      <div class="clabel active">regen</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-aimed">
+        <img class="portrait" src="/sacred/archers/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+      </div>
+      <div class="clabel active">aimed</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-morale_up">
+        <img class="portrait" src="/sacred/warriors/champion/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Champion</div>
+      </div>
+      <div class="clabel active">morale_up</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-taunt">
+        <img class="portrait" src="/sacred/warriors/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+      </div>
+      <div class="clabel active">taunt</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-thorns">
+        <img class="portrait" src="/sacred/mages/earth/level4.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Earth Mage</div>
+      </div>
+      <div class="clabel active">thorns</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-accuracy_up">
+        <img class="portrait" src="/sacred/archers/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+      </div>
+      <div class="clabel active">accuracy_up</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-initiative_up">
+        <img class="portrait" src="/sacred/mages/air/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Air Mage</div>
+      </div>
+      <div class="clabel active">initiative_up</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SECTION 4: BATTLE EVENTS ═══════════════════ -->
+<div class="section">
+  <div class="section-title">4 · Battle event triggers (one-shot)</div>
+  <div class="row">
+
+    <!-- DAMAGE -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-damage">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerEvent('ev-damage','damage')">Hit -35</div>
+      </div>
+    </div>
+
+    <!-- CRIT -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-crit">
+        <img class="portrait" src="/sacred/warriors/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerEvent('ev-crit','crit')">💥 Крит -72</div>
+      </div>
+    </div>
+
+    <!-- MISS -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-miss-atk">
+        <img class="portrait" src="/sacred/archers/level1.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+        <div class="trigger-layer" style="background:rgba(255,255,255,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerMiss()">Промах</div>
+      </div>
+    </div>
+    <div class="cw" style="justify-content:flex-start; padding-top:0">
+      <div style="font-size:20px; color:#4a4040; align-self:center; margin-top:28px;">→</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle" id="ev-miss-def">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer" style="background:rgba(255,255,255,1)"></div>
+      </div>
+      <div class="clabel" style="margin-top:28px">ціль</div>
+    </div>
+
+    <!-- EVADE -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-evade-atk">
+        <img class="portrait" src="/sacred/mages/fire/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Fire Mage</div>
+        <div class="trigger-layer" style="background:rgba(255,255,255,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerEvade()">Ухил</div>
+      </div>
+    </div>
+    <div class="cw" style="justify-content:flex-start; padding-top:0">
+      <div style="font-size:20px; color:#4a4040; align-self:center; margin-top:28px;">→</div>
+    </div>
+    <div class="cw">
+      <div class="card state-idle buff-wind_shield" id="ev-evade-def">
+        <img class="portrait" src="/sacred/mages/air/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Air Mage</div>
+        <div class="trigger-layer" style="background:rgba(60,220,200,1)"></div>
+      </div>
+      <div class="clabel" style="margin-top:28px">ухиляється<br>(cyan flash)</div>
+    </div>
+
+    <!-- HEAL -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-heal">
+        <img class="portrait" src="/sacred/warriors/champion/level4.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Paladin</div>
+        <div class="trigger-layer" style="background:rgba(80,200,100,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerEvent('ev-heal','heal')">✨ Хіл +25</div>
+      </div>
+    </div>
+
+    <!-- BUFF -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-buff">
+        <img class="portrait" src="/sacred/warriors/level4.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer" style="background:rgba(220,180,60,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerEvent('ev-buff','buff')">🛡 Бафф</div>
+      </div>
+    </div>
+
+    <!-- DEBUFF FREEZE -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-freeze">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer" style="background:rgba(140,210,255,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerDebuff('ev-freeze','frozen','rgba(140,210,255,1)')">❄ Заморозка</div>
+      </div>
+    </div>
+
+    <!-- DEBUFF BURN -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-burn">
+        <img class="portrait" src="/sacred/archers/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Archer</div>
+        <div class="trigger-layer" style="background:rgba(255,100,20,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerDebuff('ev-burn','burning','rgba(255,100,20,1)')">🔥 Підпал</div>
+      </div>
+    </div>
+
+    <!-- DEBUFF POISON -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-poison">
+        <img class="portrait" src="/sacred/warriors/level3.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer" style="background:rgba(60,200,80,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerDebuff('ev-poison','poison','rgba(60,200,80,1)')">🧪 Отрута</div>
+      </div>
+    </div>
+
+    <!-- DEBUFF ACC DOWN -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-accdown">
+        <img class="portrait" src="/sacred/warriors/level2.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Warrior</div>
+        <div class="trigger-layer" style="background:rgba(140,140,160,1)"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerDebuff('ev-accdown','accuracy_down','rgba(140,140,160,1)')">🪨 Дезорієнт</div>
+      </div>
+    </div>
+
+    <!-- DEATH -->
+    <div class="cw">
+      <div class="card state-idle" id="ev-death">
+        <img class="portrait" src="/sacred/mages/fire/level4.jpg">
+        <div class="tint-layer"></div><div class="grad"></div>
+        <div class="uname">Fire Mage</div>
+        <div class="trigger-layer"></div>
+      </div>
+      <div class="btns">
+        <div class="btn sm" onclick="triggerDeath('ev-death')">☠ Death</div>
+        <div class="btn sm" onclick="resetCard('ev-death')">↺</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════ SECTION 5: COMBINATIONS ═══════════════════ -->
+<div class="section">
+  <div class="section-title">5 · Combinations — кілька ефектів одночасно (toggle + trigger)</div>
+  <div class="combo-panel">
+    <div class="combo-grid">
+
+      <!-- Combo card -->
+      <div>
+        <div class="row" style="margin-bottom:12px">
+          <div class="cw">
+            <div class="card state-idle" id="combo-card">
+              <img class="portrait" src="/sacred/warriors/level3.jpg">
+              <div class="tint-layer"></div><div class="grad"></div>
+              <div class="uname" id="combo-name">Warrior</div>
+              <div class="trigger-layer"></div>
+            </div>
+          </div>
+        </div>
+        <div class="btns">
+          <div class="btn sm" onclick="triggerEvent('combo-card','damage')">Hit</div>
+          <div class="btn sm" onclick="triggerEvent('combo-card','crit')">Крит</div>
+          <div class="btn sm" onclick="triggerEvent('combo-card','heal')">Хіл</div>
+          <div class="btn sm" onclick="resetCombo()">↺ Reset</div>
+        </div>
+      </div>
+
+      <!-- Debuff toggles -->
+      <div class="combo-col">
+        <h4>Дебаффи</h4>
+        <div class="toggle-row">
+          <div class="btn sm" id="tog-frozen"       onclick="toggleDebuff('frozen')"       >frozen</div>
+          <div class="btn sm" id="tog-burning"      onclick="toggleDebuff('burning')"      >burning</div>
+          <div class="btn sm" id="tog-poison"       onclick="toggleDebuff('poison')"       >poison</div>
+          <div class="btn sm" id="tog-accuracy_down"onclick="toggleDebuff('accuracy_down')">accuracy_down</div>
+          <div class="btn sm" id="tog-armor_break"  onclick="toggleDebuff('armor_break')"  >armor_break</div>
+          <div class="btn sm" id="tog-initiative_down" onclick="toggleDebuff('initiative_down')">initiative_down</div>
+          <div class="btn sm" id="tog-cooldown"     onclick="toggleDebuff('cooldown')"     >cooldown</div>
+        </div>
+      </div>
+
+      <!-- Buff toggles -->
+      <div class="combo-col">
+        <h4>Баффи</h4>
+        <div class="toggle-row">
+          <div class="btn sm" id="tog-defense_up"   onclick="toggleBuff('defense_up')"   >defense_up</div>
+          <div class="btn sm" id="tog-fortress_buff" onclick="toggleBuff('fortress_buff')">fortress_buff</div>
+          <div class="btn sm" id="tog-wind_shield"  onclick="toggleBuff('wind_shield')"  >wind_shield</div>
+          <div class="btn sm" id="tog-regen"        onclick="toggleBuff('regen')"        >regen</div>
+          <div class="btn sm" id="tog-aimed"        onclick="toggleBuff('aimed')"        >aimed</div>
+          <div class="btn sm" id="tog-morale_up"    onclick="toggleBuff('morale_up')"    >morale_up</div>
+          <div class="btn sm" id="tog-taunt"        onclick="toggleBuff('taunt')"        >taunt</div>
+          <div class="btn sm" id="tog-thorns"       onclick="toggleBuff('thorns')"       >thorns</div>
+          <div class="btn sm" id="tog-accuracy_up"  onclick="toggleBuff('accuracy_up')"  >accuracy_up</div>
+          <div class="btn sm" id="tog-initiative_up"onclick="toggleBuff('initiative_up')">initiative_up</div>
+        </div>
+      </div>
+
+      <!-- Trigger debuffs on top -->
+      <div class="combo-col">
+        <h4>Trigger (одноразово)</h4>
+        <div class="toggle-row">
+          <div class="btn sm" onclick="triggerDebuff('combo-card','frozen',      'rgba(140,210,255,1)')">❄ freeze flash</div>
+          <div class="btn sm" onclick="triggerDebuff('combo-card','burning',     'rgba(255,100,20,1)' )">🔥 burn flash</div>
+          <div class="btn sm" onclick="triggerDebuff('combo-card','poison',      'rgba(60,200,80,1)'  )">🧪 poison flash</div>
+          <div class="btn sm" onclick="triggerDebuff('combo-card','accuracy_down','rgba(140,140,160,1)')">🪨 acc↓ flash</div>
+          <div class="btn sm" onclick="triggerEvent( 'combo-card','buff'                               )">⬆ buff flash</div>
+          <div class="btn sm" onclick="triggerEvent( 'combo-card','heal'                               )">✨ heal flash</div>
+        </div>
+      </div>
+
+    </div>
+    <p style="font-size:11px; color:#5a5248; margin-top:14px;">
+      Вмикай кілька ефектів одночасно → домінантний стан показується на портреті, решта — в рамці.<br>
+      Потім тригери спрацьовують поверх незалежно від поточного стану.
+    </p>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// TRIGGER EVENTS
+// ══════════════════════════════════════════════════════════
+const TRIGGER_COLORS = {
+  damage:  'rgba(255,80,60,1)',
+  crit:    'rgba(255,160,60,1)',
+  miss:    'rgba(255,255,255,1)',
+  evade:   'rgba(60,220,200,1)',
+  heal:    'rgba(80,200,100,1)',
+  buff:    'rgba(220,180,60,1)',
+  debuff:  'rgba(180,60,80,1)',
+}
+
+function triggerEvent(cardId, type) {
+  const card = document.getElementById(cardId)
+  if (!card) return
+  const img     = card.querySelector('img.portrait')
+  const trigger = card.querySelector('.trigger-layer')
+
+  // color
+  trigger.style.background = TRIGGER_COLORS[type] || 'rgba(255,255,255,1)'
+
+  // float
+  const floatMap = {
+    damage: '-35', crit: '-72!', heal: '+25',
+    buff: 'buff', debuff: 'debuff', miss: 'miss', evade: 'evade'
+  }
+  showFloat(card, floatMap[type] ?? '', type)
+
+  if (type === 'damage' || type === 'debuff') {
+    reflow(card, 'hit-shake')
+    reflow(img,  'hit-img-flash')
+  } else if (type === 'crit') {
+    reflow(card, 'hit-shake-crit')
+    reflow(img,  'hit-img-flash')
+  } else if (type === 'miss') {
+    reflow(card, 'miss-shake')
+  } else if (type === 'evade') {
+    reflow(card, 'evade-dodge')
+  }
+
+  flashTrigger(trigger)
+
+  // cleanup
+  const dur = type === 'crit' ? 500 : 450
+  setTimeout(() => {
+    card.classList.remove('hit-shake','hit-shake-crit','miss-shake','evade-dodge')
+    img.classList.remove('hit-img-flash')
+  }, dur)
+}
+
+function triggerMiss() {
+  const atk = document.getElementById('ev-miss-atk')
+  const def = document.getElementById('ev-miss-def')
+  ;[atk, def].forEach(card => {
+    reflow(card, 'miss-shake')
+    flashTrigger(card.querySelector('.trigger-layer'))
+    showFloat(card, 'miss', 'miss')
+    setTimeout(() => card.classList.remove('miss-shake'), 400)
+  })
+}
+
+function triggerEvade() {
+  const atk = document.getElementById('ev-evade-atk')
+  const def = document.getElementById('ev-evade-def')
+  reflow(atk, 'miss-shake')
+  flashTrigger(atk.querySelector('.trigger-layer'))
+  showFloat(atk, 'miss', 'miss')
+  setTimeout(() => atk.classList.remove('miss-shake'), 400)
+  reflow(def, 'evade-dodge')
+  flashTrigger(def.querySelector('.trigger-layer'))
+  showFloat(def, 'evade', 'evade')
+  setTimeout(() => def.classList.remove('evade-dodge'), 450)
+}
+
+function triggerDebuff(cardId, debuffType, color) {
+  const card = document.getElementById(cardId)
+  if (!card) return
+  const img     = card.querySelector('img.portrait')
+  const trigger = card.querySelector('.trigger-layer')
+  trigger.style.background = color
+  flashTrigger(trigger)
+  reflow(card, 'hit-shake')
+  reflow(img, 'hit-img-flash')
+  const labels = { frozen:'frozen!', burning:'burn!', poison:'poison!', accuracy_down:'-acc', armor_break:'-armor' }
+  showFloat(card, labels[debuffType] || '⬇', 'debuff')
+  setTimeout(() => {
+    card.classList.remove('hit-shake')
+    img.classList.remove('hit-img-flash')
+  }, 450)
+}
+
+function triggerDeath(cardId) {
+  const card = document.getElementById(cardId)
+  if (!card) return
+  card.querySelector('img').classList.remove('portrait') // stop breathe
+  card.querySelector('img').classList.add('portrait')
+  card.classList.add('unit-die')
+}
+function resetCard(cardId) {
+  const card = document.getElementById(cardId)
+  card.classList.remove('unit-die')
+  void card.offsetWidth
+}
+
+// ══════════════════════════════════════════════════════════
+// COMBO SECTION
+// ══════════════════════════════════════════════════════════
+const DEBUFF_PRIORITY = ['frozen','burning','poison','accuracy_down','armor_break','initiative_down','cooldown']
+const BUFF_PRIORITY   = ['defense_up','fortress_buff','wind_shield','regen','aimed','morale_up','taunt','thorns','accuracy_up','initiative_up']
+
+let activeDebuffs = new Set()
+let activeBuffs   = new Set()
+
+function applyComboState() {
+  const card = document.getElementById('combo-card')
+  // Remove all state classes
+  card.className = 'card'
+  // Find dominant debuff
+  const domDebuff = DEBUFF_PRIORITY.find(d => activeDebuffs.has(d))
+  if (domDebuff) {
+    card.classList.add('state-' + domDebuff)
+  } else {
+    card.classList.add('state-idle')
+  }
+  // Find dominant buff for border
+  const domBuff = BUFF_PRIORITY.find(b => activeBuffs.has(b))
+  if (domBuff) card.classList.add('buff-' + domBuff)
+}
+
+function toggleDebuff(type) {
+  if (activeDebuffs.has(type)) {
+    activeDebuffs.delete(type)
+    document.getElementById('tog-' + type).classList.remove('on')
+  } else {
+    activeDebuffs.add(type)
+    document.getElementById('tog-' + type).classList.add('on')
+    // trigger flash
+    const colors = { frozen:'rgba(140,210,255,1)', burning:'rgba(255,100,20,1)', poison:'rgba(60,200,80,1)', accuracy_down:'rgba(140,140,160,1)', armor_break:'rgba(200,60,60,1)', initiative_down:'rgba(80,60,120,1)', cooldown:'rgba(30,30,40,1)' }
+    const card = document.getElementById('combo-card')
+    const trig = card.querySelector('.trigger-layer')
+    trig.style.background = colors[type] || 'rgba(180,60,80,1)'
+    flashTrigger(trig)
+  }
+  applyComboState()
+}
+
+function toggleBuff(type) {
+  if (activeBuffs.has(type)) {
+    activeBuffs.delete(type)
+    document.getElementById('tog-' + type).classList.remove('on')
+  } else {
+    activeBuffs.add(type)
+    document.getElementById('tog-' + type).classList.add('on')
+    const card = document.getElementById('combo-card')
+    const trig = card.querySelector('.trigger-layer')
+    trig.style.background = 'rgba(220,180,60,1)'
+    flashTrigger(trig)
+  }
+  applyComboState()
+}
+
+function resetCombo() {
+  activeDebuffs.clear()
+  activeBuffs.clear()
+  document.querySelectorAll('[id^="tog-"]').forEach(b => b.classList.remove('on'))
+  applyComboState()
+}
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+function reflow(el, cls) {
+  el.classList.remove(cls)
+  void el.offsetWidth
+  el.classList.add(cls)
+}
+
+function flashTrigger(el) {
+  el.classList.remove('playing')
+  void el.offsetWidth
+  el.classList.add('playing')
+  setTimeout(() => el.classList.remove('playing'), 600)
+}
+
+function showFloat(card, text, type) {
+  const f = document.createElement('span')
+  f.className = 'floatie ' + type
+  f.textContent = text
+  card.appendChild(f)
+  setTimeout(() => f.remove(), 2300)
+}
+</script>
+</body>
+</html>

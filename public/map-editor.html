@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Редактор кордонів карти</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0f0e09;
+  color: #f0e8d8;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── SIDEBAR ─────────────────────────────── */
+#sidebar {
+  width: 230px;
+  min-width: 230px;
+  background: #17150f;
+  border-right: 1px solid rgba(240,232,216,0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#sb-head {
+  padding: 12px;
+  border-bottom: 1px solid rgba(240,232,216,0.1);
+}
+#sb-head h2 { font-size: 12px; color: #d4a85a; margin-bottom: 8px; }
+.hint { font-size: 9px; color: rgba(240,232,216,0.32); line-height: 1.7; }
+kbd {
+  display: inline-block;
+  background: rgba(240,232,216,0.1);
+  border-radius: 2px;
+  padding: 0 3px;
+  font-size: 9px;
+  font-family: inherit;
+}
+
+#territory-list { overflow-y: auto; flex: 1; }
+
+.terr-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(240,232,216,0.04);
+  color: #f0e8d8;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  gap: 7px;
+  transition: background 0.1s;
+}
+.terr-btn:hover { background: rgba(240,232,216,0.04); }
+.terr-btn.active { background: rgba(212,168,90,0.1); color: #d4a85a; }
+.terr-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.terr-pts { margin-left: auto; font-size: 9px; color: rgba(240,232,216,0.28); }
+
+#pts-panel {
+  border-top: 1px solid rgba(240,232,216,0.1);
+  padding: 8px 10px 4px;
+}
+#pts-title { font-size: 10px; color: #d4a85a; margin-bottom: 5px; }
+#pts-list {
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 9px;
+  color: rgba(240,232,216,0.38);
+}
+.pt-row { padding: 1px 0; }
+.pt-row.last { color: #ffd700; }
+
+#sb-actions {
+  border-top: 1px solid rgba(240,232,216,0.1);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.abtn {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 4px;
+  transition: opacity 0.1s;
+}
+.abtn:hover { opacity: 0.8; }
+.abtn-undo  { background: rgba(240,232,216,0.07); color: #f0e8d8; }
+.abtn-clear { background: rgba(192,112,112,0.15); color: #c07070; }
+.abtn-export { background: rgba(111,166,122,0.2); color: #6fa67a; font-weight: bold; padding: 10px; }
+
+/* ── CANVAS ─────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background: #050504;
+}
+canvas { display: block; cursor: crosshair; }
+
+#zoom-badge {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: rgba(0,0,0,0.55);
+  color: rgba(240,232,216,0.4);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  font-family: inherit;
+}
+#coords-badge {
+  position: absolute;
+  bottom: 8px; right: 8px;
+  background: rgba(0,0,0,0.55);
+  color: rgba(240,232,216,0.4);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  font-family: inherit;
+}
+
+/* ── OUTPUT MODAL ───────────────────────── */
+#output-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#output-panel.hidden { display: none; }
+
+#output-box {
+  background: #17150f;
+  border: 1px solid rgba(240,232,216,0.18);
+  border-radius: 8px;
+  padding: 20px;
+  width: 580px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#output-box h3 { font-size: 12px; color: #d4a85a; }
+#output-text {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 10px;
+  color: #6fa67a;
+  background: rgba(0,0,0,0.3);
+  padding: 10px;
+  border-radius: 4px;
+  min-height: 200px;
+  white-space: pre;
+}
+.out-actions { display: flex; gap: 8px; }
+.obtn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+.obtn-copy  { background: #d4a85a; color: #0f0e09; }
+.obtn-close { background: rgba(240,232,216,0.07); color: #f0e8d8; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sb-head">
+    <h2>Редактор кордонів</h2>
+    <p class="hint">
+      <kbd>Click</kbd> — додати точку<br>
+      <kbd>Enter</kbd> / <kbd>2×Click</kbd> — закрити<br>
+      <kbd>Backspace</kbd> — скасувати точку<br>
+      <kbd>Esc</kbd> — скинути малювання<br>
+      <kbd>Scroll</kbd> — зум · <kbd>Alt+Drag</kbd> — рух
+    </p>
+  </div>
+  <div id="territory-list"></div>
+  <div id="pts-panel">
+    <div id="pts-title">—</div>
+    <div id="pts-list"></div>
+  </div>
+  <div id="sb-actions">
+    <button class="abtn abtn-undo"  onclick="undoPoint()">↩ Скасувати точку</button>
+    <button class="abtn abtn-clear" onclick="clearCurrent()">✕ Очистити регіон</button>
+    <button class="abtn abtn-export" onclick="showExport()">↓ Експортувати всі</button>
+  </div>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+  <div id="zoom-badge">100%</div>
+  <div id="coords-badge">—</div>
+</div>
+
+<div id="output-panel" class="hidden">
+  <div id="output-box">
+    <h3>Координати для territories.ts</h3>
+    <pre id="output-text"></pre>
+    <div class="out-actions">
+      <button class="obtn obtn-copy"  id="btn-copy" onclick="copyOutput()">Копіювати</button>
+      <button class="obtn obtn-close" onclick="closeExport()">Закрити</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MAP_W = 2048, MAP_H = 1536;
+
+const TERRDATA = [
+  { id:'dans',      name:'Данс',       color:'#6fa67a', isStart:true,
+    poly:[[840,80],[1260,65],[1600,520],[1090,510],[840,430]] },
+  { id:'tsyklop',   name:'Циклоп',     color:'#e09060',
+    poly:[[1260,65],[2040,65],[2040,810],[1600,810],[1090,510],[1600,520]] },
+  { id:'ussuriysk', name:'Уссурийськ', color:'#6090c0',
+    poly:[[90,80],[840,80],[840,430],[1090,510],[1090,600],[790,610],[420,580],[140,470],[90,290]] },
+  { id:'ssania',    name:'Ссання',     color:'#c0a040',
+    poly:[[90,290],[140,470],[420,580],[310,790],[90,740]] },
+  { id:'mohykan',   name:'Могикан',    color:'#a060b0',
+    poly:[[90,740],[310,790],[440,920],[275,1120],[90,1020]] },
+  { id:'bebra',     name:'Бебра',      color:'#50a090',
+    poly:[[90,800],[310,800],[440,940],[640,960],[700,1150],[490,1350],[90,1350]] },
+  { id:'mana',      name:'Мана',       color:'#7070c8',
+    poly:[[420,580],[790,610],[1090,600],[1000,810],[700,1020],[640,790]] },
+  { id:'mahadan',   name:'Магадан',    color:'#c07030',
+    poly:[[1090,510],[1600,520],[1600,810],[2040,810],[2040,1100],[1350,1100],[1000,900],[1090,600]] },
+  { id:'bebe',      name:'Бебе',       color:'#c03030', isBoss:true,
+    poly:[[700,1020],[1000,900],[1350,1100],[2040,1100],[2040,1500],[700,1500],[490,1250]] },
+];
+
+// Working polygon state (deep copy from TERRDATA)
+const polys = {};
+TERRDATA.forEach(t => { polys[t.id] = t.poly.map(p=>[...p]); });
+
+let activeId   = 'dans';
+let drawing    = [];       // points being placed right now
+let mousePos   = null;     // canvas-space mouse position
+let zoom       = 1;
+let panX       = 0, panY = 0;
+let isPanning  = false;
+let panAnchor  = null;     // [startX, startY, startPanX, startPanY]
+let baseScale  = 1;
+let canvas, ctx, img, wrapEl;
+
+// ── Init ──────────────────────────────────────────────────────────
+function init() {
+  canvas  = document.getElementById('canvas');
+  ctx     = canvas.getContext('2d');
+  wrapEl  = document.getElementById('canvas-wrap');
+
+  img = new Image();
+  img.onload = () => { fitToView(); draw(); };
+  img.src = '/sacred/world-map.jpg';
+
+  const ro = new ResizeObserver(() => {
+    canvas.width  = wrapEl.clientWidth;
+    canvas.height = wrapEl.clientHeight;
+    draw();
+  });
+  ro.observe(wrapEl);
+
+  canvas.addEventListener('click',     onCanvasClick);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('dblclick',  onDblClick);
+  canvas.addEventListener('wheel',     onWheel, { passive: false });
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mouseup',   onMouseUp);
+  canvas.addEventListener('mouseleave',() => { mousePos = null; draw(); });
+  window.addEventListener('keydown',   onKey);
+
+  buildSidebar();
+  updatePtsPanel();
+}
+
+function fitToView() {
+  const W = wrapEl.clientWidth, H = wrapEl.clientHeight;
+  baseScale = Math.min(W / MAP_W, H / MAP_H) * 0.98;
+  zoom = 1;
+  panX = (W - MAP_W * baseScale) / 2;
+  panY = (H - MAP_H * baseScale) / 2;
+}
+
+// ── Transforms ───────────────────────────────────────────────────
+function m2c(mx, my) {
+  const s = baseScale * zoom;
+  return [mx * s + panX, my * s + panY];
+}
+function c2m(cx, cy) {
+  const s = baseScale * zoom;
+  return [Math.round((cx - panX) / s), Math.round((cy - panY) / s)];
+}
+
+// ── Draw ─────────────────────────────────────────────────────────
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#050504';
+  ctx.fillRect(0, 0, W, H);
+
+  if (img.complete && img.naturalWidth) {
+    const [ix, iy] = m2c(0, 0);
+    const s = baseScale * zoom;
+    ctx.drawImage(img, ix, iy, MAP_W * s, MAP_H * s);
+  }
+
+  // Inactive polygons
+  TERRDATA.forEach(t => {
+    if (t.id === activeId) return;
+    const pts = polys[t.id];
+    if (!pts || pts.length < 2) return;
+    drawPoly(pts, t.color, 0.2, 0.55, 2, false);
+  });
+
+  // Active territory
+  const at = TERRDATA.find(t => t.id === activeId);
+  const showPts = drawing.length > 0 ? drawing : (polys[activeId] || []);
+
+  if (showPts.length > 0) {
+    const closed = drawing.length === 0;
+    drawPoly(showPts, at.color, 0.35, 1.0, 3, closed);
+
+    // Preview line to mouse
+    if (drawing.length > 0 && mousePos) {
+      const [lx, ly] = m2c(drawing[drawing.length-1][0], drawing[drawing.length-1][1]);
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(mousePos[0], mousePos[1]);
+      ctx.strokeStyle = at.color + 'aa';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw vertex dots
+    showPts.forEach((p, i) => {
+      const [px, py] = m2c(p[0], p[1]);
+      const r = Math.max(4, 6 * Math.min(zoom, 2));
+      const isFirst = i === 0;
+      const isLast  = i === showPts.length - 1;
+
+      // Snap ring near first point when drawing
+      if (isFirst && drawing.length >= 3 && mousePos) {
+        const d = Math.hypot(mousePos[0]-px, mousePos[1]-py);
+        if (d < 22) {
+          ctx.beginPath();
+          ctx.arc(px, py, r * 2.2, 0, Math.PI*2);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI*2);
+      ctx.fillStyle = isFirst ? '#ffffff' : isLast && drawing.length>0 ? '#ffd700' : at.color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+
+  document.getElementById('zoom-badge').textContent = Math.round(zoom * 100) + '%';
+}
+
+function drawPoly(pts, color, fillA, strokeA, lw, closed) {
+  if (pts.length < 2) return;
+  ctx.beginPath();
+  const [sx, sy] = m2c(pts[0][0], pts[0][1]);
+  ctx.moveTo(sx, sy);
+  for (let i = 1; i < pts.length; i++) {
+    const [px, py] = m2c(pts[i][0], pts[i][1]);
+    ctx.lineTo(px, py);
+  }
+  if (closed) ctx.closePath();
+  ctx.fillStyle   = color + Math.round(fillA * 255).toString(16).padStart(2,'0');
+  ctx.fill();
+  ctx.strokeStyle = color + Math.round(strokeA * 255).toString(16).padStart(2,'0');
+  ctx.lineWidth   = lw;
+  ctx.stroke();
+}
+
+// ── Events ───────────────────────────────────────────────────────
+function onCanvasClick(e) {
+  if (isPanning) return;
+  const r  = canvas.getBoundingClientRect();
+  const cx = e.clientX - r.left;
+  const cy = e.clientY - r.top;
+
+  // Snap-close if near first point
+  if (drawing.length >= 3) {
+    const [fx, fy] = m2c(drawing[0][0], drawing[0][1]);
+    if (Math.hypot(cx-fx, cy-fy) < 22) { finishDraw(); return; }
+  }
+
+  const [mx, my] = c2m(cx, cy);
+  if (mx < 0 || mx > MAP_W || my < 0 || my > MAP_H) return;
+  drawing.push([mx, my]);
+  updatePtsPanel();
+  draw();
+}
+
+function onMouseMove(e) {
+  const r  = canvas.getBoundingClientRect();
+  const cx = e.clientX - r.left;
+  const cy = e.clientY - r.top;
+  mousePos = [cx, cy];
+
+  if (isPanning && panAnchor) {
+    const dx = cx - panAnchor[0];
+    const dy = cy - panAnchor[1];
+    panX = panAnchor[2] + dx;
+    panY = panAnchor[3] + dy;
+  }
+
+  const [mx, my] = c2m(cx, cy);
+  const inMap = mx >= 0 && mx <= MAP_W && my >= 0 && my <= MAP_H;
+  document.getElementById('coords-badge').textContent = inMap ? `[${mx}, ${my}]` : '—';
+  draw();
+}
+
+function onMouseDown(e) {
+  if (e.button === 1 || e.altKey) {
+    isPanning = true;
+    const r  = canvas.getBoundingClientRect();
+    const cx = e.clientX - r.left;
+    const cy = e.clientY - r.top;
+    panAnchor = [cx, cy, panX, panY];
+    canvas.style.cursor = 'grab';
+    e.preventDefault();
+  }
+}
+
+function onMouseUp() {
+  isPanning = false;
+  panAnchor = null;
+  canvas.style.cursor = 'crosshair';
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  const r  = canvas.getBoundingClientRect();
+  const cx = e.clientX - r.left;
+  const cy = e.clientY - r.top;
+  const factor = e.deltaY < 0 ? 1.12 : 0.9;
+  const nz = Math.max(0.4, Math.min(10, zoom * factor));
+  panX = cx - (cx - panX) * (nz / zoom);
+  panY = cy - (cy - panY) * (nz / zoom);
+  zoom = nz;
+  draw();
+}
+
+function onDblClick() {
+  if (drawing.length >= 3) finishDraw();
+}
+
+function onKey(e) {
+  if (e.key === 'Enter') {
+    if (drawing.length >= 3) finishDraw();
+  } else if (e.key === 'Backspace' || e.key === 'z') {
+    if (document.activeElement !== document.body &&
+        document.activeElement.tagName !== 'CANVAS') return;
+    if (drawing.length > 0) {
+      drawing.pop();
+      updatePtsPanel();
+      draw();
+    }
+  } else if (e.key === 'Escape') {
+    drawing = [];
+    updatePtsPanel();
+    draw();
+  }
+}
+
+// ── Actions ──────────────────────────────────────────────────────
+function finishDraw() {
+  if (drawing.length < 3) return;
+  polys[activeId] = drawing.map(p=>[...p]);
+  drawing = [];
+  updatePtsPanel();
+  updateSidebarCounts();
+  draw();
+}
+
+function undoPoint() {
+  if (drawing.length > 0) {
+    drawing.pop();
+    updatePtsPanel();
+    draw();
+  }
+}
+
+function clearCurrent() {
+  drawing = [];
+  polys[activeId] = [];
+  updatePtsPanel();
+  updateSidebarCounts();
+  draw();
+}
+
+function setActive(id) {
+  activeId = id;
+  drawing  = [];
+  mousePos = null;
+  updatePtsPanel();
+  document.querySelectorAll('.terr-btn').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === id);
+  });
+  draw();
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────
+function buildSidebar() {
+  const list = document.getElementById('territory-list');
+  list.innerHTML = TERRDATA.map(t => `
+    <button class="terr-btn ${t.id===activeId?'active':''}" data-id="${t.id}" onclick="setActive('${t.id}')">
+      <div class="terr-dot" style="background:${t.color}"></div>
+      ${t.name}${t.isBoss?' 💀':t.isStart?' 🏰':''}
+      <span class="terr-pts" id="cnt-${t.id}">${(polys[t.id]||[]).length}pt</span>
+    </button>`).join('');
+}
+
+function updateSidebarCounts() {
+  TERRDATA.forEach(t => {
+    const el = document.getElementById('cnt-'+t.id);
+    if (el) el.textContent = `${(polys[t.id]||[]).length}pt`;
+  });
+}
+
+function updatePtsPanel() {
+  const at  = TERRDATA.find(t=>t.id===activeId);
+  const pts = drawing.length > 0 ? drawing : (polys[activeId]||[]);
+  const inDraw = drawing.length > 0;
+  document.getElementById('pts-title').textContent =
+    at.name + (inDraw ? ` · малюю (${drawing.length})` : ` · ${pts.length} точок`);
+  document.getElementById('pts-list').innerHTML =
+    pts.map((p,i)=>`<div class="pt-row ${i===pts.length-1?'last':''}">${i}: [${p[0]}, ${p[1]}]</div>`).join('');
+  const el = document.getElementById('pts-list');
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Export ───────────────────────────────────────────────────────
+function showExport() {
+  const lines = TERRDATA.map(t => {
+    const pts = polys[t.id];
+    if (!pts || pts.length === 0) return `  // ${t.name}: (немає точок)`;
+    const pStr = pts.map(p=>`[${p[0]},${p[1]}]`).join(',');
+    return `  // ${t.name}\n  polygon: [${pStr}],`;
+  });
+  document.getElementById('output-text').textContent = lines.join('\n\n');
+  document.getElementById('output-panel').classList.remove('hidden');
+}
+
+function closeExport() {
+  document.getElementById('output-panel').classList.add('hidden');
+}
+
+function copyOutput() {
+  const text = document.getElementById('output-text').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('btn-copy');
+    btn.textContent = '✓ Скопійовано!';
+    setTimeout(() => { btn.textContent = 'Копіювати'; }, 2000);
+  });
+}
+
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
