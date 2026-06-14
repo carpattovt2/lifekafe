@@ -1849,7 +1849,7 @@ function advanceQueue(state: BattleState): BattleState {
         ...u, hp: newHp,
         buffs: u.buffs.map(b => b.type === 'poison' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b).filter(b => b.turnsLeft > 0),
       } : u)
-      state = { ...state, log: [...state.log, { id: ++_logId, text: `🧪 ${nextUnit.name} отруєний: -${dmg} HP`, type: 'debuff' }] }
+      state = { ...state, log: [...state.log, { id: ++_logId, text: `🧪 ${nextUnit.name} отруєний: -${dmg} HP`, type: 'debuff' }], events: [...state.events, ev(nextId, `🧪 -${dmg}`, 'damage')] }
       if (newHp === 0) {
         state = { ...state, log: [...state.log, { id: ++_logId, text: `☠ ${nextUnit.name} гине від отрути!`, type: 'death' }] }
         const pa = units.filter(u => u.side === 'player' && u.hp > 0).length
@@ -1867,7 +1867,7 @@ function advanceQueue(state: BattleState): BattleState {
         ...u, hp: newHp,
         buffs: u.buffs.map(b => b.type === 'burning' ? { ...b, turnsLeft: b.turnsLeft - 1 } : b).filter(b => b.turnsLeft > 0),
       } : u)
-      state = { ...state, log: [...state.log, { id: ++_logId, text: `🔥 ${nextUnitNow.name} палає: -${dmg} HP`, type: 'debuff' }] }
+      state = { ...state, log: [...state.log, { id: ++_logId, text: `🔥 ${nextUnitNow.name} палає: -${dmg} HP`, type: 'debuff' }], events: [...state.events, ev(nextId, `🔥 -${dmg}`, 'damage')] }
       if (newHp === 0) {
         state = { ...state, log: [...state.log, { id: ++_logId, text: `☠ ${nextUnitNow.name} згорів!`, type: 'death' }] }
         const pa = units.filter(u => u.side === 'player' && u.hp > 0).length
