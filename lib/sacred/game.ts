@@ -411,7 +411,7 @@ interface AttackResult {
 
 function resolveAttack(
   atk: GameUnit, def: GameUnit, units: GameUnit[],
-  opts: { dmgMult?: number; accBonus?: number; ignoreEvasion?: boolean; elemPath?: MagePath; critChance?: number; critMult?: number; dmgMin?: number; dmgMax?: number } = {},
+  opts: { dmgMult?: number; accBonus?: number; ignoreEvasion?: boolean; elemPath?: MagePath; critChance?: number; critMult?: number; dmgMin?: number; dmgMax?: number; forceHit?: boolean; fixedAcc?: number } = {},
 ): AttackResult {
   let { dmgMult = 1, accBonus = 0, ignoreEvasion = false, elemPath } = opts
   const logs: LogEntry[] = []
@@ -433,12 +433,16 @@ function resolveAttack(
   const accDownPenalty = getBuffValue(atk, 'accuracy_down')
   const accUpBonus = getBuffValue(atk, 'accuracy_up')
 
-  const acc = Math.min(0.97, atk.accuracy + accBonus + moraleAccBonus + accUpBonus - accDownPenalty)
-  if (Math.random() > acc) {
-    logs.push(log(`${atk.name} промахується!`, 'miss'))
-    events.push(ev(atk.id, 'Промах!', 'miss'))
-    events.push(ev(def.id, '', 'miss', atk.id))
-    return { hit: false, evaded: false, crit: false, damage: 0, logs, events }
+  if (!opts.forceHit) {
+    const acc = opts.fixedAcc !== undefined
+      ? opts.fixedAcc
+      : Math.min(0.97, atk.accuracy + accBonus + moraleAccBonus + accUpBonus - accDownPenalty)
+    if (Math.random() > acc) {
+      logs.push(log(`${atk.name} промахується!`, 'miss'))
+      events.push(ev(atk.id, 'Промах!', 'miss'))
+      events.push(ev(def.id, '', 'miss', atk.id))
+      return { hit: false, evaded: false, crit: false, damage: 0, logs, events }
+    }
   }
 
   // Ranger passive: +10% evasion if sole survivor in row 1
@@ -452,7 +456,7 @@ function resolveAttack(
   const windShieldBonus = getBuffValue(def, 'wind_shield')
 
   const woundedEvaMult = def.hp < def.maxHp * 0.2 ? 0.5 : 1
-  if (!ignoreEvasion && Math.random() < (def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) * woundedEvaMult) {
+  if (!opts.forceHit && !ignoreEvasion && Math.random() < (def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) * woundedEvaMult) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
     events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
@@ -511,10 +515,8 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return []
   }
 
-  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'hurricane', 'barrage', 'grapeshot', 'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley', 'freeze'].includes(action)) {
-    const all = living(enemySide)
-    const taunted = all.filter(u => u.buffs.some(b => b.type === 'taunt'))
-    return taunted.length ? taunted.map(u => u.id) : all.map(u => u.id)
+  if (['shot', 'poison_shot', 'double_shot', 'magic_bolt', 'fireball', 'fire_orb', 'ignite', 'frost_bolt', 'rock_throw', 'lightning_bolt', 'gust', 'barrage', 'grapeshot', 'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley', 'freeze'].includes(action)) {
+    return living(enemySide).map(u => u.id)
   }
 
   if (['consecration', 'ice_shield', 'stone_skin', 'fortress_aura'].includes(action)) {
@@ -565,7 +567,8 @@ export function executeAction(
 
     case 'sacred_strike': {
       if (!target) break
-      const res = resolveAttack(actor, target, units)
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'sacred_strike')) break
+      const res = resolveAttack(actor, target, units, { forceHit: true })
       newLogs.push(...res.logs)
       newEvents.push(...res.events)
       if (res.damage > 0) {
@@ -577,15 +580,16 @@ export function executeAction(
         update({ ...atker, hp: Math.max(0, atker.hp - res.thornsDmg) })
         if (getUnit(actor.id).hp === 0) newLogs.push(log(`☠ ${actor.name} гине від терній!`, 'death'))
       }
-      if (res.hit && !res.evaded) {
-        const tgt = getUnit(target.id)
-        if (tgt.hp > 0) {
-          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('armor_break', 0.10, 1)] })
-          newLogs.push(log(`⚔ Священний удар! ${target.name} -10% броні на 1 хід`, 'debuff'))
-          newEvents.push(ev(target.id, '⚔ -10% броня', 'debuff', actor.id))
-        }
-        hitLanded = true
+      const tgt = getUnit(target.id)
+      if (tgt.hp > 0) {
+        const buffsWithoutBreak = tgt.buffs.filter(b => b.type !== 'armor_break')
+        update({ ...tgt, buffs: [...buffsWithoutBreak, makeBuff('armor_break', 1.0, 3)] })
+        newLogs.push(log(`⚔ Священний удар! ${target.name} — вся броня знята на 3 ходи`, 'debuff'))
+        newEvents.push(ev(target.id, '⚔ Броня знята!', 'debuff', actor.id))
       }
+      hitLanded = true
+      const actorAfterSS = getUnit(actor.id)
+      update({ ...actorAfterSS, buffs: [...actorAfterSS.buffs, makeBuff('cooldown', 0, 3, 'sacred_strike')] })
       break
     }
 
@@ -601,9 +605,9 @@ export function executeAction(
       const allies = units.filter(u => u.side === actor.side && u.hp > 0)
       for (const ally of allies) {
         const a = getUnit(ally.id)
-        update({ ...a, buffs: [...a.buffs, makeBuff('morale_up', 15, 2)] })
+        update({ ...a, buffs: [...a.buffs, makeBuff('accuracy_up', 0.25, 1), makeBuff('initiative_up', 10, 1)] })
       }
-      newLogs.push(log(`📯 ${actor.name} — Бойовий клич! Усі союзники +15 моралі (2 ходи)`, 'buff'))
+      newLogs.push(log(`📯 ${actor.name} — Бойовий клич! Усі союзники +25% точності та +10 ініціативи (1 хід)`, 'buff'))
       newEvents.push(ev(actor.id, '📯 Бойовий клич', 'buff'))
       break
     }
@@ -611,10 +615,15 @@ export function executeAction(
     case 'consecration': {
       if (!target) break
       const tgt = getUnit(target.id)
-      const healed = Math.min(tgt.maxHp, tgt.hp + 25)
+      const healAmt = 20 + Math.floor(Math.random() * 11)
+      const healed = Math.min(tgt.maxHp, tgt.hp + healAmt)
       const amt = healed - tgt.hp
-      update({ ...tgt, hp: healed })
-      newLogs.push(log(`✨ ${actor.name} — Освячення! ${target.name} +${amt} HP`, 'heal'))
+      const NEGATIVE_DEBUFFS: BuffType[] = ['poison', 'burning', 'frozen', 'accuracy_down', 'armor_break', 'initiative_down']
+      const cleansed = Math.random() < 0.20
+      const newBuffs = cleansed ? tgt.buffs.filter(b => !NEGATIVE_DEBUFFS.includes(b.type)) : tgt.buffs
+      update({ ...tgt, hp: healed, buffs: newBuffs })
+      const cleanseMsg = cleansed ? ' + дебафи зняті!' : ''
+      newLogs.push(log(`✨ ${actor.name} — Освячення! ${target.name} +${amt} HP${cleanseMsg}`, 'heal'))
       newEvents.push(ev(target.id, `✨ +${amt}`, 'heal', actor.id))
       break
     }
@@ -658,14 +667,6 @@ export function executeAction(
       newEvents.push(ev(actor.id, '⚡⚡ Шквал!', 'buff'))
       const actorAfter = getUnit(actor.id)
       update({ ...actorAfter, buffs: [...actorAfter.buffs, makeBuff('cooldown', 0, 3, 'shkvall')] })
-      break
-    }
-
-    case 'provoke': {
-      const a = getUnit(actor.id)
-      update({ ...a, buffs: [...a.buffs, makeBuff('taunt', 1, 2), makeBuff('defense_up', 0.20, 2)] })
-      newLogs.push(log(`🗣 ${actor.name} — Провокація! Вороги переднього ряду б'ють тільки його, +20% броні на 1 хід`, 'buff'))
-      newEvents.push(ev(actor.id, '🗣 Провокація!', 'buff'))
       break
     }
 
@@ -736,30 +737,34 @@ export function executeAction(
     case 'double_shot': {
       if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'double_shot')) break
       if (!target) break
-      newLogs.push(log(`🏹🏹 ${actor.name} — Подвійний постріл!`, 'attack'))
-      // First arrow — 75% damage, no passives
-      const res1 = resolveAttack(actor, target, units, { dmgMult: 0.75 })
+      newLogs.push(log(`🏹🏹 ${actor.name} — Залп!`, 'attack'))
+      // First arrow — 75% damage, 90% accuracy
+      const res1 = resolveAttack(actor, target, units, { dmgMult: 0.75, fixedAcc: 0.90 })
       newLogs.push(...res1.logs)
       newEvents.push(...res1.events)
       if (res1.damage > 0) {
         update({ ...getUnit(target.id), hp: Math.max(0, getUnit(target.id).hp - res1.damage) })
         if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
       }
-      if (res1.hit && !res1.evaded) hitLanded = true
-      // Second arrow — 75% damage, -15% accuracy, no passives
-      const tgt2 = getUnit(target.id)
-      if (tgt2.hp > 0) {
-        const res2 = resolveAttack(actor, tgt2, units, { dmgMult: 0.75, accBonus: -0.15 })
-        newLogs.push(...res2.logs)
-        newEvents.push(...res2.events)
-        if (res2.damage > 0) {
-          update({ ...tgt2, hp: Math.max(0, tgt2.hp - res2.damage) })
-          if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+      if (res1.hit && !res1.evaded) {
+        hitLanded = true
+        // Second arrow only fires if first landed — 75% damage, 90% accuracy
+        const tgt2 = getUnit(target.id)
+        if (tgt2.hp > 0) {
+          const res2 = resolveAttack(actor, tgt2, units, { dmgMult: 0.75, fixedAcc: 0.90 })
+          newLogs.push(...res2.logs)
+          newEvents.push(...res2.events)
+          if (res2.damage > 0) {
+            update({ ...tgt2, hp: Math.max(0, tgt2.hp - res2.damage) })
+            if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
+          }
+          if (res2.hit && !res2.evaded) hitLanded = true
         }
-        if (res2.hit && !res2.evaded) hitLanded = true
+      } else {
+        newLogs.push(log(`Перший постріл промахнувся — другий не відбувається`, 'miss'))
       }
       const actorAfterShot = getUnit(actor.id)
-      update({ ...actorAfterShot, buffs: [...actorAfterShot.buffs, makeBuff('cooldown', 0, 2, 'double_shot')] })
+      update({ ...actorAfterShot, buffs: [...actorAfterShot.buffs, makeBuff('cooldown', 0, 3, 'double_shot')] })
       break
     }
 
@@ -797,10 +802,9 @@ export function executeAction(
 
     case 'fireball': {
       if (!target) break
-      const fireLvl = actor.level ?? 2
-      const fireDmg = actor.minDmg // fixed per level in stats
+      const fireDmg = actor.minDmg
       newLogs.push(log(`🔥 ${actor.name} — Фаєрбол!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { accBonus: 0.75 - actor.accuracy, elemPath: 'fire' })
+      const res = resolveAttack(actor, target, units, { fixedAcc: 0.80, elemPath: 'fire' })
       newLogs.push(...res.logs); newEvents.push(...res.events)
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
@@ -808,13 +812,15 @@ export function executeAction(
       }
       if (res.hit && !res.evaded) {
         hitLanded = true
-        // Passive burn: 25% chance, 3 turns, 15% of fireball dmg per tick
-        const tgt = getUnit(target.id)
-        if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'burning') && Math.random() < 0.25) {
-          const burnDmg = Math.max(1, Math.round(fireDmg * 0.15))
-          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', burnDmg, 4)] })
-          newLogs.push(log(`🔥 ${target.name} палає! ${burnDmg} урону/хід на 3 ходи`, 'debuff'))
-          newEvents.push(ev(target.id, `🔥 Підпал`, 'debuff', actor.id))
+        // Passive burn: 33% chance, stacks, 2 turns, 15% of fireball dmg per tick
+        if (Math.random() < 0.33) {
+          const tgt = getUnit(target.id)
+          if (tgt.hp > 0) {
+            const burnDmg = Math.max(1, Math.round(fireDmg * 0.15))
+            update({ ...tgt, buffs: [...tgt.buffs, makeBuff('burning', burnDmg, 4)] })
+            newLogs.push(log(`🔥 ${target.name} палає! ${burnDmg} урону/хід на 2 ходи`, 'debuff'))
+            newEvents.push(ev(target.id, `🔥 Підпал`, 'debuff', actor.id))
+          }
         }
       }
       break
@@ -822,9 +828,9 @@ export function executeAction(
 
     case 'fire_orb': {
       if (!target) break
-      const orbDmg = actor.minDmg
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'fire_orb')) break
       newLogs.push(log(`🔥 ${actor.name} — Вогняний шар!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { accBonus: 0.80 - actor.accuracy, elemPath: 'fire' })
+      const res = resolveAttack(actor, target, units, { fixedAcc: 0.85, elemPath: 'fire' })
       newLogs.push(...res.logs); newEvents.push(...res.events)
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
@@ -835,7 +841,8 @@ export function executeAction(
         for (const adjSnap of getAdjacentEnemies(target, units, enemySide)) {
           const adj = getUnit(adjSnap.id)
           if (adj.hp === 0) continue
-          const splashRes = resolveAttack(actor, adj, units, { dmgMult: 0.5, accBonus: 0.80 - actor.accuracy, elemPath: 'fire' })
+          const splashMult = 0.50 + Math.random() * 0.25
+          const splashRes = resolveAttack(actor, adj, units, { dmgMult: splashMult, fixedAcc: 0.85, elemPath: 'fire' })
           newLogs.push(...splashRes.logs); newEvents.push(...splashRes.events)
           if (splashRes.damage > 0) {
             update({ ...adj, hp: Math.max(0, adj.hp - splashRes.damage) })
@@ -843,6 +850,8 @@ export function executeAction(
           }
         }
       }
+      const actorAfterOrb = getUnit(actor.id)
+      update({ ...actorAfterOrb, buffs: [...actorAfterOrb.buffs, makeBuff('cooldown', 0, 2, 'fire_orb')] })
       break
     }
 
@@ -854,7 +863,7 @@ export function executeAction(
       for (const snap of allEnemies) {
         const e = getUnit(snap.id)
         if (e.hp === 0) continue
-        const res = resolveAttack(actor, e, units, { accBonus: 0.90 - actor.accuracy, dmgMin: 40, dmgMax: 45, elemPath: 'fire' })
+        const res = resolveAttack(actor, e, units, { fixedAcc: 0.95, dmgMin: 35, dmgMax: 55, elemPath: 'fire' })
         newLogs.push(...res.logs); newEvents.push(...res.events)
         if (res.damage > 0) {
           update({ ...e, hp: Math.max(0, e.hp - res.damage) })
@@ -1053,9 +1062,9 @@ export function executeAction(
       for (const snap of enemies) {
         const e = getUnit(snap.id)
         if (e.hp === 0) continue
-        if (Math.random() < 0.35) {
+        if (Math.random() < 0.33) {
           if (!e.buffs.some(b => b.type === 'frozen')) {
-            const dur = 1 + Math.floor(Math.random() * 3)
+            const dur = 2 + Math.floor(Math.random() * 3)
             update({ ...e, buffs: [...e.buffs, makeBuff('frozen', 1, dur + 1)] })
             newLogs.push(log(`❄ ${e.name} заморожений на ${dur} хід${dur > 1 ? 'и' : ''}!`, 'debuff'))
             newEvents.push(ev(e.id, `❄ Заморожено!`, 'debuff', actor.id))
@@ -1126,12 +1135,12 @@ export function executeAction(
       for (const snap of enemies) {
         const e = getUnit(snap.id)
         if (e.hp === 0) continue
-        const flatDmg = Math.floor(25 + Math.random() * 11)
+        const flatDmg = Math.floor(33 + Math.random() * 11)
         update({ ...e, hp: Math.max(0, e.hp - flatDmg) })
         newLogs.push(log(`🪨 ${e.name} -${flatDmg} урону`, 'attack'))
         newEvents.push(ev(e.id, `🪨 -${flatDmg}`, 'damage', actor.id))
         if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
-        if (Math.random() < 0.70) {
+        if (Math.random() < 0.75) {
           const eNow = getUnit(e.id)
           if (eNow.hp > 0) {
             const accDown = 0.50
@@ -1143,7 +1152,7 @@ export function executeAction(
         }
       }
       const actorAfterEq = getUnit(actor.id)
-      update({ ...actorAfterEq, buffs: [...actorAfterEq.buffs, makeBuff('cooldown', 0, 5, 'earthquake')] })
+      update({ ...actorAfterEq, buffs: [...actorAfterEq.buffs, makeBuff('cooldown', 0, 4, 'earthquake')] })
       break
     }
 
@@ -1199,18 +1208,12 @@ export function executeAction(
     case 'gust': {
       if (!target) break
       const lvl = actor.level ?? 2
-      const dmgByLvl: Record<number, number> = { 2: 15, 3: 17, 4: 21, 5: 25 }
-      const accByLvl: Record<number, number>  = { 2: 0.85, 3: 0.85, 4: 0.85, 5: 0.90 }
-      const redPctByLvl: Record<number, number> = { 2: 0.40, 3: 0.50, 4: 0.60, 5: 0.70 }
-      const chanceByLvl: Record<number, number> = { 2: 0.50, 3: 0.50, 4: 0.50, 5: 0.60 }
-      const durByLvl: Record<number, number>    = { 2: 3, 3: 4, 4: 4, 5: 5 }
-      const fixedDmg = dmgByLvl[lvl] ?? 15
-      const accTarget = accByLvl[lvl] ?? 0.85
-      const redPct = redPctByLvl[lvl] ?? 0.40
-      const chance = chanceByLvl[lvl] ?? 0.50
-      const dur = durByLvl[lvl] ?? 3
-      newLogs.push(log(`💨 ${actor.name} — Порив вітру!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { accBonus: accTarget - actor.accuracy, dmgMin: fixedDmg, dmgMax: fixedDmg })
+      const dmgByLvl: Record<number, number>     = { 2: 18, 3: 21, 4: 25, 5: 30 }
+      const bouncessByLvl: Record<number, number> = { 2: 1,  3: 2,  4: 3,  5: 4  }
+      const baseDmg    = dmgByLvl[lvl] ?? 18
+      const maxBounces = bouncessByLvl[lvl] ?? 1
+      newLogs.push(log(`⚡ ${actor.name} — Шарова блискавка!`, 'attack'))
+      const res = resolveAttack(actor, target, units, { fixedAcc: 0.85, dmgMin: baseDmg, dmgMax: baseDmg, elemPath: 'air' })
       newLogs.push(...res.logs); newEvents.push(...res.events)
       if (res.damage > 0) {
         update({ ...target, hp: Math.max(0, target.hp - res.damage) })
@@ -1218,12 +1221,21 @@ export function executeAction(
       }
       if (res.hit && !res.evaded) {
         hitLanded = true
-        const tgt = getUnit(target.id)
-        if (tgt.hp > 0 && !tgt.buffs.some(b => b.type === 'initiative_down') && Math.random() < chance) {
-          const initRed = Math.round(tgt.initiative * redPct)
-          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('initiative_down', initRed, dur)] })
-          newLogs.push(log(`💨 ${target.name} сповільнений! -${Math.round(redPct*100)}% ініціативи на ${dur} ходи`, 'debuff'))
-          newEvents.push(ev(target.id, `💨 -${Math.round(redPct*100)}% ініц.`, 'debuff', actor.id))
+        const hitIds = new Set<string>([target.id])
+        let currentDmg = baseDmg
+        for (let b = 0; b < maxBounces; b++) {
+          const bounceTargets = units.filter(u => u.side === enemySide && u.hp > 0 && !hitIds.has(u.id))
+          if (!bounceTargets.length) break
+          const bounceTarget = getUnit(bounceTargets[Math.floor(Math.random() * bounceTargets.length)].id)
+          if (bounceTarget.hp === 0) break
+          hitIds.add(bounceTarget.id)
+          currentDmg = Math.round(currentDmg * 0.8)
+          const bounceRes = resolveAttack(actor, bounceTarget, units, { forceHit: true, dmgMin: currentDmg, dmgMax: currentDmg, elemPath: 'air' })
+          newLogs.push(...bounceRes.logs); newEvents.push(...bounceRes.events)
+          if (bounceRes.damage > 0) {
+            update({ ...bounceTarget, hp: Math.max(0, bounceTarget.hp - bounceRes.damage) })
+            if (getUnit(bounceTarget.id).hp === 0) newLogs.push(log(`☠ ${bounceTarget.name} гине!`, 'death'))
+          }
         }
       }
       break
@@ -1267,33 +1279,20 @@ export function executeAction(
     }
 
     case 'hurricane': {
-      if (!target) break
       if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'hurricane')) break
-      newLogs.push(log(`🌪 ${actor.name} — Ураган!`, 'attack'))
-      const res = resolveAttack(actor, target, units, { accBonus: 0.85 - actor.accuracy, dmgMin: 30, dmgMax: 40, elemPath: 'air' })
-      newLogs.push(...res.logs); newEvents.push(...res.events)
-      if (res.damage > 0) {
-        update({ ...target, hp: Math.max(0, target.hp - res.damage) })
-        if (getUnit(target.id).hp === 0) newLogs.push(log(`☠ ${target.name} гине!`, 'death'))
-      }
-      if (res.hit && !res.evaded) {
-        hitLanded = true
-        const tgt = getUnit(target.id)
-        if (tgt.hp > 0) {
-          update({ ...tgt, buffs: [...tgt.buffs, makeBuff('accuracy_down', 1.0, 2)] })
-          newLogs.push(log(`⚡ ${target.name} — Громова дезорієнтація! -100% точності на 2 ходи`, 'debuff'))
-          newEvents.push(ev(target.id, '⚡ Дезорієнтація!', 'debuff', actor.id))
+      const hurricaneTargets = units.filter(u => u.side === enemySide && u.hp > 0)
+      if (!hurricaneTargets.length) break
+      newLogs.push(log(`🌪 ${actor.name} — Ураган по всіх ворогах!`, 'attack'))
+      for (const snap of hurricaneTargets) {
+        const e = getUnit(snap.id)
+        if (e.hp === 0) continue
+        const res = resolveAttack(actor, e, units, { fixedAcc: 0.85, dmgMin: 30, dmgMax: 40, elemPath: 'air' })
+        newLogs.push(...res.logs); newEvents.push(...res.events)
+        if (res.damage > 0) {
+          update({ ...e, hp: Math.max(0, e.hp - res.damage) })
+          if (getUnit(e.id).hp === 0) newLogs.push(log(`☠ ${e.name} гине!`, 'death'))
         }
-        for (const adjSnap of getAdjacentEnemies(target, units, enemySide)) {
-          const adj = getUnit(adjSnap.id)
-          if (adj.hp === 0) continue
-          const adjRes = resolveAttack(actor, adj, units, { dmgMult: 0.5, accBonus: 0.85 - actor.accuracy, dmgMin: 30, dmgMax: 40, elemPath: 'air' })
-          newLogs.push(...adjRes.logs); newEvents.push(...adjRes.events)
-          if (adjRes.damage > 0) {
-            update({ ...adj, hp: Math.max(0, adj.hp - adjRes.damage) })
-            if (getUnit(adj.id).hp === 0) newLogs.push(log(`☠ ${adj.name} гине!`, 'death'))
-          }
-        }
+        if (res.hit && !res.evaded) hitLanded = true
       }
       const actorNow = getUnit(actor.id)
       update({ ...actorNow, buffs: [...actorNow.buffs, makeBuff('cooldown', 0, 4, 'hurricane')] })
@@ -1387,35 +1386,29 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
       return { action: 'strike', targetId: t?.id ?? null }
     }
 
-    if (lvl >= 4) {
-      // Consecration: heal/cleanse hurt ally
+    if (lvl >= 4 && wPath === 'paladin') {
+      const sacredOnCooldown = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'sacred_strike')
       const needsHelp = aiAllies.filter(a =>
         a.hp < a.maxHp * 0.55 || a.buffs.some(b => b.type === 'armor_break')
       ).sort((a, b) => a.hp - b.hp)[0]
       if (needsHelp && Math.random() < 0.40) return { action: 'consecration', targetId: needsHelp.id }
-    }
-
-    if (lvl >= 3) {
-      // Battle Cry: use if allies don't already have morale buff
-      const allyCried = aiAllies.some(u => u.buffs.some(b => b.type === 'morale_up'))
-      if (!allyCried && Math.random() < 0.35) return { action: 'battle_cry', targetId: null }
-    }
-
-    if (lvl >= 2) {
-      // Provoke: use if not already taunting and player has front-row units
-      const alreadyTaunting = actor.buffs.some(b => b.type === 'taunt')
-      const playerFront = playerUnits.filter(u => u.row === 0)
-      if (!alreadyTaunting && playerFront.length > 0 && Math.random() < 0.30) {
-        return { action: 'provoke', targetId: null }
+      if (!sacredOnCooldown) {
+        const sacredIds = getValidTargets(actor, 'sacred_strike', state.units)
+        const sacredTarget = state.units.filter(u => sacredIds.includes(u.id) && u.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+        if (sacredTarget) return { action: 'sacred_strike', targetId: sacredTarget.id }
       }
     }
 
+    if (lvl >= 3) {
+      const allyCried = aiAllies.some(u => u.buffs.some(b => b.type === 'accuracy_up'))
+      if (!allyCried && Math.random() < 0.35) return { action: 'battle_cry', targetId: null }
+    }
+
     if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.50) return { action: 'shield', targetId: null }
-    const strikeAction: ActionKey = lvl >= 4 && wPath === 'paladin' ? 'sacred_strike' : 'strike'
-    const validIds = getValidTargets(actor, strikeAction, state.units)
+    const validIds = getValidTargets(actor, 'strike', state.units)
     const validUnits = state.units.filter(u => validIds.includes(u.id) && u.hp > 0)
     const target = validUnits.sort((a, b) => a.hp - b.hp)[0]
-    return { action: strikeAction, targetId: target?.id ?? null }
+    return { action: 'strike', targetId: target?.id ?? null }
   }
 
   if (actor.class === 'archer') {
@@ -1479,8 +1472,8 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
 
     // Air mage: dedicated logic
     if (path === 'air') {
-      if (actions.includes('hurricane') && !onCooldown('hurricane') && weakest && Math.random() < 0.70) {
-        return { action: 'hurricane', targetId: weakest.id }
+      if (actions.includes('hurricane') && !onCooldown('hurricane') && Math.random() < 0.70) {
+        return { action: 'hurricane', targetId: null }
       }
       if (actions.includes('tailwind') && !onCooldown('tailwind') && Math.random() < 0.50) {
         return { action: 'tailwind', targetId: null }
@@ -1563,36 +1556,35 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
 export const ACTIONS: Record<ActionKey, ActionDef> = {
   strike:          { key: 'strike',          label: 'Удар',              desc: 'Ближній бій — сусідні слоти',              needsTarget: true,  targetSide: 'ai'   },
   shield:          { key: 'shield',          label: 'Щит',               desc: '+50% броні цей хід',                       needsTarget: false, targetSide: null   },
-  battle_cry:      { key: 'battle_cry',      label: 'Бойовий клич',      desc: '+15 моралі всім союзникам на 2 ходи',      needsTarget: false, targetSide: null   },
-  sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: 'Удар + -10% броні цілі на 1 хід',          needsTarget: true,  targetSide: 'ai'   },
-  consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+25 HP союзнику',                           needsTarget: true,  targetSide: 'ally' },
-  provoke:         { key: 'provoke',         label: 'Провокація',        desc: 'Вороги переднього ряду б\'ють тільки тебе + +20% броні на 1 хід', needsTarget: false, targetSide: null },
+  battle_cry:      { key: 'battle_cry',      label: 'Бойовий клич',      desc: '+25% точн. та +10 ініціат. всім союзникам на 1 хід (стакується)', needsTarget: false, targetSide: null   },
+  sacred_strike:   { key: 'sacred_strike',   label: 'Священний удар',    desc: '100% влучн., ціль не ухиляється, вся броня знята на 3 ходи. Кд 3 ходи.', needsTarget: true, targetSide: 'ai'   },
+  consecration:    { key: 'consecration',    label: 'Освячення',         desc: '+20–30 HP союзнику, 20% шанс зняти дебафи', needsTarget: true,  targetSide: 'ally' },
   shkvall:         { key: 'shkvall',         label: 'Шквал',             desc: 'Подвійний удар по одній цілі. Перезарядка 3 ходи.',               needsTarget: true,  targetSide: 'ai'  },
   shot:            { key: 'shot',            label: 'Постріл',           desc: 'Атака будь-якого ворога. Lv2+: 25% отруєння. Lv3: 33% крит ×2', needsTarget: true,  targetSide: 'ai'   },
   aim:             { key: 'aim',             label: 'Прицілення',        desc: '+50% точності та +50% ініціативи на 3 власних ходи', needsTarget: false, targetSide: null   },
   poison_shot:     { key: 'poison_shot',     label: 'Отруєна стріла',    desc: 'Постріл + 4 урону/хід на 3 ходи',          needsTarget: true,  targetSide: 'ai'   },
-  double_shot:     { key: 'double_shot',     label: 'Подвійний постріл', desc: '2 стріли по 75% урону, друга -15% точн. Кд 2 ходи.',  needsTarget: true,  targetSide: 'ai'   },
+  double_shot:     { key: 'double_shot',     label: 'Залп',              desc: '2 стріли по 75% урону, 90% точн. кожна. Друга лише якщо перша влучила. Кд 3 ходи.', needsTarget: true, targetSide: 'ai' },
   magic_bolt:      { key: 'magic_bolt',      label: 'Магічний болт',     desc: 'Магічна атака по одній цілі (тип: Сила)', needsTarget: true,  targetSide: 'ai'   },
   chain_lightning: { key: 'chain_lightning', label: 'Ланцюгова молнія',  desc: 'Б\'є всіх ворогів одночасно',              needsTarget: false, targetSide: null   },
-  fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: 'Вогняна атака, 25% підпал на 3 ходи',     needsTarget: true,  targetSide: 'ai'   },
-  fire_orb:        { key: 'fire_orb',        label: 'Вогняний шар',      desc: 'Вогняна атака + 50% урону сусідам',       needsTarget: true,  targetSide: 'ai'   },
-  armageddon:      { key: 'armageddon',      label: 'Армагедон',         desc: '40-45 урон по всіх ворогах (90% точн., кд 4 ходи)', needsTarget: false, targetSide: null },
+  fireball:        { key: 'fireball',        label: 'Фаєрбол',           desc: '80% влучання, 33% підпал на 2 ходи (стакується)',  needsTarget: true,  targetSide: 'ai'   },
+  fire_orb:        { key: 'fire_orb',        label: 'Вогняний шар',      desc: '85% влучання, сплеш 50–75% урону сусідам (кд 2 ходи)', needsTarget: true,  targetSide: 'ai'   },
+  armageddon:      { key: 'armageddon',      label: 'Армагедон',         desc: '35–55 урон по всіх ворогах (95% точн., кд 4 ходи)', needsTarget: false, targetSide: null },
   ignite:          { key: 'ignite',          label: 'Підпал',            desc: 'Удар + підпал (X урону/хід N ходів)',      needsTarget: true,  targetSide: 'ai'   },
   inferno:         { key: 'inferno',         label: 'Інферно',           desc: 'Фаєрбол ×4 по ВСІХ ворогах + підпал',     needsTarget: false, targetSide: null   },
   freeze:          { key: 'freeze',          label: 'Заморожування',     desc: '75–80% влучн. Ціль пропускає 1–2 ходи',  needsTarget: true,  targetSide: 'ai'   },
-  blizzard:        { key: 'blizzard',        label: 'Пурга',             desc: '35% шанс заморозки кожного на 1–3 ходи (кд 4 ходи)', needsTarget: false, targetSide: null },
+  blizzard:        { key: 'blizzard',        label: 'Пурга',             desc: '33% шанс заморозки кожного на 2–4 ходи (кд 4 ходи)', needsTarget: false, targetSide: null },
   frost_bolt:      { key: 'frost_bolt',      label: 'Льодяна стріла',    desc: 'Урон + зменшення точності / заморожує',    needsTarget: true,  targetSide: 'ai'   },
   ice_shield:      { key: 'ice_shield',      label: 'Крижаний щит',      desc: '+захист союзнику (+ регенерація на lv3+)', needsTarget: true,  targetSide: 'ally' },
   tidal_heal:      { key: 'tidal_heal',      label: 'Цілюща хвиля',      desc: 'Лікує +20 HP всій команді',               needsTarget: false, targetSide: null   },
   rock_throw:      { key: 'rock_throw',      label: 'Кидок каменю',      desc: '80% влучн. Ігнорує ухил. 60–70% шанс -точн. ворогу',  needsTarget: true,  targetSide: 'ai'   },
   stone_skin:      { key: 'stone_skin',      label: 'Кам\'яна шкіра',    desc: '+25–40% захист союзнику на 2 ходи (не стакується)',    needsTarget: true,  targetSide: 'ally' },
-  earthquake:      { key: 'earthquake',      label: 'Землетрус',          desc: '25–35 урон по всіх + 70% дезорієнтація -50% точн. 2–4 ходи (кд 5 ходів)', needsTarget: false, targetSide: null   },
+  earthquake:      { key: 'earthquake',      label: 'Землетрус',          desc: '33–43 урон по всіх + 75% дезорієнтація -50% точн. (кд 4 ходи)', needsTarget: false, targetSide: null   },
   fortress_aura:   { key: 'fortress_aura',   label: 'Фортеця',            desc: '+33% захист всій команді на 1–3 ходи (кд 4 ходи)',   needsTarget: false, targetSide: null   },
   lightning_bolt:  { key: 'lightning_bolt',  label: 'Блискавка',         desc: 'Висока крит. шанс, ланцюгується на lv3+', needsTarget: true,  targetSide: 'ai'   },
-  gust:            { key: 'gust',            label: 'Порив вітру',       desc: 'Урон + 50% шанс -ініціативи ворогу',     needsTarget: true,  targetSide: 'ai'   },
+  gust:            { key: 'gust',            label: 'Шарова блискавка',  desc: '85% влучання, блискавка відскакує з -20% урону (lv2: 1 отскок, lv5: 4)', needsTarget: true,  targetSide: 'ai'   },
   tailwind:        { key: 'tailwind',        label: 'Попутний вітер',    desc: '+ініціатива і +точність всім союзникам (кд 4 ходи)',  needsTarget: false, targetSide: null   },
   thunder_storm:   { key: 'thunder_storm',   label: 'Гроза',             desc: 'Блискавка ×2 по ВСІХ ворогах',            needsTarget: false, targetSide: null   },
-  hurricane:       { key: 'hurricane',       label: 'Ураган',            desc: '30-40 урон + область 50% + Дезорієнтація (кд 4 ходи)', needsTarget: true,  targetSide: 'ai' },
+  hurricane:       { key: 'hurricane',       label: 'Ураган',            desc: '30–40 урон по ВСІХ ворогах (85% влучання, кд 4 ходи)', needsTarget: false, targetSide: null },
   barrage:          { key: 'barrage',          label: 'Удар по площі',     desc: 'Ціль + сусіди отримують 25–50% урону',        needsTarget: true,  targetSide: 'ai' },
   grapeshot:        { key: 'grapeshot',        label: 'Картеч',            desc: 'Весь ряд цілі з -40% урону',                  needsTarget: true,  targetSide: 'ai' },
   ballista_shot:    { key: 'ballista_shot',    label: 'Прицільний постріл', desc: '32 урону, 95% точність',                     needsTarget: true,  targetSide: 'ai' },

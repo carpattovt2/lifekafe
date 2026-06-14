@@ -35,7 +35,6 @@ const BUFF_ICON: Record<string, string> = {
   wind_shield: '💨',
   fortress_buff: '🏰',
   thorns: '🌿',
-  taunt: '🗣',
   initiative_up: '⚡',
   initiative_down: '🐢',
   cooldown: '⏳',
@@ -63,7 +62,7 @@ const ACTION_EFFECT_MAP: Partial<Record<ActionKey, CastEffectType>> = {
   // air
   gust: 'air', tailwind: 'air', hurricane: 'air',
   // holy/warrior
-  sacred_strike: 'holy', consecration: 'holy', battle_cry: 'holy', shield: 'holy', provoke: 'holy',
+  sacred_strike: 'holy', consecration: 'holy', battle_cry: 'holy', shield: 'holy',
   // physical
   strike: 'physical', shot: 'physical', aim: 'physical', double_shot: 'physical',
   poison_shot: 'physical', magic_bolt: 'physical', shkvall: 'physical',
@@ -252,7 +251,7 @@ function ProjectileLayer({ battlefieldRef, events }: {
 
 // ── Unit card ──────────────────────────────────────────────────────────────────
 const DEBUFF_PRIORITY = ['frozen','burning','poison','accuracy_down','armor_break','initiative_down','cooldown'] as const
-const BUFF_PRIORITY   = ['defense_up','fortress_buff','wind_shield','regen','aimed','morale_up','taunt','thorns','accuracy_up','initiative_up'] as const
+const BUFF_PRIORITY   = ['defense_up','fortress_buff','wind_shield','regen','aimed','morale_up','thorns','accuracy_up','initiative_up'] as const
 
 function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, castEffect }: {
   unit: GameUnit; isActive: boolean; isTargetable: boolean
@@ -633,18 +632,23 @@ function BattleLog({ entries }: { entries: LogEntry[] }) {
 }
 
 // ── Action button ──────────────────────────────────────────────────────────────
+const COOLDOWN_ACTIONS = new Set<ActionKey>(['hurricane', 'armageddon', 'earthquake', 'fortress_aura', 'blizzard', 'fire_orb', 'shkvall', 'double_shot', 'twin_bolt', 'sacred_strike'])
+
 function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
   actionKey: ActionKey; selected: boolean; onSelect: () => void; disabled?: boolean
 }) {
   const def = ACTIONS[actionKey]
+  const isUlt = COOLDOWN_ACTIONS.has(actionKey)
+  const ultAvailable = isUlt && !disabled
   return (
     <button
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
       style={{
         flex: '1 1 calc(50% - 3px)', padding: '8px 10px', borderRadius: 8, textAlign: 'left',
-        background: selected ? 'rgba(176,120,80,0.22)' : 'rgba(240,232,216,0.05)',
-        border: `1px solid ${selected ? '#b07850' : 'rgba(240,232,216,0.1)'}`,
+        background: selected ? 'rgba(176,120,80,0.22)' : ultAvailable ? 'rgba(180,40,40,0.15)' : 'rgba(240,232,216,0.05)',
+        border: `1px solid ${selected ? '#b07850' : ultAvailable ? '#c03030' : 'rgba(240,232,216,0.1)'}`,
+        boxShadow: ultAvailable ? '0 0 8px rgba(200,40,40,0.35)' : 'none',
         color: '#f0e8d8', cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1, transition: 'all 0.12s',
       }}
@@ -658,15 +662,18 @@ function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
 const ACTION_EXTRA: Partial<Record<ActionKey, string>> = {
   strike:         'Лише сусідні слоти в тому ж ряду. Переходить у перший доступний ряд ворога.',
   shield:         '+50% броні до кінця цього ходу.',
-  battle_cry:     '+15 моралі всім союзникам на 2 ходи. +1% точн./ухил. на кожні 10 моралі.',
-  sacred_strike:  'Удар по сусідньому юніту + -10% броні цілі на 1 хід.',
-  consecration:   '+15 HP та знімає дебафи з союзника.',
+  battle_cry:     '+25% точності та +10 ініціативи всім союзникам на 1 хід. Стакується.',
+  sacred_strike:  '100% влучання, ціль не може ухилитися, знімає всю броню на 3 ходи. Перезарядка 3 ходи.',
+  consecration:   '+20–30 HP союзнику. 20% шанс зняти всі дебафи.',
   shot:           'Атакує будь-якого ворога на полі.',
   aim:            'Фіксує +25–40% точності та шанс крита на 2 ходи (крит зростає з рівнем).',
   poison_shot:    'Постріл + накладає отруту: 4 урону на початку кожного ходу цілі (3 ходи). Не стакується.',
-  double_shot:    'Дві стріли в одній дії. Кожна перевіряється окремо. Друга -15% точності.',
+  double_shot:    '2 стріли по 75% урону, 90% точн. Друга стріла тільки якщо перша влучила. Кд 3 ходи.',
   chain_lightning: 'Б\'є кожного живого ворога — повний урон кожному.',
-  fireball:       'Потрійний урон по одній цілі. Точність та ухилення застосовуються.',
+  fireball:       '80% влучання. Пасивка: 33% підпал на 2 ходи (15% базового дмг/хід, стакується).',
+  fire_orb:       '85% влучання, сплеш 50–75% урону сусідам цілі. Кд 2 ходи.',
+  gust:           'Б\'є основну ціль 85% точн., блискавка відскакує з -20% урону. lv2: 1 отскок → lv5: 4 отскоки.',
+  hurricane:      '85% влучання, 30–40 урону по ВСІХ ворогах. Кд 4 ходи.',
   barrage:        'Усі 8 сусідів цілі (±ряд, ±слот) отримують 25–50% урону якщо влучив.',
   grapeshot:      'Б\'є всіх ворогів у тому ж ряду що й ціль. Урон -40% для кожного.',
 }
@@ -870,29 +877,55 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
               <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(240,232,216,0.45)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7 }}>
                 Активні ефекти
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {unit.buffs.map(b => (
-                  <div key={b.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 10px', borderRadius: 8,
-                    background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.09)',
-                  }}>
-                    <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
-                    <span style={{ fontSize: 12, color: '#f0e8d8', flex: 1 }}>
-                      {b.type === 'aimed'
-                        ? `Прицілення +${Math.round(b.value * 100)}% точн.`
-                        : b.type === 'morale_up'
-                          ? `Бойовий клич: +${b.value} моралі → +${(b.value / 10).toFixed(1)}% точн./ухил.`
-                          : b.type === 'armor_break'
-                            ? `-${Math.round(b.value * 100)}% броні цілі`
-                            : b.type === 'poison'
-                              ? `Отрута: -${b.value} HP/хід`
-                              : (BUFF_LABEL[b.type] ?? b.type)}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>{b.turnsLeft} хід.</span>
+              {(() => {
+                const totalAccDown   = unit.buffs.filter(b => b.type === 'accuracy_down').reduce((s, b) => s + b.value, 0)
+                const totalAccUp     = unit.buffs.filter(b => b.type === 'accuracy_up').reduce((s, b) => s + b.value, 0)
+                const totalInitDown  = unit.buffs.filter(b => b.type === 'initiative_down').reduce((s, b) => s + b.value, 0)
+                const totalInitUp    = unit.buffs.filter(b => b.type === 'initiative_up').reduce((s, b) => s + b.value, 0)
+                const totalDefUp     = unit.buffs.filter(b => b.type === 'defense_up').reduce((s, b) => s + b.value, 0)
+                const totalWindShield = unit.buffs.filter(b => b.type === 'wind_shield').reduce((s, b) => s + b.value, 0)
+                const totalFortress  = unit.buffs.filter(b => b.type === 'fortress_buff').reduce((s, b) => s + b.value, 0)
+                const effAcc  = Math.round(Math.min(0.97, unit.accuracy + totalAccUp - totalAccDown) * 100)
+                const effInit = unit.initiative + totalInitUp - totalInitDown
+                const effDef  = Math.round((unit.defense + totalDefUp + totalFortress) * 100)
+                const effEva  = Math.round((unit.evasion + totalWindShield) * 100)
+                const buffDesc = (b: typeof unit.buffs[0]) => {
+                  switch (b.type) {
+                    case 'accuracy_down':  return `−${Math.round(b.value * 100)}% точності → точність: ${effAcc}%`
+                    case 'accuracy_up':    return `+${Math.round(b.value * 100)}% точності → точність: ${effAcc}%`
+                    case 'initiative_down':return `−${b.value} ініціативи → ініціатива: ${effInit}`
+                    case 'initiative_up':  return `+${b.value} ініціативи → ініціатива: ${effInit}`
+                    case 'defense_up':     return `+${Math.round(b.value * 100)}% броні → захист: ${effDef}%`
+                    case 'wind_shield':    return `+${Math.round(b.value * 100)}% ухил. → ухилення: ${effEva}%`
+                    case 'fortress_buff':  return `+${Math.round(b.value * 100)}% броні (форт.) → захист: ${effDef}%`
+                    case 'aimed':          return `Прицілення +${Math.round(b.value * 100)}% точн.`
+                    case 'morale_up':      return `Бойовий клич: +${b.value} моралі → +${(b.value / 10).toFixed(1)}% точн./ухил.`
+                    case 'armor_break':    return `Броня пробита −${Math.round(b.value * 100)}%`
+                    case 'poison':         return `Отрута: −${b.value} HP/хід`
+                    case 'burning':        return `Горіння: −${b.value} HP/хід`
+                    case 'frozen':         return 'Заморожено: пропускає хід'
+                    case 'regen':          return `Регенерація: +${b.value} HP/хід`
+                    case 'thorns':         return `Тернії: ${b.value} урону у відповідь`
+                    case 'cooldown':       return `Перезарядка: ${b.actionKey ?? 'дія'} недоступна`
+                    default:               return BUFF_LABEL[b.type] ?? b.type
+                  }
+                }
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {unit.buffs.map(b => (
+                      <div key={b.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '6px 10px', borderRadius: 8,
+                        background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.09)',
+                      }}>
+                        <span style={{ fontSize: 14 }}>{BUFF_ICON[b.type] ?? '✦'}</span>
+                        <span style={{ fontSize: 12, color: '#f0e8d8', flex: 1 }}>{buffDesc(b)}</span>
+                        <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)' }}>{b.turnsLeft} хід.</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )
+              })()}
             </div>
           )}
         </div>
@@ -1512,15 +1545,14 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
                 </button>
                 {mainActions.map(a => {
                   let disabled = false
-                  if (a === 'provoke' && actor) {
-                    const enemySide = actor.side === 'player' ? 'ai' : 'player'
-                    disabled = !state.units.some(u => u.side === enemySide && u.hp > 0 && u.row === 0)
-                  }
                   if (a === 'aim' && actor) {
                     disabled = actor.buffs.some(b => b.type === 'aimed')
                   }
-                  if ((a === 'hurricane' || a === 'armageddon' || a === 'earthquake' || a === 'fortress_aura' || a === 'blizzard' || a === 'shkvall' || a === 'double_shot' || a === 'tailwind' || a === 'twin_bolt') && actor) {
+                  if (COOLDOWN_ACTIONS.has(a) && actor) {
                     disabled = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
+                  }
+                  if (a === 'tailwind' && actor) {
+                    disabled = state.units.some(u => u.side === actor.side && u.buffs.some(b => b.type === 'accuracy_up'))
                   }
                   if (a === 'tailwind' && actor) {
                     disabled = state.units.some(u => u.side === actor.side && u.buffs.some(b => b.type === 'accuracy_up'))

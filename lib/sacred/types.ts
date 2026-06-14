@@ -16,7 +16,6 @@ export type BuffType =
   | 'wind_shield'     // air lv4: +X% evasion
   | 'fortress_buff'   // earth lv5: +X% defense (party)
   | 'thorns'          // stone skin lv3: attacker takes X dmg on hit
-  | 'taunt'           // warrior lv2 provoke: front-row enemies must target this unit
   | 'initiative_up'   // archer aim / air tailwind: +X initiative for queue ordering
   | 'initiative_down' // air wind_gust: -X initiative for N turns
   | 'cooldown'        // hurricane / armageddon: action blocked for 2 turns (uses actionKey)
@@ -79,9 +78,9 @@ export type WarriorPath = 'paladin' | 'champion'
 export type ActionKey =
   | 'strike'          // warrior: melee attack (adjacent slots, same row)
   | 'shield'          // warrior: +50% defense this turn
-  | 'battle_cry'      // knight (lv3): +15 morale to all allies for 2 turns
-  | 'sacred_strike'   // paladin (lv4): strike + -10% armor on target 1 turn
-  | 'consecration'    // paladin (lv4): remove debuffs + heal ally 15 HP
+  | 'battle_cry'      // knight (lv3): +25% accuracy + +10 initiative to all allies for 1 turn (stackable)
+  | 'sacred_strike'   // paladin (lv4) ult: 100% hit, no evasion, full armor strip 3 turns, 3-turn cooldown
+  | 'consecration'    // paladin (lv4): heal ally 20-30 HP, 20% chance cleanse debuffs
   | 'shot'            // archer: ranged attack any enemy
   | 'aim'             // archer: +25–40% acc + crit for 2 turns (crit% scales with level)
   | 'poison_shot'     // hunter (lv2): shot + poison 4dmg/turn for 3 turns, no stack
@@ -107,7 +106,6 @@ export type ActionKey =
   | 'tailwind'        // air lv3-5: +initiative% and +accuracy% to all allies (Попутний вітер)
   | 'thunder_storm'   // air (legacy): lightning_bolt hits ALL enemies
   | 'hurricane'       // air lv5: area 30-40 dmg + Громова дезорієнтація + 2-turn cooldown
-  | 'provoke'         // warrior lv2: front-row enemies must target this unit + +20% defense
   | 'shkvall'         // champion lv5 ult: double strike, 3-turn cooldown
   | 'barrage'          // catapult lv1: area strike, adjacents get 25–50% damage
   | 'grapeshot'        // catapult lv1: all enemies in same row, -40% damage
@@ -287,29 +285,29 @@ export const WARRIOR_LEVELS: Record<number, WarriorLevelData> = {
     name: 'Солдат',
     hp: 110, minDmg: 14, maxDmg: 20, accuracy: 0.80, defense: 0.10, evasion: 0.12,
     initiative: 50, critChance: 0, critMult: 2.0, morale: 55,
-    actions: ['strike', 'shield', 'provoke'],
+    actions: ['strike', 'shield'],
     frontLineBonus: 0.20, xpToNext: 200,
   },
   3: {
     name: 'Лицар',
     hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.80, defense: 0.20, evasion: 0.10,
     initiative: 50, critChance: 0, critMult: 2.0, morale: 65,
-    actions: ['strike', 'shield', 'battle_cry', 'provoke'],
+    actions: ['strike', 'shield', 'battle_cry'],
     frontLineBonus: 0.25, xpToNext: 350,
   },
   4: {
     name: 'Паладін',
     hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08,
     initiative: 50, critChance: 0, critMult: 2.0, morale: 80,
-    actions: ['sacred_strike', 'shield', 'consecration', 'battle_cry'],
+    actions: ['sacred_strike', 'shield', 'consecration'],
     frontLineBonus: 0.30, xpToNext: Infinity,
   },
 }
 
 export const WARRIOR_PATHS: Record<WarriorPath, Record<number, WarriorLevelData>> = {
   paladin: {
-    3: { name: 'Лицар',   hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.80, defense: 0.20, evasion: 0.10, initiative: 50, critChance: 0,    critMult: 2.0, morale: 65, actions: ['strike', 'shield', 'battle_cry', 'provoke'], frontLineBonus: 0.25, xpToNext: 350 },
-    4: { name: 'Паладін', hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08, initiative: 50, critChance: 0,    critMult: 2.0, morale: 80, actions: ['sacred_strike', 'shield', 'consecration', 'battle_cry'], frontLineBonus: 0.30, xpToNext: Infinity },
+    3: { name: 'Лицар',   hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.80, defense: 0.20, evasion: 0.10, initiative: 50, critChance: 0,    critMult: 2.0, morale: 65, actions: ['strike', 'shield', 'battle_cry'], frontLineBonus: 0.25, xpToNext: 350 },
+    4: { name: 'Паладін', hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08, initiative: 50, critChance: 0,    critMult: 2.0, morale: 80, actions: ['sacred_strike', 'shield', 'consecration'], frontLineBonus: 0.30, xpToNext: Infinity },
   },
   champion: {
     3: { name: 'Звитяжець', hp: 125, minDmg: 22, maxDmg: 35, accuracy: 0.80, defense: 0, evasion: 0.15, initiative: 70, critChance: 0.15, critMult: 2.0, morale: 65, actions: ['strike'],           frontLineBonus: 0.20, xpToNext: 350 },
