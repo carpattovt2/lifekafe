@@ -1,6 +1,7 @@
 'use client'
 
 import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
   addUnitAtSlot, buildCustomArmy,
@@ -970,11 +971,12 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, hasCampaignSave }: {
+function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, onMapEditor, hasCampaignSave }: {
   onFreeBattle: () => void
   onQuickTest: () => void
   onWorldMap: () => void
   onContinueCampaign: () => void
+  onMapEditor: () => void
   hasCampaignSave: boolean
 }) {
   const [heroSrc, setHeroSrc] = useState('/sacred/warriors/level4.jpg')
@@ -1089,6 +1091,13 @@ function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, ha
           color: 'rgba(240,232,216,0.3)', border: '1px solid rgba(240,232,216,0.1)', borderRadius: 10, cursor: 'pointer',
         }}>
           ⚙ Тест-бій
+        </button>
+        <button onClick={onMapEditor} style={{
+          padding: '10px 0', fontSize: 12, fontWeight: 600,
+          background: 'rgba(212,168,90,0.06)',
+          color: 'rgba(212,168,90,0.55)', border: '1px solid rgba(212,168,90,0.18)', borderRadius: 10, cursor: 'pointer',
+        }}>
+          🗺 Редактор карт
         </button>
         <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(240,232,216,0.2)', marginTop: 4 }}>
           v0.9.2
@@ -1609,6 +1618,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
 type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'free-battle' | 'world-map' | 'world-battle' | 'campaign-victory'
 
 export default function SacredGame() {
+  const router = useRouter()
   const [screen, setScreen] = useState<RootScreen>('landing')
   const [counts, setCounts] = useState<ArmyCounts | null>(null)
   const [playerUnits, setPlayerUnits] = useState<GameUnit[] | null>(null)
@@ -1846,6 +1856,7 @@ export default function SacredGame() {
       onQuickTest={handleQuickTest}
       onWorldMap={handleWorldMap}
       onContinueCampaign={handleContinueCampaign}
+      onMapEditor={() => router.push('/sacred/map-editor')}
       hasCampaignSave={hasCampaignSave}
     />
   )
