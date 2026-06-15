@@ -9,17 +9,6 @@ import {
 } from '@/app/(protected)/shopping/actions'
 import OnboardingSheet from '@/components/OnboardingSheet'
 
-const CATEGORIES = [
-  { id: 'meat',    label: "М'ясо & риба",   emoji: '🥩', color: '#E57373' },
-  { id: 'dairy',   label: 'Молочне & яйця',  emoji: '🥛', color: '#64B5F6' },
-  { id: 'produce', label: 'Овочі & фрукти',  emoji: '🥦', color: '#66BB6A' },
-  { id: 'bread',   label: 'Хліб & бакалія',  emoji: '🍞', color: '#FFA726' },
-  { id: 'drinks',  label: 'Напої',            emoji: '🥤', color: '#AB47BC' },
-  { id: 'hygiene', label: 'Гігієна & краса',  emoji: '🧴', color: '#EC407A' },
-  { id: 'home',    label: 'Для дому',         emoji: '🏠', color: '#42A5F5' },
-  { id: 'kids',    label: 'Дитячі',           emoji: '👶', color: '#FFCA28' },
-  { id: 'other',   label: 'Інше',             emoji: '🛒', color: '#78909C' },
-]
 
 interface ShoppingItem {
   id: string; text: string; checked: boolean
@@ -114,10 +103,6 @@ export default function ShoppingPage({
   // Inline edit
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
-
-  // Category picker
-  const pendingTextRef = useRef('')
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
 
   // Move item context menu (desktop right-click only)
   const [contextItem, setContextItem] = useState<ShoppingItem | null>(null)
@@ -366,24 +351,15 @@ export default function ShoppingPage({
     return () => { supabase.removeChannel(channel) }
   }, [activeListId, userEmail])
 
-  // ── Add item (with category picker) ─────────────────────────────────────
-  function handleAddPress() {
+  // ── Add item ─────────────────────────────────────────────────────────────
+  async function handleAddPress() {
     const text = newText.trim()
     if (!text || adding) return
-    pendingTextRef.current = text
-    setShowCategoryPicker(true)
-  }
-
-  async function handlePickCategory(catId: string) {
-    setShowCategoryPicker(false)
-    const text = pendingTextRef.current
-    pendingTextRef.current = ''
     setNewText('')
-    if (!text) return
     setAdding(true)
     const { data, error } = await supabase
       .from('shopping_items')
-      .insert({ text, list_id: activeListId, created_by_email: userEmail, category: catId })
+      .insert({ text, list_id: activeListId, created_by_email: userEmail })
       .select().single()
     if (!error && data) {
       setItems(prev => {
@@ -395,11 +371,6 @@ export default function ShoppingPage({
     }
     setAdding(false)
     inputRef.current?.focus()
-  }
-
-  function handleClosePicker() {
-    setShowCategoryPicker(false)
-    pendingTextRef.current = ''
   }
 
   // ── Tap to check ─────────────────────────────────────────────────────────
@@ -556,9 +527,6 @@ export default function ShoppingPage({
   const checked = items.filter(i => i.checked).sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
-  const grouped = CATEGORIES
-    .map(cat => ({ cat, catItems: unchecked.filter(i => (i.category ?? 'other') === cat.id) }))
-    .filter(g => g.catItems.length > 0)
   const otherOnline = onlineUsers.filter(e => e !== userEmail)
   const activeCount = liveUncheckedCounts[activeListId] ?? 0
   const activeAvatars = (membersByList[activeListId] ?? []).slice(0, 3)
@@ -709,30 +677,24 @@ export default function ShoppingPage({
         </div>
       )}
 
-      {!loading && grouped.map(({ cat, catItems }) => (
-        <div key={cat.id} style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingLeft: 2 }}>
-            <span style={{ fontSize: 14, lineHeight: 1 }}>{cat.emoji}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: cat.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{cat.label}</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {catItems.map(item => (
-              <ItemRow key={item.id} item={item}
-                sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
-                isShared={isShared} canMove={otherLists.length > 0}
-                isEditing={editingItemId === item.id} editText={editText}
-                onTap={handleTap} onEdit={startEdit}
-                onEditChange={setEditText}
-                onEditSubmit={() => editingItemId && submitEdit(item)}
-                onEditCancel={() => setEditingItemId(null)}
-                onShowContextMenu={showContextMenu}
-              />
-            ))}
-          </div>
+      {!loading && unchecked.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {unchecked.map(item => (
+            <ItemRow key={item.id} item={item}
+              sliding={slidingIn.has(item.id)} fading={fadingOut.has(item.id)}
+              isShared={isShared} canMove={otherLists.length > 0}
+              isEditing={editingItemId === item.id} editText={editText}
+              onTap={handleTap} onEdit={startEdit}
+              onEditChange={setEditText}
+              onEditSubmit={() => editingItemId && submitEdit(item)}
+              onEditCancel={() => setEditingItemId(null)}
+              onShowContextMenu={showContextMenu}
+            />
+          ))}
         </div>
-      ))}
+      )}
 
-      {!loading && grouped.length > 0 && checked.length > 0 && (
+      {!loading && unchecked.length > 0 && checked.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', margin: '16px 0', position: 'relative' }}>
           <span style={{ position: 'absolute', left: '50%', top: -9, transform: 'translateX(-50%)', background: 'var(--bg)', padding: '0 10px', fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Куплено
@@ -848,57 +810,7 @@ export default function ShoppingPage({
       )}
 
       <OnboardingSheet forceOpen={showHelp} onClose={() => setShowHelp(false)} />
-
-      {showCategoryPicker && (
-        <CategoryPicker onPick={handlePickCategory} onClose={handleClosePicker} />
-      )}
     </div>
-  )
-}
-
-// ── CategoryPicker ────────────────────────────────────────────────────────────
-
-function CategoryPicker({ onPick, onClose }: { onPick: (catId: string) => void; onClose: () => void }) {
-  return (
-    <>
-      <div
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.48)', zIndex: 400 }}
-      />
-      <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0,
-        maxWidth: 560, margin: '0 auto',
-        background: 'var(--bg2)', borderRadius: '20px 20px 0 0',
-        boxShadow: '0 -4px 40px rgba(0,0,0,0.2)',
-        zIndex: 401,
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        animation: 'onboarding-slide-up 0.28s cubic-bezier(0.32,0.72,0,1)',
-      }}>
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '12px auto 8px' }} />
-        <div style={{ padding: '4px 16px 24px' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--muted)', marginBottom: 14, textAlign: 'center' }}>
-            Виберіть категорію
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => onPick(cat.id)}
-                style={{
-                  padding: '14px 8px', borderRadius: 14, border: 'none',
-                  background: cat.color + '22',
-                  cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', gap: 6, fontFamily: 'inherit',
-                }}
-              >
-                <span style={{ fontSize: 28, lineHeight: 1 }}>{cat.emoji}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: cat.color, textAlign: 'center', lineHeight: 1.3 }}>{cat.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    </>
   )
 }
 
@@ -967,10 +879,6 @@ function ItemRow({
     onShowContextMenu(item, e.clientX, e.clientY)
   }
 
-  const catColor = item.checked
-    ? undefined
-    : (CATEGORIES.find(c => c.id === (item.category ?? 'other'))?.color ?? '#78909C')
-
   if (isEditing) {
     return (
       <div style={{ padding: 8, borderRadius: 12, background: 'var(--bg2)', border: '1.5px solid var(--accent)' }}>
@@ -1002,8 +910,8 @@ function ItemRow({
         onContextMenu={handleContextMenu}
         style={{
           padding: '14px 16px',
-          background: catColor ? catColor + '12' : 'var(--bg2)',
-          border: `1.5px solid ${catColor ? catColor + '55' : 'var(--border)'}`,
+          background: 'var(--bg2)',
+          border: '1.5px solid var(--border)',
           borderRadius: 12,
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 10,

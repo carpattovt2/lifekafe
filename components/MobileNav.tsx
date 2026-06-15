@@ -19,6 +19,7 @@ export default function MobileNav({ email }: { email: string }) {
     { href: '/dashboard', label: t.nav.dashboard, icon: '⌂' },
     { href: '/weight',    label: t.nav.weight,    icon: '⚖' },
     { href: '/planner',   label: t.nav.planner,   icon: '◫' },
+    { href: '/events',    label: t.nav.events,    icon: '★' },
     { href: '/journal',   label: t.nav.journal,   icon: '📓' },
     { href: '/shopping',  label: t.nav.shopping,   icon: '🛒' },
     { href: '/games',     label: t.nav.games,      icon: '🎮' },
