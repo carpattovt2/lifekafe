@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type TerrainId = 'grass' | 'forest' | 'water' | 'shallow' | 'mountain' | 'desert' | 'road' | 'snow' | 'sand' | 'swamp'
-type ToolId    = 'brush' | 'erase' | 'fill' | 'place' | 'select' | 'pan' | 'text'
+type TerrainId = 'grass' | 'forest' | 'water' | 'shallow' | 'mountain' | 'desert' | 'snow' | 'sand' | 'swamp'
+type RoadSub   = 'dirt' | 'main' | 'paved'
+type RiverSub  = 'stream' | 'river' | 'wide'
+type ToolId    = 'brush' | 'erase' | 'fill' | 'place' | 'select' | 'pan' | 'text' | 'road' | 'river'
 
 interface ObjDef    { id: string; emoji: string; label: string }
 interface PlacedObj { id: string; typeId: string; emoji: string; label: string; x: number; y: number; size: number }
@@ -16,8 +18,9 @@ interface MapLabel  { id: string; text: string; x: number; y: number; fontSize: 
 
 const W = 1400
 const H = 900
-const PAT = 96        // SVG pattern tile size
+const PAT = 96
 const PARCHMENT = '#e8dbb0'
+const MIN_STROKE_DIST = 5
 
 const TERRAIN_COLOR: Record<TerrainId, string> = {
   grass:    '#8a9e52',
@@ -26,7 +29,6 @@ const TERRAIN_COLOR: Record<TerrainId, string> = {
   shallow:  '#6a98b2',
   mountain: '#8a7a68',
   desert:   '#c8a030',
-  road:     '#7a5828',
   snow:     '#dedad0',
   sand:     '#cca84a',
   swamp:    '#5c6e3a',
@@ -36,13 +38,24 @@ const TERRAIN_DEFS: { id: TerrainId; label: string }[] = [
   { id: 'grass',    label: 'Поле'    },
   { id: 'forest',   label: 'Ліс'     },
   { id: 'water',    label: 'Море'    },
-  { id: 'shallow',  label: 'Річка'   },
+  { id: 'shallow',  label: 'Мілина'  },
   { id: 'mountain', label: 'Гори'    },
   { id: 'desert',   label: 'Пустеля' },
   { id: 'swamp',    label: 'Болото'  },
   { id: 'sand',     label: 'Пісок'   },
-  { id: 'road',     label: 'Дорога'  },
   { id: 'snow',     label: 'Сніг'    },
+]
+
+const ROAD_DEFS: { id: RoadSub; label: string }[] = [
+  { id: 'dirt',  label: 'Грунтова' },
+  { id: 'main',  label: 'Мощена'   },
+  { id: 'paved', label: 'Бруківка' },
+]
+
+const RIVER_DEFS: { id: RiverSub; label: string }[] = [
+  { id: 'stream', label: 'Струмок'    },
+  { id: 'river',  label: 'Річка'      },
+  { id: 'wide',   label: 'Широка'     },
 ]
 
 const OBJ_DEFS: ObjDef[] = [
@@ -75,7 +88,6 @@ function seededRng(seed: number) {
   return () => { s = (s * 1664525 + 1013904223) & 0x7fffffff; return s / 0x7fffffff }
 }
 
-// Seamlessly-tiling sine wave path (period = S)
 function wave(y: number, A: number, S = PAT): string {
   const h = S / 2
   return `M0,${y} C${S*.14},${y-A} ${S*.36},${y-A} ${h},${y} C${S*.64},${y+A} ${S*.86},${y+A} ${S},${y}`
@@ -167,12 +179,6 @@ function makeSVG(id: TerrainId | 'erase'): string {
       </g>
       <g fill="rgba(0,0,0,0.2)">${dots}</g>`
 
-  } else if (id === 'road') {
-    body = `
-      <line x1="30" y1="0" x2="30" y2="${S}" stroke="rgba(0,0,0,0.42)" stroke-width="3" stroke-dasharray="16,8"/>
-      <line x1="66" y1="0" x2="66" y2="${S}" stroke="rgba(0,0,0,0.42)" stroke-width="3" stroke-dasharray="16,8" stroke-dashoffset="12"/>
-      <line x1="48" y1="0" x2="48" y2="${S}" stroke="rgba(255,255,255,0.07)" stroke-width="1.2"/>`
-
   } else if (id === 'grass') {
     const rng    = seededRng(19)
     const blades = Array.from({length:24}, ()=>{
@@ -262,7 +268,6 @@ function floodFillTextured(
   const mainImg = ctx.getImageData(0,0,W,H)
   const d       = mainImg.data
 
-  // Build alpha mask: 255 where flood-filled, 0 elsewhere
   const mask  = document.createElement('canvas'); mask.width=W; mask.height=H
   const mc    = mask.getContext('2d')!
   const mdata = mc.createImageData(W,H)
@@ -274,12 +279,118 @@ function floodFillTextured(
     md[idx+3] = hit ? 255 : 0
   }
   mc.putImageData(mdata,0,0)
-
-  // Clip SVG pattern to mask, then draw onto main canvas
   mc.globalCompositeOperation = 'source-in'
   mc.fillStyle = pat
   mc.fillRect(0,0,W,H)
   ctx.drawImage(mask,0,0)
+}
+
+// ── Catmull-Rom spline ────────────────────────────────────────────────────────
+
+function catmullRom(pts: [number,number][], steps = 6): [number,number][] {
+  if (pts.length < 2) return pts
+  const result: [number,number][] = []
+  const n = pts.length
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[Math.min(n - 1, i + 2)]
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps
+      const t2 = t*t, t3 = t2*t
+      const x = 0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3)
+      const y = 0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+      result.push([x, y])
+    }
+  }
+  result.push(pts[n - 1])
+  return result
+}
+
+// ── Road stroke renderer ──────────────────────────────────────────────────────
+
+function drawRoadStroke(ctx: CanvasRenderingContext2D, pts: [number,number][], sub: RoadSub, width: number) {
+  if (pts.length < 2) return
+  const smooth = catmullRom(pts)
+  if (smooth.length < 2) return
+
+  const cfg: Record<RoadSub, { outer: string; inner: string; innerW: number; dash: [string, number, number[]] | null }> = {
+    dirt:  { outer: 'rgba(82,50,14,0.92)',  inner: 'rgba(148,104,46,0.78)', innerW: 0.54, dash: null },
+    main:  { outer: 'rgba(62,40,10,0.94)',  inner: 'rgba(172,128,56,0.82)', innerW: 0.58, dash: ['rgba(230,210,155,0.2)', 0.14, [0.7, 0.55]] },
+    paved: { outer: 'rgba(70,62,50,0.92)',  inner: 'rgba(115,105,85,0.8)',  innerW: 0.58, dash: ['rgba(255,255,255,0.22)', 0.12, [0.5, 0.5]] },
+  }
+  const c = cfg[sub]
+
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  function drawPath() {
+    ctx.beginPath()
+    ctx.moveTo(smooth[0][0], smooth[0][1])
+    for (let i = 1; i < smooth.length; i++) ctx.lineTo(smooth[i][0], smooth[i][1])
+  }
+
+  ctx.strokeStyle = c.outer; ctx.lineWidth = width; drawPath(); ctx.stroke()
+  ctx.strokeStyle = c.inner; ctx.lineWidth = width * c.innerW; drawPath(); ctx.stroke()
+
+  if (c.dash) {
+    const [color, wR, pat] = c.dash
+    ctx.strokeStyle = color
+    ctx.lineWidth   = width * wR
+    ctx.setLineDash(pat.map(d => d * width))
+    drawPath(); ctx.stroke()
+    ctx.setLineDash([])
+  }
+
+  ctx.restore()
+}
+
+// ── River stroke renderer (tapered) ──────────────────────────────────────────
+
+function drawRiverStroke(ctx: CanvasRenderingContext2D, pts: [number,number][], sub: RiverSub, width: number) {
+  if (pts.length < 2) return
+  const smooth = catmullRom(pts)
+  const n = smooth.length
+  if (n < 2) return
+
+  const cfg: Record<RiverSub, { color: string; shadow: string; hl: string; minW: number; maxW: number; shadowR: number; hlR: number }> = {
+    stream: { color: 'rgba(75,115,162,0.86)', shadow: 'rgba(32,60,105,0.3)',  hl: 'rgba(148,192,228,0.44)', minW: 0.25, maxW: 0.62, shadowR: 1.32, hlR: 0.32 },
+    river:  { color: 'rgba(55,95,150,0.9)',   shadow: 'rgba(28,55,105,0.36)', hl: 'rgba(122,172,215,0.48)', minW: 0.3,  maxW: 1.0,  shadowR: 1.38, hlR: 0.28 },
+    wide:   { color: 'rgba(44,82,140,0.92)',  shadow: 'rgba(22,46,100,0.42)', hl: 'rgba(105,158,205,0.5)',  minW: 0.35, maxW: 1.45, shadowR: 1.44, hlR: 0.24 },
+  }
+  const c = cfg[sub]
+
+  ctx.save()
+  ctx.lineCap = 'round'
+
+  // Three separate passes so z-order is correct: all shadows first, then all color, then all highlights
+  ctx.strokeStyle = c.shadow
+  for (let i = 0; i < n - 1; i++) {
+    const t = i / (n - 1)
+    const w = width * (c.minW + (c.maxW - c.minW) * t)
+    ctx.lineWidth = w * c.shadowR
+    ctx.beginPath(); ctx.moveTo(smooth[i][0], smooth[i][1]); ctx.lineTo(smooth[i+1][0], smooth[i+1][1]); ctx.stroke()
+  }
+
+  ctx.strokeStyle = c.color
+  for (let i = 0; i < n - 1; i++) {
+    const t = i / (n - 1)
+    const w = width * (c.minW + (c.maxW - c.minW) * t)
+    ctx.lineWidth = w
+    ctx.beginPath(); ctx.moveTo(smooth[i][0], smooth[i][1]); ctx.lineTo(smooth[i+1][0], smooth[i+1][1]); ctx.stroke()
+  }
+
+  ctx.strokeStyle = c.hl
+  for (let i = 0; i < n - 1; i++) {
+    const t = i / (n - 1)
+    const w = width * (c.minW + (c.maxW - c.minW) * t)
+    ctx.lineWidth = w * c.hlR
+    ctx.beginPath(); ctx.moveTo(smooth[i][0], smooth[i][1]); ctx.lineTo(smooth[i+1][0], smooth[i+1][1]); ctx.stroke()
+  }
+
+  ctx.restore()
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -305,30 +416,46 @@ export default function MapEditor() {
   const containerRef = useRef<HTMLDivElement>(null)
   const patternsRef  = useRef<Partial<Record<TerrainId|'erase', CanvasPattern>>>({})
 
-  const drawingRef = useRef(false)
-  const lastRef    = useRef<{x:number;y:number}|null>(null)
-  const histRef    = useRef<ImageData[]>([])
-  const panRef     = useRef<{mx:number;my:number;px:number;py:number}|null>(null)
-  const tRef       = useRef({ x:20, y:20, scale:0.6 })
-  const objDragRef = useRef<{id:string;sx:number;sy:number;ox:number;oy:number}|null>(null)
-  const objsRef    = useRef<PlacedObj[]>([])
-  const labelsRef  = useRef<MapLabel[]>([])
-  const selRef     = useRef<string|null>(null)
+  const drawingRef       = useRef(false)
+  const lastRef          = useRef<{x:number;y:number}|null>(null)
+  const histRef          = useRef<ImageData[]>([])
+  const panRef           = useRef<{mx:number;my:number;px:number;py:number}|null>(null)
+  const tRef             = useRef({ x:20, y:20, scale:0.6 })
+  const objDragRef       = useRef<{id:string;sx:number;sy:number;ox:number;oy:number}|null>(null)
+  const objsRef          = useRef<PlacedObj[]>([])
+  const labelsRef        = useRef<MapLabel[]>([])
+  const selRef           = useRef<string|null>(null)
+  const currentStrokeRef = useRef<[number,number][]>([])
+  const preStrokeRef     = useRef<ImageData|null>(null)
 
-  const [tool,      setTool]      = useState<ToolId>('brush')
-  const [terrain,   setTerrain]   = useState<TerrainId>('grass')
-  const [brushSize, setBrushSize] = useState(30)
-  const [objects,   _setObjects]  = useState<PlacedObj[]>([])
-  const [labels,    _setLabels]   = useState<MapLabel[]>([])
-  const [selObj,    _setSelObj]   = useState<string|null>(null)
-  const [placeType, setPlaceType] = useState<ObjDef>(OBJ_DEFS[0])
-  const [objSize,   setObjSize]   = useState(36)
-  const [t,         setT]         = useState({ x:20, y:20, scale:0.6 })
-  const [zoom,      setZoom]      = useState(60)
-  const [textValue, setTextValue] = useState('')
-  const [textSize,  setTextSize]  = useState(24)
-  const [textColor, setTextColor] = useState('#3a2a10')
-  const [pendingPos,setPendingPos]= useState<{x:number;y:number}|null>(null)
+  const [tool,       setTool]       = useState<ToolId>('brush')
+  const [terrain,    setTerrain]    = useState<TerrainId>('grass')
+  const [brushSize,  setBrushSize]  = useState(30)
+  const [objects,    _setObjects]   = useState<PlacedObj[]>([])
+  const [labels,     _setLabels]    = useState<MapLabel[]>([])
+  const [selObj,     _setSelObj]    = useState<string|null>(null)
+  const [placeType,  setPlaceType]  = useState<ObjDef>(OBJ_DEFS[0])
+  const [objSize,    setObjSize]    = useState(36)
+  const [t,          setT]          = useState({ x:20, y:20, scale:0.6 })
+  const [zoom,       setZoom]       = useState(60)
+  const [textValue,  setTextValue]  = useState('')
+  const [textSize,   setTextSize]   = useState(24)
+  const [textColor,  setTextColor]  = useState('#3a2a10')
+  const [pendingPos, setPendingPos] = useState<{x:number;y:number}|null>(null)
+  const [roadSub,    setRoadSub]    = useState<RoadSub>('dirt')
+  const [riverSub,   setRiverSub]   = useState<RiverSub>('river')
+  const [strokeWidth,setStrokeWidth]= useState(12)
+
+  // stable ref accessors to avoid stale closures
+  const roadSubRef   = useRef<RoadSub>('dirt')
+  const riverSubRef  = useRef<RiverSub>('river')
+  const strokeWRef   = useRef(12)
+  const toolRef      = useRef<ToolId>('brush')
+
+  function setRoadSubS(v: RoadSub)   { roadSubRef.current = v;  setRoadSub(v) }
+  function setRiverSubS(v: RiverSub) { riverSubRef.current = v; setRiverSub(v) }
+  function setStrokeWidthS(v: number){ strokeWRef.current = v;  setStrokeWidth(v) }
+  function setToolS(v: ToolId)       { toolRef.current = v;     setTool(v) }
 
   function setObjects(n:PlacedObj[]) { objsRef.current=n; _setObjects(n) }
   function setLabels(n:MapLabel[])   { labelsRef.current=n; _setLabels(n) }
@@ -358,7 +485,6 @@ export default function MapEditor() {
     const pat = patternsRef.current['erase']
     if (pat) { ctx.fillStyle = pat; ctx.fillRect(0,0,W,H) }
     else      { ctx.fillStyle = PARCHMENT; ctx.fillRect(0,0,W,H) }
-    // Edge vignette
     const vg = ctx.createRadialGradient(W/2,H/2,H*.3,W/2,H/2,H*.9)
     vg.addColorStop(0,'rgba(90,55,10,0)')
     vg.addColorStop(1,'rgba(70,40,8,0.25)')
@@ -440,6 +566,13 @@ export default function MapEditor() {
       pushHistory(); drawingRef.current=true; lastRef.current={x,y}
       dot(ctx,x,y,tool==='erase'?'erase':terrain); return
     }
+    if (tool==='road'||tool==='river') {
+      pushHistory()
+      preStrokeRef.current = ctx.getImageData(0,0,W,H)
+      currentStrokeRef.current = [[x,y]]
+      drawingRef.current = true
+      return
+    }
     if (tool==='place') {
       const next=[...objsRef.current,{id:crypto.randomUUID(),typeId:placeType.id,emoji:placeType.emoji,label:placeType.label,x,y,size:objSize}]
       setObjects(next); doSave(next); return
@@ -457,16 +590,62 @@ export default function MapEditor() {
       _setObjects(prev=>prev.map(o=>o.id===objDragRef.current!.id?{...o,x:objDragRef.current!.ox+(e.clientX-objDragRef.current!.sx)/scale,y:objDragRef.current!.oy+(e.clientY-objDragRef.current!.sy)/scale}:o))
       return
     }
-    if (!drawingRef.current||(tool!=='brush'&&tool!=='erase')) return
-    const ctx=canvasRef.current!.getContext('2d')!, {x,y}=getPos(e)
-    if (lastRef.current) seg(ctx,lastRef.current.x,lastRef.current.y,x,y,tool==='erase'?'erase':terrain)
-    lastRef.current={x,y}
+
+    if (!drawingRef.current) return
+    const {x,y} = getPos(e)
+    const ctx = canvasRef.current!.getContext('2d')!
+
+    if (tool==='brush'||tool==='erase') {
+      if (lastRef.current) seg(ctx,lastRef.current.x,lastRef.current.y,x,y,tool==='erase'?'erase':terrain)
+      lastRef.current={x,y}
+      return
+    }
+
+    if (tool==='road'||tool==='river') {
+      const pts = currentStrokeRef.current
+      const last = pts[pts.length - 1]
+      if (last) {
+        const dx = x - last[0], dy = y - last[1]
+        if (dx*dx + dy*dy < MIN_STROKE_DIST*MIN_STROKE_DIST) return
+      }
+      currentStrokeRef.current = [...pts, [x,y]]
+      // Raw preview (fast)
+      if (last) {
+        ctx.save()
+        ctx.strokeStyle = tool==='river' ? 'rgba(55,95,155,0.55)' : 'rgba(90,58,18,0.55)'
+        ctx.lineWidth   = strokeWRef.current
+        ctx.lineCap     = 'round'
+        ctx.beginPath(); ctx.moveTo(last[0],last[1]); ctx.lineTo(x,y); ctx.stroke()
+        ctx.restore()
+      }
+    }
   }
 
   function onMouseUp() {
-    if (panRef.current) { panRef.current=null }
-    if (objDragRef.current) { objsRef.current=objects; objDragRef.current=null; doSave() }
-    if (drawingRef.current) { drawingRef.current=false; lastRef.current=null; doSave() }
+    if (panRef.current) { panRef.current=null; return }
+    if (objDragRef.current) { objsRef.current=objects; objDragRef.current=null; doSave(); return }
+
+    if (drawingRef.current) {
+      drawingRef.current = false
+
+      if (tool==='road'||tool==='river') {
+        const pts = currentStrokeRef.current
+        const ctx = canvasRef.current!.getContext('2d')!
+        if (pts.length >= 2 && preStrokeRef.current) {
+          // Restore clean pre-stroke canvas, then draw smooth version
+          ctx.putImageData(preStrokeRef.current, 0, 0)
+          if (tool==='road') drawRoadStroke(ctx, pts, roadSubRef.current, strokeWRef.current)
+          else               drawRiverStroke(ctx, pts, riverSubRef.current, strokeWRef.current)
+        }
+        preStrokeRef.current = null
+        currentStrokeRef.current = []
+        doSave()
+        return
+      }
+
+      lastRef.current = null
+      doSave()
+    }
   }
 
   function onObjDown(e:React.MouseEvent, obj:PlacedObj) {
@@ -519,12 +698,21 @@ export default function MapEditor() {
     const a=document.createElement('a'); a.href=exp.toDataURL('image/png'); a.download='seraphites-map.png'; a.click()
   }
 
-  const cursorMap:Record<ToolId,string> = { brush:'crosshair',erase:'crosshair',fill:'cell',place:'copy',select:'default',pan:'grab',text:'text' }
+  const isLineTool = tool === 'road' || tool === 'river'
+  const cursorMap: Record<ToolId,string> = {
+    brush:'crosshair', erase:'crosshair', fill:'cell', place:'copy',
+    select:'default', pan:'grab', text:'text', road:'crosshair', river:'crosshair',
+  }
   const TOOLS = [
-    {id:'brush' as ToolId,label:'🖌 Пензель'},{id:'erase' as ToolId,label:'⬜ Гумка'},
-    {id:'fill'  as ToolId,label:'🪣 Заливка'},{id:'place' as ToolId,label:'📍 Обʼєкт'},
-    {id:'text'  as ToolId,label:'✏️ Текст'  },{id:'select'as ToolId,label:'↖ Вибрати'},
-    {id:'pan'   as ToolId,label:'✋ Рух'    },
+    {id:'brush'  as ToolId, label:'🖌 Пензель'},
+    {id:'erase'  as ToolId, label:'⬜ Гумка'  },
+    {id:'fill'   as ToolId, label:'🪣 Заливка'},
+    {id:'road'   as ToolId, label:'🛤 Дорога' },
+    {id:'river'  as ToolId, label:'〜 Річка'  },
+    {id:'place'  as ToolId, label:'📍 Обʼєкт' },
+    {id:'text'   as ToolId, label:'✏️ Текст'  },
+    {id:'select' as ToolId, label:'↖ Вибрати' },
+    {id:'pan'    as ToolId, label:'✋ Рух'    },
   ]
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -543,7 +731,7 @@ export default function MapEditor() {
         <button onClick={()=>router.push('/sacred')} style={btnSt()}>← Назад</button>
         <div style={{width:1,height:20,background:'rgba(240,232,216,0.1)',flexShrink:0}}/>
         {TOOLS.map(({id,label})=>(
-          <button key={id} onClick={()=>{setTool(id);setPendingPos(null)}} style={btnSt(tool===id)}>{label}</button>
+          <button key={id} onClick={()=>{setToolS(id);setPendingPos(null)}} style={btnSt(tool===id)}>{label}</button>
         ))}
         <div style={{width:1,height:20,background:'rgba(240,232,216,0.1)',flexShrink:0}}/>
         <button onClick={()=>{const ctx=canvasRef.current?.getContext('2d');if(ctx&&histRef.current.length){ctx.putImageData(histRef.current.pop()!,0,0);doSave()}}} style={btnSt()}>↩ Undo</button>
@@ -560,24 +748,63 @@ export default function MapEditor() {
 
         {/* Left sidebar */}
         <div style={{width:140,background:'#13120d',borderRight:'1px solid rgba(240,232,216,0.07)',padding:'10px 8px',display:'flex',flexDirection:'column',gap:3,overflowY:'auto',flexShrink:0}}>
-          <div style={sideLabel()}>Рельєф</div>
-          {TERRAIN_DEFS.map(td=>{
-            const active=terrain===td.id&&(tool==='brush'||tool==='erase'||tool==='fill')
-            return (
-              <button key={td.id} onClick={()=>{setTerrain(td.id);if(tool!=='fill'&&tool!=='erase')setTool('brush')}}
-                style={{display:'flex',alignItems:'center',gap:7,padding:'5px 7px',borderRadius:6,background:active?'rgba(240,232,216,0.09)':'transparent',border:`1px solid ${active?'rgba(240,232,216,0.2)':'transparent'}`,color:'#f0e8d8',cursor:'pointer',width:'100%',fontSize:11,fontWeight:active?600:400}}>
-                <div style={{width:14,height:14,borderRadius:3,background:TERRAIN_COLOR[td.id],flexShrink:0,border:'1px solid rgba(0,0,0,0.25)'}}/>
-                {td.label}
+
+          {/* Terrain section — hidden for road/river/place/text/select */}
+          {!isLineTool && tool!=='place' && tool!=='text' && tool!=='select' && <>
+            <div style={sideLabel()}>Рельєф</div>
+            {TERRAIN_DEFS.map(td=>{
+              const active=terrain===td.id&&(tool==='brush'||tool==='erase'||tool==='fill')
+              return (
+                <button key={td.id} onClick={()=>{setTerrain(td.id);if(tool!=='fill'&&tool!=='erase')setToolS('brush')}}
+                  style={{display:'flex',alignItems:'center',gap:7,padding:'5px 7px',borderRadius:6,background:active?'rgba(240,232,216,0.09)':'transparent',border:`1px solid ${active?'rgba(240,232,216,0.2)':'transparent'}`,color:'#f0e8d8',cursor:'pointer',width:'100%',fontSize:11,fontWeight:active?600:400}}>
+                  <div style={{width:14,height:14,borderRadius:3,background:TERRAIN_COLOR[td.id],flexShrink:0,border:'1px solid rgba(0,0,0,0.25)'}}/>
+                  {td.label}
+                </button>
+              )
+            })}
+
+            <div style={{...sideLabel(),marginTop:10}}>Розмір пензля</div>
+            <input type="range" min={4} max={100} value={brushSize} onChange={e=>setBrushSize(Number(e.target.value))} style={{width:'100%',accentColor:'#d4a85a'}}/>
+            <div style={{fontSize:10,color:'rgba(240,232,216,0.35)',textAlign:'center'}}>{brushSize}px</div>
+          </>}
+
+          {/* Road controls */}
+          {tool==='road'&&<>
+            <div style={sideLabel()}>Тип дороги</div>
+            {ROAD_DEFS.map(rd=>(
+              <button key={rd.id} onClick={()=>setRoadSubS(rd.id)}
+                style={{...btnSt(roadSub===rd.id), width:'100%', textAlign:'left', marginBottom:2}}>
+                {rd.label}
               </button>
-            )
-          })}
+            ))}
+            <div style={{...sideLabel(),marginTop:10}}>Товщина</div>
+            <input type="range" min={4} max={40} value={strokeWidth} onChange={e=>setStrokeWidthS(Number(e.target.value))} style={{width:'100%',accentColor:'#d4a85a'}}/>
+            <div style={{fontSize:10,color:'rgba(240,232,216,0.35)',textAlign:'center'}}>{strokeWidth}px</div>
+            <div style={{marginTop:10,fontSize:9,color:'rgba(240,232,216,0.22)',lineHeight:1.7}}>
+              Тягни мишу →<br/>плавна крива<br/>Undo = скасувати
+            </div>
+          </>}
 
-          <div style={{...sideLabel(),marginTop:10}}>Розмір пензля</div>
-          <input type="range" min={4} max={100} value={brushSize} onChange={e=>setBrushSize(Number(e.target.value))} style={{width:'100%',accentColor:'#d4a85a'}}/>
-          <div style={{fontSize:10,color:'rgba(240,232,216,0.35)',textAlign:'center'}}>{brushSize}px</div>
+          {/* River controls */}
+          {tool==='river'&&<>
+            <div style={sideLabel()}>Тип ріки</div>
+            {RIVER_DEFS.map(rv=>(
+              <button key={rv.id} onClick={()=>setRiverSubS(rv.id)}
+                style={{...btnSt(riverSub===rv.id,'80,130,200'), width:'100%', textAlign:'left', marginBottom:2}}>
+                {rv.label}
+              </button>
+            ))}
+            <div style={{...sideLabel(),marginTop:10}}>Товщина</div>
+            <input type="range" min={6} max={60} value={strokeWidth} onChange={e=>setStrokeWidthS(Number(e.target.value))} style={{width:'100%',accentColor:'#5a8ec8'}}/>
+            <div style={{fontSize:10,color:'rgba(240,232,216,0.35)',textAlign:'center'}}>{strokeWidth}px</div>
+            <div style={{marginTop:10,fontSize:9,color:'rgba(240,232,216,0.22)',lineHeight:1.7}}>
+              Малюй від витоку<br/>до гирла →<br/>авто-розширення
+            </div>
+          </>}
 
+          {/* Text controls */}
           {tool==='text'&&<>
-            <div style={{...sideLabel(),marginTop:10}}>Розмір тексту</div>
+            <div style={sideLabel()}>Розмір тексту</div>
             <input type="range" min={10} max={72} value={textSize} onChange={e=>setTextSize(Number(e.target.value))} style={{width:'100%',accentColor:'#d4a85a'}}/>
             <div style={{fontSize:10,color:'rgba(240,232,216,0.35)',textAlign:'center'}}>{textSize}px</div>
             <div style={{...sideLabel(),marginTop:8}}>Колір</div>
@@ -588,9 +815,12 @@ export default function MapEditor() {
             </div>
           </>}
 
-          <div style={{marginTop:10,fontSize:9,color:'rgba(240,232,216,0.22)',lineHeight:1.6}}>
-            Скрол = зум<br/>Сер. кнопка = рух<br/>Ctrl+Z = undo<br/>Del = видалити
-          </div>
+          {/* Hints for non-terrain tools */}
+          {(tool==='select'||tool==='place'||tool==='pan')&&(
+            <div style={{marginTop:10,fontSize:9,color:'rgba(240,232,216,0.22)',lineHeight:1.6}}>
+              Скрол = зум<br/>Сер. кнопка = рух<br/>Ctrl+Z = undo<br/>Del = видалити
+            </div>
+          )}
         </div>
 
         {/* Canvas */}
@@ -662,7 +892,7 @@ export default function MapEditor() {
           {OBJ_DEFS.map(od=>{
             const active=placeType.id===od.id&&tool==='place'
             return (
-              <button key={od.id} onClick={()=>{setPlaceType(od);setTool('place')}}
+              <button key={od.id} onClick={()=>{setPlaceType(od);setToolS('place')}}
                 style={{display:'flex',alignItems:'center',gap:6,padding:'4px 7px',borderRadius:6,background:active?'rgba(240,232,216,0.09)':'transparent',border:`1px solid ${active?'rgba(240,232,216,0.2)':'transparent'}`,color:'#f0e8d8',cursor:'pointer',width:'100%'}}>
                 <span style={{fontSize:20,lineHeight:1}}>{od.emoji}</span>
                 <span style={{fontSize:10,fontWeight:active?600:400}}>{od.label}</span>
