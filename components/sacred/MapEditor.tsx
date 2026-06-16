@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 type TerrainId = 'grass' | 'water' | 'shallow' | 'desert' | 'snow' | 'sand' | 'swamp'
 type RoadSub   = 'dirt' | 'main' | 'paved'
 type RiverSub  = 'stream' | 'river' | 'wide'
-type IllusKind = 'mountain' | 'forest' | 'compass' | 'cartouche'
+type IllusKind = 'mountain' | 'forest' | 'bush' | 'compass' | 'cartouche'
 type ToolId    = 'brush' | 'erase' | 'fill' | 'place' | 'select' | 'pan' | 'text' | 'road' | 'river' | 'illustrate'
 
 interface Stroke         { id:string; kind:'road'|'river'; subtype:string; pts:[number,number][]; width:number }
@@ -37,10 +37,11 @@ const TERRAIN_DEFS: {id:TerrainId;label:string}[] = [
 const ROAD_DEFS:  {id:RoadSub;label:string}[]  = [{id:'dirt',label:'Грунтова'},{id:'main',label:'Мощена'},{id:'paved',label:'Бруківка'}]
 const RIVER_DEFS: {id:RiverSub;label:string}[] = [{id:'stream',label:'Струмок'},{id:'river',label:'Річка'},{id:'wide',label:'Широка'}]
 const ILLUS_DEFS: {kind:IllusKind;label:string;defaultSize:number}[] = [
-  {kind:'mountain',label:'⛰ Гора',  defaultSize:110},
-  {kind:'forest',  label:'🌲 Ліс',  defaultSize:80},
-  {kind:'compass', label:'✦ Компас',defaultSize:90},
-  {kind:'cartouche',label:'▭ Картуш',defaultSize:180},
+  {kind:'mountain', label:'⛰ Гора',  defaultSize:110},
+  {kind:'forest',   label:'🌲 Ліс',   defaultSize:80},
+  {kind:'bush',     label:'🌿 Кущ',   defaultSize:62},
+  {kind:'compass',  label:'✦ Компас', defaultSize:90},
+  {kind:'cartouche',label:'▭ Картуш', defaultSize:180},
 ]
 const OBJ_DEFS: ObjDef[] = [
   {id:'castle',emoji:'🏰',label:'Замок'},{id:'city',emoji:'🏙',label:'Місто'},
@@ -66,24 +67,24 @@ function seededRng(seed: number) {
 const MOUNTAIN_SVGS = [
   // 1. single sharp peak — warm limestone
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 65"><g stroke="#4a3218" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M40,4 L8,61 L72,61 Z" fill="#d4c69b" stroke-width="1.4"/><path d="M40,4 L27,24 C34,21 46,21 53,24 Z" fill="#f2ede2" stroke-width="1"/><line x1="45" y1="13" x2="55" y2="30" stroke-width="0.7" opacity="0.45"/><line x1="48" y1="20" x2="60" y2="38" stroke-width="0.7" opacity="0.4"/><line x1="51" y1="27" x2="64" y2="46" stroke-width="0.65" opacity="0.35"/><line x1="54" y1="34" x2="67" y2="53" stroke-width="0.6" opacity="0.3"/></g></svg>`,
-  // 2. double peak — grey granite
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 65"><g stroke="#303038" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M62,12 L40,62 L84,62 Z" fill="#c8cad4" stroke-width="1.1"/><path d="M28,5 L2,62 L56,62 Z" fill="#b9bcc6" stroke-width="1.4"/><path d="M28,5 L18,22 C24,19 32,19 38,22 Z" fill="#eef0f8" stroke-width="0.9"/><path d="M62,12 L55,25 C59,23 65,23 69,25 Z" fill="#eef0f8" stroke-width="0.8"/><line x1="31" y1="13" x2="41" y2="28" stroke-width="0.7" opacity="0.45"/><line x1="34" y1="20" x2="46" y2="36" stroke-width="0.65" opacity="0.4"/><line x1="37" y1="27" x2="50" y2="44" stroke-width="0.6" opacity="0.35"/></g></svg>`,
-  // 3. mountain range 3 peaks — warm brown
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 115 65"><g stroke="#4a3a18" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M20,20 L2,62 L40,62 Z" fill="#d8c8a8" stroke-width="1"/><path d="M57,4 L27,62 L87,62 Z" fill="#dac69e" stroke-width="1.4"/><path d="M92,16 L72,62 L112,62 Z" fill="#d8c8a8" stroke-width="1"/><path d="M57,4 L46,21 C52,18 62,18 68,21 Z" fill="#f2ede2" stroke-width="1"/><path d="M20,20 L14,31 C17,29 23,29 26,31 Z" fill="#f2ede2" stroke-width="0.8"/><line x1="60" y1="12" x2="70" y2="27" stroke-width="0.7" opacity="0.45"/><line x1="63" y1="19" x2="74" y2="35" stroke-width="0.65" opacity="0.4"/><line x1="66" y1="26" x2="78" y2="43" stroke-width="0.6" opacity="0.35"/><line x1="68" y1="33" x2="80" y2="50" stroke-width="0.55" opacity="0.3"/></g></svg>`,
+  // 2. single peak — grey granite
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 65"><g stroke="#303038" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M40,5 L8,62 L72,62 Z" fill="#b9bcc6" stroke-width="1.4"/><path d="M40,5 L30,22 C35,19 45,19 50,22 Z" fill="#eef0f8" stroke-width="0.9"/><line x1="44" y1="13" x2="53" y2="30" stroke-width="0.7" opacity="0.45"/><line x1="47" y1="20" x2="57" y2="37" stroke-width="0.65" opacity="0.4"/><line x1="50" y1="27" x2="62" y2="44" stroke-width="0.6" opacity="0.35"/></g></svg>`,
+  // 3. broad single peak — warm brown
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 65"><g stroke="#4a3a18" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M50,4 L5,62 L95,62 Z" fill="#dac69e" stroke-width="1.4"/><path d="M50,4 L39,21 C44,18 56,18 61,21 Z" fill="#f2ede2" stroke-width="1"/><line x1="54" y1="12" x2="64" y2="28" stroke-width="0.7" opacity="0.45"/><line x1="57" y1="19" x2="68" y2="36" stroke-width="0.65" opacity="0.4"/><line x1="60" y1="26" x2="72" y2="43" stroke-width="0.6" opacity="0.35"/><line x1="62" y1="33" x2="76" y2="50" stroke-width="0.55" opacity="0.3"/></g></svg>`,
   // 4. rounded volcanic hill — ochre
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 60"><g stroke="#403218" stroke-linecap="round" fill="none"><path d="M40,7 Q18,7 7,56 L73,56 Q62,7 40,7 Z" fill="#dacf9e" stroke-width="1.4" stroke-linejoin="round"/><path d="M23,30 Q40,20 57,30" stroke-width="0.85" opacity="0.35"/><path d="M15,44 Q40,30 65,44" stroke-width="0.75" opacity="0.28"/><path d="M10,54 Q40,40 70,54" stroke-width="0.65" opacity="0.22"/><path d="M36,9 Q40,7 44,9" stroke-width="0.8" opacity="0.35"/></g></svg>`,
   // 5. mesa / flat-top plateau — blue-grey
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 63"><g stroke="#303840" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8,61 L18,34 L30,21 L60,21 L72,34 L82,61 Z" fill="#b2bcc8" stroke-width="1.4"/><path d="M30,21 L45,15 L60,21" fill="#eef2fa" stroke-width="0.9"/><line x1="18" y1="38" x2="10" y2="59" stroke-width="0.75" opacity="0.4"/><line x1="22" y1="37" x2="14" y2="59" stroke-width="0.6" opacity="0.3"/><line x1="72" y1="38" x2="80" y2="59" stroke-width="0.75" opacity="0.4"/><line x1="68" y1="37" x2="76" y2="59" stroke-width="0.6" opacity="0.3"/><line x1="32" y1="23" x2="30" y2="59" stroke-width="0.5" opacity="0.25"/><line x1="58" y1="23" x2="60" y2="59" stroke-width="0.5" opacity="0.25"/></g></svg>`,
   // 6. steep narrow cliff — red sandstone
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 68"><g stroke="#5a2a10" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M35,3 L18,65 L52,65 Z" fill="#d7b28a" stroke-width="1.5"/><path d="M35,3 L26,18 C29,15 41,15 44,18 Z" fill="#f6f0e4" stroke-width="1"/><line x1="41" y1="11" x2="50" y2="30" stroke-width="0.8" opacity="0.45"/><line x1="44" y1="18" x2="54" y2="38" stroke-width="0.7" opacity="0.4"/><line x1="46" y1="25" x2="56" y2="46" stroke-width="0.65" opacity="0.35"/><line x1="47" y1="33" x2="57" y2="54" stroke-width="0.6" opacity="0.3"/></g></svg>`,
-  // 7. twin peaks — ivory
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 65"><g stroke="#3a2a10" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M30,5 L5,62 L55,62 Z" fill="#d2c49e" stroke-width="1.4"/><path d="M60,9 L38,62 L82,62 Z" fill="#c8ba92" stroke-width="1.2"/><path d="M30,5 L20,22 C25,19 35,19 39,22 Z" fill="#f2ede2" stroke-width="0.9"/><path d="M60,9 L52,24 C56,22 64,22 68,24 Z" fill="#f2ede2" stroke-width="0.9"/><path d="M39,22 Q48,30 52,24" stroke-width="0.8" fill="#f2ede2"/><line x1="34" y1="13" x2="44" y2="29" stroke-width="0.7" opacity="0.45"/><line x1="37" y1="20" x2="49" y2="37" stroke-width="0.65" opacity="0.38"/></g></svg>`,
+  // 7. single peak — ivory warm
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 65"><g stroke="#3a2a10" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M40,5 L8,62 L72,62 Z" fill="#d2c49e" stroke-width="1.4"/><path d="M40,5 L30,21 C35,18 45,18 50,21 Z" fill="#f2ede2" stroke-width="0.9"/><line x1="43" y1="13" x2="52" y2="28" stroke-width="0.7" opacity="0.45"/><line x1="46" y1="20" x2="56" y2="36" stroke-width="0.65" opacity="0.38"/><line x1="49" y1="27" x2="60" y2="43" stroke-width="0.6" opacity="0.32"/></g></svg>`,
   // 8. broad ridged mountain — olive-grey
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 62"><g stroke="#3a3818" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M55,6 L5,60 L105,60 Z" fill="#c3c6a5" stroke-width="1.4"/><path d="M55,6 L43,23 C49,20 61,20 67,23 Z" fill="#f0f0e4" stroke-width="1"/><path d="M16,42 Q55,30 94,42" stroke-width="0.85" opacity="0.3" fill="none"/><path d="M10,52 Q55,38 100,52" stroke-width="0.7" opacity="0.22" fill="none"/><line x1="59" y1="14" x2="70" y2="31" stroke-width="0.7" opacity="0.45"/><line x1="63" y1="21" x2="76" y2="39" stroke-width="0.65" opacity="0.38"/><line x1="67" y1="29" x2="80" y2="47" stroke-width="0.6" opacity="0.32"/></g></svg>`,
   // 9. narrow spire — dark basalt
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 58 72"><g stroke="#2a2010" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M29,2 L11,68 L47,68 Z" fill="#a29884" stroke-width="1.4"/><path d="M29,2 L23,15 C25,13 33,13 35,15 Z" fill="#f2ede2" stroke-width="0.9"/><line x1="32" y1="8" x2="40" y2="24" stroke-width="0.8" opacity="0.48"/><line x1="34" y1="16" x2="42" y2="33" stroke-width="0.72" opacity="0.42"/><line x1="36" y1="23" x2="44" y2="41" stroke-width="0.65" opacity="0.36"/><line x1="37" y1="31" x2="44" y2="49" stroke-width="0.6" opacity="0.3"/><line x1="38" y1="39" x2="44" y2="57" stroke-width="0.55" opacity="0.25"/></g></svg>`,
-  // 10. four-peak panoramic range — sandy
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 65"><g stroke="#3a2a10" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M12,18 L2,62 L24,62 Z" fill="#d4c8a2" stroke-width="0.9"/><path d="M38,6 L15,62 L61,62 Z" fill="#dac69e" stroke-width="1.3"/><path d="M82,9 L56,62 L108,62 Z" fill="#d4c39b" stroke-width="1.2"/><path d="M116,20 L104,62 L128,62 Z" fill="#d4c8a2" stroke-width="0.9"/><path d="M38,6 L29,21 C33,18 43,18 47,21 Z" fill="#f2ede2" stroke-width="0.9"/><path d="M82,9 L73,23 C77,21 87,21 91,23 Z" fill="#f2ede2" stroke-width="0.9"/><line x1="41" y1="14" x2="51" y2="30" stroke-width="0.7" opacity="0.45"/><line x1="44" y1="22" x2="55" y2="38" stroke-width="0.65" opacity="0.38"/><line x1="85" y1="17" x2="93" y2="31" stroke-width="0.65" opacity="0.42"/><line x1="87" y1="24" x2="96" y2="39" stroke-width="0.6" opacity="0.35"/></g></svg>`,
+  // 10. wide panoramic single peak — sandy
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 65"><g stroke="#3a2a10" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M55,5 L5,62 L105,62 Z" fill="#d4c8a2" stroke-width="1.4"/><path d="M55,5 L44,22 C49,19 61,19 66,22 Z" fill="#f2ede2" stroke-width="1"/><line x1="59" y1="13" x2="70" y2="30" stroke-width="0.7" opacity="0.45"/><line x1="62" y1="20" x2="74" y2="37" stroke-width="0.65" opacity="0.4"/><line x1="65" y1="27" x2="78" y2="44" stroke-width="0.6" opacity="0.35"/><line x1="68" y1="34" x2="82" y2="51" stroke-width="0.55" opacity="0.3"/></g></svg>`,
 ]
 
 const FOREST_SVGS = [
@@ -91,22 +92,45 @@ const FOREST_SVGS = [
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 72"><g stroke="#1e3812" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="30" y1="48" x2="30" y2="68" stroke-width="2.8"/><line x1="30" y1="62" x2="20" y2="70" stroke-width="1.6"/><line x1="30" y1="62" x2="40" y2="70" stroke-width="1.6"/><path d="M30,5 C12,5 5,17 5,27 C5,41 15,50 30,50 C45,50 55,41 55,27 C55,17 48,5 30,5 Z" fill="#415f20" stroke-width="1.4"/><line x1="30" y1="50" x2="30" y2="32" stroke-width="0.85" opacity="0.45"/><line x1="30" y1="39" x2="17" y2="28" stroke-width="0.8" opacity="0.4"/><line x1="30" y1="39" x2="43" y2="28" stroke-width="0.8" opacity="0.4"/><line x1="30" y1="31" x2="21" y2="20" stroke-width="0.7" opacity="0.35"/><line x1="30" y1="31" x2="39" y2="20" stroke-width="0.7" opacity="0.35"/></g></svg>`,
   // 2. pine / conifer — deep pine
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 75"><g stroke="#0e2818" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="30" y1="60" x2="30" y2="73" stroke-width="2.8"/><path d="M30,5 L12,36 L48,36 Z" fill="#1c4123" stroke-width="1.3"/><path d="M30,24 L10,52 L50,52 Z" fill="#1c4123" stroke-width="1.3"/><path d="M30,41 L14,63 L46,63 Z" fill="#1c4123" stroke-width="1.3"/></g></svg>`,
-  // 3. two trees — medium green
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 85 72"><g stroke="#1e3518" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="22" y1="44" x2="22" y2="65" stroke-width="2.2"/><path d="M22,9 C11,9 5,18 5,26 C5,37 12,45 22,45 C32,45 39,37 39,26 C39,18 33,9 22,9 Z" fill="#375520" stroke-width="1.2"/><line x1="22" y1="45" x2="22" y2="30" stroke-width="0.75" opacity="0.4"/><line x1="22" y1="37" x2="13" y2="27" stroke-width="0.7" opacity="0.35"/><line x1="22" y1="37" x2="31" y2="27" stroke-width="0.7" opacity="0.35"/><line x1="62" y1="49" x2="62" y2="70" stroke-width="2.8"/><path d="M62,5 C47,5 40,16 40,27 C40,41 49,51 62,51 C75,51 84,41 84,27 C84,16 77,5 62,5 Z" fill="#375520" stroke-width="1.4"/><line x1="62" y1="51" x2="62" y2="33" stroke-width="0.85" opacity="0.45"/><line x1="62" y1="40" x2="49" y2="29" stroke-width="0.8" opacity="0.4"/><line x1="62" y1="40" x2="75" y2="29" stroke-width="0.8" opacity="0.4"/><line x1="62" y1="32" x2="54" y2="22" stroke-width="0.7" opacity="0.35"/><line x1="62" y1="32" x2="70" y2="22" stroke-width="0.7" opacity="0.35"/></g></svg>`,
-  // 4. mixed cluster — deep forest
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 72"><g stroke="#1a3210" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="48" y1="52" x2="48" y2="64" stroke-width="2.2"/><path d="M48,8 L34,35 L62,35 Z" fill="#23441c" stroke-width="1.1"/><path d="M48,28 L32,54 L64,54 Z" fill="#23441c" stroke-width="1.1"/><line x1="18" y1="46" x2="18" y2="66" stroke-width="2.4"/><path d="M18,10 C7,10 1,20 1,28 C1,40 8,47 18,47 C28,47 35,40 35,28 C35,20 29,10 18,10 Z" fill="#2d4816" stroke-width="1.3"/><line x1="18" y1="47" x2="18" y2="31" stroke-width="0.8" opacity="0.4"/><line x1="18" y1="38" x2="9" y2="28" stroke-width="0.72" opacity="0.35"/><line x1="18" y1="38" x2="27" y2="28" stroke-width="0.72" opacity="0.35"/><line x1="76" y1="46" x2="76" y2="66" stroke-width="2.4"/><path d="M76,12 C65,12 59,21 59,29 C59,40 66,47 76,47 C86,47 93,40 93,29 C93,21 87,12 76,12 Z" fill="#2d4816" stroke-width="1.3"/><line x1="76" y1="47" x2="76" y2="31" stroke-width="0.8" opacity="0.4"/><line x1="76" y1="38" x2="67" y2="28" stroke-width="0.72" opacity="0.35"/><line x1="76" y1="38" x2="85" y2="28" stroke-width="0.72" opacity="0.35"/></g></svg>`,
-  // 5. row of 3 pines — dark pine
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72"><g stroke="#0c2015" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="16" y1="58" x2="16" y2="70" stroke-width="2.2"/><path d="M16,12 L5,36 L27,36 Z" fill="#193720" stroke-width="1.1"/><path d="M16,30 L5,50 L27,50 Z" fill="#193720" stroke-width="1.1"/><line x1="48" y1="54" x2="48" y2="70" stroke-width="2.6"/><path d="M48,7 L33,34 L63,34 Z" fill="#193720" stroke-width="1.3"/><path d="M48,26 L32,52 L64,52 Z" fill="#193720" stroke-width="1.3"/><path d="M48,43 L37,62 L59,62 Z" fill="#193720" stroke-width="1.2"/><line x1="80" y1="58" x2="80" y2="70" stroke-width="2.2"/><path d="M80,14 L69,37 L91,37 Z" fill="#193720" stroke-width="1.1"/><path d="M80,32 L69,54 L91,54 Z" fill="#193720" stroke-width="1.1"/></g></svg>`,
+  // 3. single deciduous — medium green
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 72"><g stroke="#1e3518" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="30" y1="46" x2="30" y2="68" stroke-width="3"/><line x1="30" y1="62" x2="18" y2="70" stroke-width="1.8"/><line x1="30" y1="62" x2="42" y2="70" stroke-width="1.8"/><path d="M30,5 C12,5 4,17 4,27 C4,42 14,48 30,48 C46,48 56,42 56,27 C56,17 48,5 30,5 Z" fill="#375520" stroke-width="1.4"/><line x1="30" y1="48" x2="30" y2="30" stroke-width="0.8" opacity="0.42"/><line x1="30" y1="38" x2="17" y2="26" stroke-width="0.75" opacity="0.37"/><line x1="30" y1="38" x2="43" y2="26" stroke-width="0.75" opacity="0.37"/></g></svg>`,
+  // 4. single wide deciduous — deep forest
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 72"><g stroke="#1a3210" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="32" y1="50" x2="32" y2="68" stroke-width="3.2"/><line x1="32" y1="62" x2="20" y2="70" stroke-width="2"/><line x1="32" y1="62" x2="44" y2="70" stroke-width="2"/><path d="M32,5 C10,5 3,18 3,30 C3,46 14,52 32,52 C50,52 61,46 61,30 C61,18 54,5 32,5 Z" fill="#23441c" stroke-width="1.4"/><line x1="32" y1="52" x2="32" y2="30" stroke-width="0.85" opacity="0.42"/><line x1="32" y1="40" x2="17" y2="26" stroke-width="0.8" opacity="0.37"/><line x1="32" y1="40" x2="47" y2="26" stroke-width="0.8" opacity="0.37"/></g></svg>`,
+  // 5. single tall pine — dark pine
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 76"><g stroke="#0c2015" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="30" y1="60" x2="30" y2="74" stroke-width="2.8"/><path d="M30,5 L13,34 L47,34 Z" fill="#193720" stroke-width="1.3"/><path d="M30,22 L11,50 L49,50 Z" fill="#193720" stroke-width="1.3"/><path d="M30,39 L16,62 L44,62 Z" fill="#193720" stroke-width="1.2"/></g></svg>`,
   // 6. ancient oak wide canopy — rich green
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 86 72"><g stroke="#182e0e" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="43" y1="44" x2="43" y2="68" stroke-width="4"/><line x1="43" y1="60" x2="25" y2="70" stroke-width="2.2"/><line x1="43" y1="60" x2="61" y2="70" stroke-width="2.2"/><path d="M43,5 C18,5 6,18 6,30 C6,46 22,52 43,52 C64,52 80,46 80,30 C80,18 68,5 43,5 Z" fill="#304e19" stroke-width="1.6"/><line x1="43" y1="52" x2="43" y2="28" stroke-width="0.9" opacity="0.45"/><line x1="43" y1="37" x2="24" y2="22" stroke-width="0.85" opacity="0.4"/><line x1="43" y1="37" x2="62" y2="22" stroke-width="0.85" opacity="0.4"/><line x1="43" y1="26" x2="30" y2="14" stroke-width="0.7" opacity="0.33"/><line x1="43" y1="26" x2="56" y2="14" stroke-width="0.7" opacity="0.33"/><line x1="24" y1="22" x2="14" y2="14" stroke-width="0.65" opacity="0.28"/><line x1="62" y1="22" x2="72" y2="14" stroke-width="0.65" opacity="0.28"/></g></svg>`,
-  // 7. three deciduous varying heights — medium
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72"><g stroke="#1e3812" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="18" y1="50" x2="18" y2="70" stroke-width="2"/><path d="M18,13 C8,13 2,22 2,30 C2,42 9,51 18,51 C27,51 34,42 34,30 C34,22 28,13 18,13 Z" fill="#3a5a1e" stroke-width="1.2"/><line x1="18" y1="51" x2="18" y2="34" stroke-width="0.75" opacity="0.4"/><line x1="18" y1="41" x2="9" y2="31" stroke-width="0.7" opacity="0.35"/><line x1="18" y1="41" x2="27" y2="31" stroke-width="0.7" opacity="0.35"/><line x1="48" y1="44" x2="48" y2="68" stroke-width="2.8"/><path d="M48,5 C30,5 22,17 22,27 C22,41 32,51 48,51 C64,51 74,41 74,27 C74,17 66,5 48,5 Z" fill="#3a5a1e" stroke-width="1.4"/><line x1="48" y1="51" x2="48" y2="30" stroke-width="0.85" opacity="0.43"/><line x1="48" y1="39" x2="34" y2="26" stroke-width="0.8" opacity="0.38"/><line x1="48" y1="39" x2="62" y2="26" stroke-width="0.8" opacity="0.38"/><line x1="48" y1="28" x2="38" y2="17" stroke-width="0.7" opacity="0.33"/><line x1="48" y1="28" x2="58" y2="17" stroke-width="0.7" opacity="0.33"/><line x1="78" y1="52" x2="78" y2="70" stroke-width="2.2"/><path d="M78,18 C68,18 62,27 62,34 C62,45 69,53 78,53 C87,53 94,45 94,34 C94,27 88,18 78,18 Z" fill="#3a5a1e" stroke-width="1.2"/><line x1="78" y1="53" x2="78" y2="38" stroke-width="0.75" opacity="0.4"/><line x1="78" y1="44" x2="69" y2="35" stroke-width="0.7" opacity="0.35"/><line x1="78" y1="44" x2="87" y2="35" stroke-width="0.7" opacity="0.35"/></g></svg>`,
+  // 7. single deciduous — golden autumn yellow
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 72"><g stroke="#4a3a0e" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="30" y1="48" x2="30" y2="68" stroke-width="2.8"/><line x1="30" y1="62" x2="19" y2="70" stroke-width="1.6"/><line x1="30" y1="62" x2="41" y2="70" stroke-width="1.6"/><path d="M30,6 C13,6 5,18 5,28 C5,42 15,50 30,50 C45,50 55,42 55,28 C55,18 47,6 30,6 Z" fill="#8a7a1e" stroke-width="1.4"/><line x1="30" y1="50" x2="30" y2="32" stroke-width="0.8" opacity="0.4"/><line x1="30" y1="40" x2="18" y2="29" stroke-width="0.75" opacity="0.35"/><line x1="30" y1="40" x2="42" y2="29" stroke-width="0.75" opacity="0.35"/></g></svg>`,
   // 8. weeping tree — sage green
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 75"><g stroke="#1a2e15" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="35" y1="30" x2="35" y2="70" stroke-width="3"/><line x1="35" y1="60" x2="20" y2="72" stroke-width="1.8"/><line x1="35" y1="60" x2="50" y2="72" stroke-width="1.8"/><path d="M35,5 C20,5 14,16 14,24 C14,32 20,36 35,36 C50,36 56,32 56,24 C56,16 50,5 35,5 Z" fill="#344e26" stroke-width="1.3"/><path d="M14,24 C10,30 8,40 13,50" stroke-width="0.9" opacity="0.35"/><path d="M56,24 C60,30 62,40 57,50" stroke-width="0.9" opacity="0.35"/><path d="M24,36 C18,44 17,54 22,62" stroke-width="0.8" opacity="0.3"/><path d="M46,36 C52,44 53,54 48,62" stroke-width="0.8" opacity="0.3"/><path d="M35,36 C33,46 32,57 35,66" stroke-width="0.75" opacity="0.28"/></g></svg>`,
-  // 9. sapling cluster — spring green
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 85 65"><g stroke="#2a4818" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="12" y1="44" x2="12" y2="60" stroke-width="1.6"/><path d="M12,18 C6,18 2,25 2,30 C2,38 6,44 12,44 C18,44 22,38 22,30 C22,25 18,18 12,18 Z" fill="#486928" stroke-width="1"/><line x1="32" y1="38" x2="32" y2="58" stroke-width="1.8"/><path d="M32,10 C24,10 18,19 18,26 C18,35 24,39 32,39 C40,39 46,35 46,26 C46,19 40,10 32,10 Z" fill="#486928" stroke-width="1.1"/><line x1="32" y1="39" x2="32" y2="25" stroke-width="0.7" opacity="0.38"/><line x1="55" y1="42" x2="55" y2="60" stroke-width="1.6"/><path d="M55,16 C47,16 42,24 42,30 C42,38 47,43 55,43 C63,43 68,38 68,30 C68,24 63,16 55,16 Z" fill="#486928" stroke-width="1"/><line x1="73" y1="50" x2="73" y2="62" stroke-width="1.4"/><path d="M73,30 C67,30 63,36 63,41 C63,48 67,51 73,51 C79,51 83,48 83,41 C83,36 79,30 73,30 Z" fill="#3e5c22" stroke-width="0.9"/></g></svg>`,
+  // 9. single sapling — spring green
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 68"><g stroke="#2a4818" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="25" y1="42" x2="25" y2="62" stroke-width="1.8"/><line x1="25" y1="56" x2="15" y2="65" stroke-width="1.2"/><line x1="25" y1="56" x2="35" y2="65" stroke-width="1.2"/><path d="M25,8 C14,8 8,18 8,25 C8,35 15,43 25,43 C35,43 42,35 42,25 C42,18 36,8 25,8 Z" fill="#486928" stroke-width="1.1"/><line x1="25" y1="43" x2="25" y2="27" stroke-width="0.72" opacity="0.38"/></g></svg>`,
   // 10. dense bush / thicket — dark
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 60"><g stroke="#152210" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M14,55 C4,55 1,46 5,40 C2,34 6,28 13,28 C13,20 19,15 26,18 C29,10 39,10 41,18 C47,12 57,15 57,24 C63,20 70,25 70,32 C76,30 83,36 80,44 C84,51 78,57 71,55 Z" fill="#263e16" stroke-width="1.4"/><path d="M9,42 C8,36 12,32 16,34" stroke-width="0.8" opacity="0.35"/><path d="M25,20 C27,15 33,15 35,20" stroke-width="0.8" opacity="0.32"/><path d="M51,16 C55,13 61,15 60,21" stroke-width="0.8" opacity="0.32"/><path d="M66,27 C70,23 76,26 74,31" stroke-width="0.8" opacity="0.32"/><path d="M28,55 Q42,46 57,55" stroke-width="0.7" opacity="0.25"/></g></svg>`,
+]
+
+const BUSH_SVGS = [
+  // 1. three-lobe round shrub — dark green
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 44"><g stroke="#152a0e" fill="none"><ellipse cx="20" cy="28" rx="19" ry="14" fill="#2a4415"/><ellipse cx="52" cy="28" rx="19" ry="14" fill="#2a4415"/><ellipse cx="36" cy="20" rx="21" ry="16" fill="#344e18"/><path d="M8,36 Q36,30 64,36" stroke-width="0.7" opacity="0.28"/></g></svg>`,
+  // 2. wide flat shrub — medium green
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 82 40"><g stroke="#1a3210" fill="none"><path d="M6,36 C2,28 10,18 20,20 C18,12 28,7 36,11 C38,5 48,5 52,11 C60,7 70,14 68,22 C76,26 76,36 66,38 C54,42 28,42 14,38 C8,40 4,40 6,36 Z" fill="#375520" stroke-width="1.2"/><path d="M14,35 Q41,29 66,35" stroke-width="0.65" opacity="0.25"/></g></svg>`,
+  // 3. thorny compact shrub — grey-green
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 68 46"><g stroke="#2a3820" stroke-linecap="round" fill="none"><path d="M34,6 C22,6 12,12 9,20 C6,28 9,38 20,41 C26,44 42,44 48,41 C58,38 62,28 60,20 C57,12 46,6 34,6 Z" fill="#3c5028" stroke-width="1.2"/><line x1="34" y1="6" x2="30" y2="1"/><line x1="34" y1="6" x2="38" y2="1"/><line x1="34" y1="6" x2="25" y2="2"/><line x1="34" y1="6" x2="43" y2="2"/><line x1="9" y1="20" x2="4" y2="16"/><line x1="9" y1="20" x2="4" y2="22"/><line x1="60" y1="20" x2="65" y2="16"/><line x1="60" y1="20" x2="65" y2="22"/><path d="M11,30 Q34,24 58,30" stroke-width="0.7" opacity="0.28"/></g></svg>`,
+  // 4. berry bush — dark green + red berries
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 68 44"><g stroke="#152010" fill="none"><path d="M34,5 C16,5 5,14 5,24 C5,35 16,42 34,42 C52,42 63,35 63,24 C63,14 52,5 34,5 Z" fill="#2a441a" stroke-width="1.2"/><g fill="#c23020"><circle cx="20" cy="16" r="2.5"/><circle cx="34" cy="12" r="2.5"/><circle cx="48" cy="16" r="2.5"/><circle cx="16" cy="26" r="2.5"/><circle cx="30" cy="22" r="2.5"/><circle cx="46" cy="23" r="2.5"/><circle cx="58" cy="22" r="2.5"/></g><path d="M8,32 Q34,26 60,32" stroke-width="0.65" opacity="0.25"/></g></svg>`,
+  // 5. autumn bush — golden amber
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 44"><g stroke="#4a3010" fill="none"><ellipse cx="21" cy="26" rx="19" ry="14" fill="#8a6a18"/><ellipse cx="51" cy="26" rx="19" ry="14" fill="#8a6a18"/><ellipse cx="36" cy="18" rx="21" ry="15" fill="#a07820"/><path d="M9,35 Q36,27 63,35" stroke-width="0.7" opacity="0.28"/></g></svg>`,
+  // 6. desert scrub — dry brown-grey
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 46"><g stroke="#5a4828" stroke-linecap="round" fill="none"><line x1="35" y1="38" x2="35" y2="28" stroke-width="2.2"/><line x1="35" y1="36" x2="20" y2="44" stroke-width="1.5"/><line x1="35" y1="36" x2="50" y2="44" stroke-width="1.5"/><line x1="35" y1="32" x2="14" y2="22" stroke-width="1.5"/><line x1="35" y1="32" x2="56" y2="22" stroke-width="1.5"/><line x1="35" y1="28" x2="22" y2="12" stroke-width="1.2"/><line x1="35" y1="28" x2="48" y2="12" stroke-width="1.2"/><line x1="35" y1="28" x2="35" y2="10" stroke-width="1.2"/><line x1="14" y1="22" x2="6" y2="14" stroke-width="1" opacity="0.7"/><line x1="56" y1="22" x2="64" y2="14" stroke-width="1" opacity="0.7"/><ellipse cx="35" cy="9" rx="5" ry="4" fill="#9a8a68" stroke-width="0.8"/><ellipse cx="22" cy="11" rx="4" ry="3" fill="#9a8a68" stroke-width="0.8"/><ellipse cx="48" cy="11" rx="4" ry="3" fill="#9a8a68" stroke-width="0.8"/></g></svg>`,
+  // 7. flowering bush — spring green + white flowers
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 44"><g stroke="#1a3410" fill="none"><path d="M35,5 C18,5 7,14 7,24 C7,34 17,42 35,42 C53,42 63,34 63,24 C63,14 52,5 35,5 Z" fill="#3a6020" stroke-width="1.2"/><g fill="#f8f4e8" stroke="#e8e0b0" stroke-width="0.5"><circle cx="22" cy="14" r="3"/><circle cx="35" cy="10" r="3.5"/><circle cx="48" cy="14" r="3"/><circle cx="16" cy="24" r="2.8"/><circle cx="30" cy="20" r="3"/><circle cx="44" cy="20" r="3"/><circle cx="58" cy="24" r="2.8"/></g><path d="M10,34 Q35,26 60,34" stroke-width="0.65" opacity="0.25"/></g></svg>`,
+  // 8. dense low thicket — very dark green
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 38"><g stroke="#0e2010" fill="none"><path d="M7,34 C2,26 8,18 18,18 C16,12 24,7 32,10 C32,4 44,4 48,10 C56,6 66,12 64,20 C72,22 78,30 72,36 C60,40 24,40 12,36 C7,38 4,38 7,34 Z" fill="#1c3410" stroke-width="1.2"/><path d="M14,18 Q42,12 66,20" stroke-width="0.7" opacity="0.3"/><path d="M8,28 Q42,20 76,28" stroke-width="0.65" opacity="0.25"/></g></svg>`,
+  // 9. sage/silver shrub — grey-blue
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 68 44"><g stroke="#2a3840" fill="none"><ellipse cx="20" cy="26" rx="18" ry="14" fill="#5a7880"/><ellipse cx="48" cy="26" rx="18" ry="14" fill="#5a7880"/><ellipse cx="34" cy="18" rx="20" ry="15" fill="#6a8890"/><path d="M8,34 Q34,26 60,34" stroke-width="0.7" opacity="0.3"/></g></svg>`,
+  // 10. olive/mediterranean shrub — dark olive
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 44"><g stroke="#2a3418" fill="none"><path d="M35,6 C20,6 8,14 6,24 C5,32 14,40 28,42 C32,44 38,44 42,42 C56,40 65,32 64,24 C62,14 50,6 35,6 Z" fill="#4a5c28" stroke-width="1.2"/><g stroke="#6a7c38" stroke-width="0.7" fill="none" opacity="0.55"><ellipse cx="22" cy="20" rx="5" ry="3" transform="rotate(-20 22 20)"/><ellipse cx="35" cy="14" rx="5" ry="3" transform="rotate(10 35 14)"/><ellipse cx="48" cy="20" rx="5" ry="3" transform="rotate(25 48 20)"/><ellipse cx="18" cy="30" rx="5" ry="3" transform="rotate(-15 18 30)"/><ellipse cx="35" cy="28" rx="5" ry="3"/><ellipse cx="52" cy="30" rx="5" ry="3" transform="rotate(20 52 30)"/></g><path d="M10,36 Q35,28 60,36" stroke-width="0.65" opacity="0.25"/></g></svg>`,
 ]
 
 // ── Procedural SVG generators (25 extra variants each) ───────────────────────
@@ -123,7 +147,7 @@ function genMtnSVG(seed: number): string {
     ['#c3c6a5','#b4b796','#f0f0e4','#3a3818'],
   ]
   const [mF, bF, sF, stk] = MTN_PALS[Math.floor(rng() * MTN_PALS.length)]
-  const nP = 1 + Math.floor(rng() * 2.8)
+  const nP = 1
   const VW = 60 + Math.round(rng() * 70)
   const VH = 58 + Math.round(rng() * 14)
   const bY = VH - 2
@@ -164,9 +188,12 @@ function genForestSVG(seed: number): string {
     ['#263e16','#152210'],
     ['#344e26','#1a2e15'],
     ['#23441c','#102010'],
+    ['#8a7a1e','#4a3a0e'],
+    ['#a07820','#503808'],
+    ['#7a8018','#3a4010'],
   ]
   const [fill, stk] = FST_PALS[Math.floor(rng() * FST_PALS.length)]
-  const n = 1 + Math.floor(rng() * 3.5)
+  const n = 1
   const VW = 45 + n * 18 + Math.round(rng() * 18)
   const VH = 62 + Math.round(rng() * 14)
   const bY = VH - 2
@@ -201,8 +228,35 @@ function genForestSVG(seed: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VW} ${VH}"><g stroke="${stk}" stroke-linecap="round" stroke-linejoin="round" fill="none">${o}</g></svg>`
 }
 
+function genBushSVG(seed: number): string {
+  const rng = seededRng(seed * 4337 + 31)
+  const BUSH_PALS: [string,string][] = [
+    ['#2a4415','#152a0e'],['#375520','#1a3210'],['#3c5028','#1e2810'],
+    ['#344e18','#182a0c'],['#486928','#243410'],['#8a6a18','#4a3010'],
+    ['#3a6020','#1a3010'],['#4a5c28','#242e10'],['#5a7880','#2a3840'],
+    ['#263e16','#122010'],
+  ]
+  const [fill, stk] = BUSH_PALS[Math.floor(rng() * BUSH_PALS.length)]
+  const n = 2 + Math.floor(rng() * 3)
+  const VW = 55 + Math.round(rng() * 30)
+  const VH = 36 + Math.round(rng() * 12)
+  const bY = VH - 3
+  const slot = VW / n
+  let o = ''
+  for (let i = 0; i < n; i++) {
+    const cx = slot * (i + 0.2 + rng() * 0.6)
+    const rx = slot * (0.42 + rng() * 0.18)
+    const ry = (VH - 4) * (0.5 + rng() * 0.25)
+    const cy = bY - ry
+    o += `<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="${fill}"/>`
+  }
+  o += `<path d="M${(VW*.14).toFixed(1)},${(bY-3).toFixed(1)} Q${(VW*.5).toFixed(1)},${(bY-9).toFixed(1)} ${(VW*.86).toFixed(1)},${(bY-3).toFixed(1)}" stroke-width="0.7" opacity="0.25"/>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VW} ${VH}"><g stroke="${stk}" fill="none">${o}</g></svg>`
+}
+
 const ALL_MOUNTAIN_SVGS = [...MOUNTAIN_SVGS, ...Array.from({length:25},(_,i)=>genMtnSVG(i+1))]
 const ALL_FOREST_SVGS   = [...FOREST_SVGS,   ...Array.from({length:25},(_,i)=>genForestSVG(i+1))]
+const ALL_BUSH_SVGS     = [...BUSH_SVGS,     ...Array.from({length:10},(_,i)=>genBushSVG(i+1))]
 
 function makeCompassSVG(): string {
   const ticks = Array.from({length:32},(_,i)=>{
@@ -222,6 +276,7 @@ function makeCartoucheSVG(): string {
 function getIllusSVG(ill: IllustrationObj): string {
   if (ill.kind==='mountain') return ALL_MOUNTAIN_SVGS[ill.variant % ALL_MOUNTAIN_SVGS.length]
   if (ill.kind==='forest')   return ALL_FOREST_SVGS[ill.variant % ALL_FOREST_SVGS.length]
+  if (ill.kind==='bush')     return ALL_BUSH_SVGS[ill.variant % ALL_BUSH_SVGS.length]
   if (ill.kind==='compass')  return makeCompassSVG()
   return makeCartoucheSVG()
 }
@@ -346,7 +401,15 @@ function renderStrokesTo(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
     for (const r of rivers) {
       const c=RIVER_CFG[r.subtype as RiverSub],smooth=catmullRom(r.pts as [number,number][]),n=smooth.length
       ctx.strokeStyle=pass==='shadow'?c.shadow:pass==='color'?c.color:c.hl
-      for(let i=0;i<n-1;i++){const t=i/(n-1),w=r.width*(c.minW+(c.maxW-c.minW)*t);ctx.lineWidth=w*(pass==='shadow'?c.shadowR:pass==='color'?1:c.hlR);ctx.beginPath();ctx.moveTo(smooth[i][0],smooth[i][1]);ctx.lineTo(smooth[i+1][0],smooth[i+1][1]);ctx.stroke()}
+      const FADE_HEAD=0.10, FADE_TAIL=0.18
+      for(let i=0;i<n-1;i++){
+        const t=i/(n-1)
+        const fa=t<FADE_HEAD?t/FADE_HEAD:t>(1-FADE_TAIL)?(1-t)/FADE_TAIL:1
+        const w=r.width*(c.minW+(c.maxW-c.minW)*t)
+        ctx.globalAlpha=fa;ctx.lineWidth=w*(pass==='shadow'?c.shadowR:pass==='color'?1:c.hlR)
+        ctx.beginPath();ctx.moveTo(smooth[i][0],smooth[i][1]);ctx.lineTo(smooth[i+1][0],smooth[i+1][1]);ctx.stroke()
+      }
+      ctx.globalAlpha=1
     }
   }
   for (const pass of ['outer','inner','dash'] as const) {
@@ -360,6 +423,89 @@ function renderStrokesTo(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
     }
   }
   ctx.restore()
+}
+
+// ── Terrain boundary smoothing (12px Gaussian blend at terrain edges) ─────────
+
+function smoothTerrainBoundaries(ctx: CanvasRenderingContext2D, bounds?: {x:number;y:number;w:number;h:number}) {
+  const R = 12
+  const px0 = Math.max(0, bounds ? bounds.x - R : 0)
+  const py0 = Math.max(0, bounds ? bounds.y - R : 0)
+  const px1 = Math.min(W, bounds ? bounds.x + bounds.w + R : W)
+  const py1 = Math.min(H, bounds ? bounds.y + bounds.h + R : H)
+  const rw = px1 - px0, rh = py1 - py0
+  if (rw <= 0 || rh <= 0) return
+
+  const src = ctx.getImageData(px0, py0, rw, rh)
+  const sd = src.data
+
+  // Step 1: detect boundary pixels (any 4-neighbour differs by >30)
+  const boundary = new Uint8Array(rw * rh)
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      const i = (y*rw+x)*4, r0=sd[i], g0=sd[i+1], b0=sd[i+2]
+      for (const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+        const nx=x+dx, ny=y+dy
+        if (nx<0||nx>=rw||ny<0||ny>=rh) continue
+        const ni=(ny*rw+nx)*4
+        if (Math.abs(sd[ni]-r0)+Math.abs(sd[ni+1]-g0)+Math.abs(sd[ni+2]-b0)>30) { boundary[y*rw+x]=1; break }
+      }
+    }
+  }
+
+  // Step 2: Manhattan distance transform from boundary pixels
+  const dist = new Float32Array(rw*rh).fill(R+1)
+  for (let i=0;i<rw*rh;i++) if (boundary[i]) dist[i]=0
+  for (let y=0;y<rh;y++) for (let x=0;x<rw;x++) {
+    const i=y*rw+x
+    if (x>0 && dist[i-1]+1<dist[i]) dist[i]=dist[i-1]+1
+    if (y>0 && dist[i-rw]+1<dist[i]) dist[i]=dist[i-rw]+1
+  }
+  for (let y=rh-1;y>=0;y--) for (let x=rw-1;x>=0;x--) {
+    const i=y*rw+x
+    if (x<rw-1 && dist[i+1]+1<dist[i]) dist[i]=dist[i+1]+1
+    if (y<rh-1 && dist[i+rw]+1<dist[i]) dist[i]=dist[i+rw]+1
+  }
+
+  // Step 3: separable Gaussian blur — horizontal pass
+  const tmp = new Float32Array(rw*rh*3)
+  const sig2 = R*R*0.5
+  for (let y=0;y<rh;y++) {
+    for (let x=0;x<rw;x++) {
+      const idx=y*rw+x, i=idx*4
+      if (dist[idx]>R) { tmp[idx*3]=sd[i]; tmp[idx*3+1]=sd[i+1]; tmp[idx*3+2]=sd[i+2]; continue }
+      let rS=0,gS=0,bS=0,wS=0
+      for (let dx=-R;dx<=R;dx++) {
+        const nx=x+dx; if(nx<0||nx>=rw) continue
+        const w=Math.exp(-dx*dx/sig2), ni=(y*rw+nx)*4
+        rS+=sd[ni]*w; gS+=sd[ni+1]*w; bS+=sd[ni+2]*w; wS+=w
+      }
+      tmp[idx*3]=rS/wS; tmp[idx*3+1]=gS/wS; tmp[idx*3+2]=bS/wS
+    }
+  }
+
+  // Step 4: vertical pass + alpha-blend by distance
+  const out = new ImageData(rw, rh)
+  const od = out.data
+  for (let y=0;y<rh;y++) {
+    for (let x=0;x<rw;x++) {
+      const idx=y*rw+x, i=idx*4
+      od[i+3]=255
+      const d=dist[idx]
+      if (d>R) { od[i]=sd[i]; od[i+1]=sd[i+1]; od[i+2]=sd[i+2]; continue }
+      let rS=0,gS=0,bS=0,wS=0
+      for (let dy=-R;dy<=R;dy++) {
+        const ny=y+dy; if(ny<0||ny>=rh) continue
+        const w=Math.exp(-dy*dy/sig2), ti=(ny*rw+x)*3
+        rS+=tmp[ti]*w; gS+=tmp[ti+1]*w; bS+=tmp[ti+2]*w; wS+=w
+      }
+      const a=Math.max(0,1-d/R)
+      od[i]  =Math.round(sd[i]  *(1-a)+rS/wS*a)
+      od[i+1]=Math.round(sd[i+1]*(1-a)+gS/wS*a)
+      od[i+2]=Math.round(sd[i+2]*(1-a)+bS/wS*a)
+    }
+  }
+  ctx.putImageData(out, px0, py0)
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -393,8 +539,9 @@ export default function MapEditor() {
   const illusRef      = useRef<IllustrationObj[]>([])
   const strokesRef    = useRef<Stroke[]>([])
   const selRef        = useRef<string|null>(null)
-  const currentPtsRef = useRef<[number,number][]>([])
-  const illVariants   = useRef<Record<string,number>>({})
+  const currentPtsRef   = useRef<[number,number][]>([])
+  const illVariants     = useRef<Record<string,number>>({})
+  const strokeBoundsRef = useRef<{x0:number;y0:number;x1:number;y1:number}|null>(null)
 
   // stable refs for event handlers
   const toolRef       = useRef<ToolId>('brush')
@@ -588,6 +735,12 @@ export default function MapEditor() {
     const terrain=terrainRef.current,tmp=brushTmpRef.current,canvas=canvasRef.current
     if(!terrain||!tmp)return
     const r=brushSzRef.current/2
+    if (strokeBoundsRef.current) {
+      strokeBoundsRef.current.x0=Math.min(strokeBoundsRef.current.x0,x-r)
+      strokeBoundsRef.current.y0=Math.min(strokeBoundsRef.current.y0,y-r)
+      strokeBoundsRef.current.x1=Math.max(strokeBoundsRef.current.x1,x+r)
+      strokeBoundsRef.current.y1=Math.max(strokeBoundsRef.current.y1,y+r)
+    }
     const sx=Math.max(0,Math.floor(x-r-1)),sy=Math.max(0,Math.floor(y-r-1))
     const sw=Math.min(W-sx,Math.ceil(r*2+2)),sh=Math.min(H-sy,Math.ceil(r*2+2))
     const tmpCtx=tmp.getContext('2d')!
@@ -626,10 +779,13 @@ export default function MapEditor() {
       pushHistory()
       const tCtx=terrainRef.current?.getContext('2d');if(!tCtx)return
       floodFillTextured(tCtx,x,y,terrainIdRef.current,patternsRef)
+      smoothTerrainBoundaries(tCtx)
       rerender();doSave();return
     }
     if(tool==='brush'||tool==='erase'){
       pushHistory();drawingRef.current=true;lastRef.current={x,y}
+      const r=brushSzRef.current/2
+      strokeBoundsRef.current={x0:x-r,y0:y-r,x1:x+r,y1:y+r}
       paintFeatheredDot(x,y,tool==='erase'?'erase':terrainIdRef.current);return
     }
     if(tool==='road'||tool==='river'){
@@ -638,12 +794,12 @@ export default function MapEditor() {
     if(tool==='illustrate'){
       pushHistory()
       const kind=illusKindRef.current
-      const numVariants=kind==='mountain'?ALL_MOUNTAIN_SVGS.length:kind==='forest'?ALL_FOREST_SVGS.length:1
+      const numVariants=kind==='mountain'?ALL_MOUNTAIN_SVGS.length:kind==='forest'?ALL_FOREST_SVGS.length:kind==='bush'?ALL_BUSH_SVGS.length:1
       const v=(illVariants.current[kind]??0)%numVariants
       illVariants.current[kind]=(v+1)%numVariants
-      const baseAngle=kind==='forest'?(Math.random()<0.05?(Math.random()-0.5)*8:0):0
+      const baseAngle=(kind==='forest'||kind==='bush')?(Math.random()<0.05?(Math.random()-0.5)*8:0):0
       const sizeVar=(0.05+Math.random()*0.10)*(Math.random()<0.5?1:-1)
-      const sz=(kind==='mountain'||kind==='forest')?Math.round(illusSzRef.current*(1+sizeVar)):illusSzRef.current
+      const sz=(kind==='mountain'||kind==='forest'||kind==='bush')?Math.round(illusSzRef.current*(1+sizeVar)):illusSzRef.current
       const newIll:IllustrationObj={id:crypto.randomUUID(),kind,variant:v,x,y,size:sz,angle:baseAngle}
       const next=[...illusRef.current,newIll]
       setIllus(next);doSave(objsRef.current,labelsRef.current,strokesRef.current,next);return
@@ -695,7 +851,15 @@ export default function MapEditor() {
     if(objDragRef.current){objsRef.current=objects;objDragRef.current=null;doSave();return}
     if(!drawingRef.current)return
     drawingRef.current=false
-    if(tool==='brush'||tool==='erase'){lastRef.current=null;rerender();doSave();return}
+    if(tool==='brush'||tool==='erase'){
+      lastRef.current=null
+      if(strokeBoundsRef.current){
+        const b=strokeBoundsRef.current,terrain=terrainRef.current
+        if(terrain) smoothTerrainBoundaries(terrain.getContext('2d')!,{x:Math.floor(b.x0),y:Math.floor(b.y0),w:Math.ceil(b.x1-b.x0),h:Math.ceil(b.y1-b.y0)})
+        strokeBoundsRef.current=null
+      }
+      rerender();doSave();return
+    }
     if(tool==='road'||tool==='river'){
       const pts=currentPtsRef.current
       if(pts.length>=2){
