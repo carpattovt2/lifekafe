@@ -147,15 +147,24 @@ export default function WorldMap2({
   useEffect(() => {
     const el = mapContainerRef.current
     if (!el) return
-    const fit = () => {
-      const W = el.clientWidth, H = el.clientHeight
-      if (!W || !H) return
+    const W = el.clientWidth, H = el.clientHeight
+    if (!W || !H) return
+    const regionDistricts = DISTRICTS_2.filter(d => d.regionId === activeRegionId)
+    if (regionDistricts.length > 0) {
+      const allPoints = regionDistricts.flatMap(d => d.polygon)
+      const minX = Math.min(...allPoints.map(([x]) => x))
+      const maxX = Math.max(...allPoints.map(([x]) => x))
+      const minY = Math.min(...allPoints.map(([, y]) => y))
+      const maxY = Math.max(...allPoints.map(([, y]) => y))
+      const pad = 80
+      const s   = Math.min(W / (maxX - minX + pad * 2), H / (maxY - minY + pad * 2), 2.5)
+      const cx  = (minX + maxX) / 2
+      const cy  = (minY + maxY) / 2
+      applyT({ x: W / 2 - cx * s, y: H / 2 - cy * s, scale: s })
+    } else {
       const s = Math.min(W / MAP2_WIDTH, H / MAP2_HEIGHT)
       applyT({ x: (W - MAP2_WIDTH * s) / 2, y: (H - MAP2_HEIGHT * s) / 2, scale: s })
     }
-    fit()
-    window.addEventListener('resize', fit)
-    return () => window.removeEventListener('resize', fit)
   }, [])
 
   useEffect(() => {
