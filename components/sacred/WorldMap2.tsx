@@ -317,8 +317,12 @@ export default function WorldMap2({
           width: MAP2_WIDTH, height: MAP2_HEIGHT,
           transform: `translate(${mapTransform.x}px,${mapTransform.y}px) scale(${mapTransform.scale})`,
           transformOrigin: '0 0', willChange: 'transform',
-          background: '#2a1f14',
         }}>
+          <img
+            src="/sacred/world-map.jpg" alt=""
+            draggable={false}
+            style={{ position: 'absolute', top: 0, left: 0, width: MAP2_WIDTH, height: MAP2_HEIGHT, display: 'block', userSelect: 'none' }}
+          />
           {/* SVG map */}
           <svg
             width={MAP2_WIDTH} height={MAP2_HEIGHT}
