@@ -12,11 +12,21 @@ import ArmyBuilder from './ArmyBuilder'
 import PlacementScreen from './PlacementScreen'
 import FreeBattleSetup from './FreeBattleSetup'
 import WorldMap from './WorldMap'
+import WorldMap2 from './WorldMap2'
+import LevelUpScreen from './LevelUpScreen'
 import {
   TERRITORIES, createInitialTerritoryState, getTerritoryById, buildArmyFromSpecs,
   HIRE_COSTS, FORTRESS_UPGRADE_COST, SLOT_COSTS, getReviveCost,
 } from '@/lib/sacred/territories'
 import type { TerritoryMapState } from '@/lib/sacred/territories'
+import {
+  REGIONS_2, DISTRICTS_2,
+  createInitialTerritoryMap2State, getDistrictById, getRegionById,
+  buildArmyFromSpecs2, getDailyIncome, isRegionComplete, getUnlockedRegions,
+  HIRE_COSTS as HIRE_COSTS_2, FORTRESS_UPGRADE_COST as FORTRESS_UPGRADE_COST_2,
+  SLOT_COSTS as SLOT_COSTS_2, getReviveCost as getReviveCost2,
+} from '@/lib/sacred/territories2'
+import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
 
@@ -971,13 +981,15 @@ const ALL_PORTRAITS = [
   '/sacred/catapults/trebuchet/level3.jpg',
 ]
 
-function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, onMapEditor, hasCampaignSave }: {
+function Landing({ onFreeBattle, onQuickTest, onMapSelect, onContinueCampaign, onContinueCampaign2, onMapEditor, hasCampaignSave, hasCampaign2Save }: {
   onFreeBattle: () => void
   onQuickTest: () => void
-  onWorldMap: () => void
+  onMapSelect: () => void
   onContinueCampaign: () => void
+  onContinueCampaign2: () => void
   onMapEditor: () => void
   hasCampaignSave: boolean
+  hasCampaign2Save: boolean
 }) {
   const [heroSrc, setHeroSrc] = useState('/sacred/warriors/level4.jpg')
   const portraits = useMemo(() => {
@@ -1049,17 +1061,29 @@ function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, on
 
       {/* Buttons */}
       <div style={{ padding: '12px 20px 32px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
-        {hasCampaignSave ? (
+        {(hasCampaignSave || hasCampaign2Save) ? (
           <>
-            <button onClick={onContinueCampaign} style={{
-              padding: '15px 0', fontSize: 15, fontWeight: 700,
-              background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
-              color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
-              boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
-            }}>
-              ✦ Продовжити кампанію
-            </button>
-            <button onClick={onWorldMap} style={{
+            {hasCampaignSave && (
+              <button onClick={onContinueCampaign} style={{
+                padding: '13px 0', fontSize: 14, fontWeight: 700,
+                background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
+                color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(212,168,90,0.25)',
+              }}>
+                ✦ Продовжити — Стародавні землі
+              </button>
+            )}
+            {hasCampaign2Save && (
+              <button onClick={onContinueCampaign2} style={{
+                padding: '13px 0', fontSize: 14, fontWeight: 700,
+                background: 'linear-gradient(135deg, #2a5a4a, #1a3a2a)',
+                color: '#f0e8d8', border: '1px solid rgba(100,200,150,0.3)', borderRadius: 12, cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(100,200,150,0.2)',
+              }}>
+                ✦ Продовжити — Саларійські землі
+              </button>
+            )}
+            <button onClick={onMapSelect} style={{
               padding: '11px 0', fontSize: 13, fontWeight: 600,
               background: 'transparent', color: 'rgba(240,232,216,0.45)',
               border: '1px solid rgba(240,232,216,0.12)', borderRadius: 10, cursor: 'pointer',
@@ -1068,7 +1092,7 @@ function Landing({ onFreeBattle, onQuickTest, onWorldMap, onContinueCampaign, on
             </button>
           </>
         ) : (
-          <button onClick={onWorldMap} style={{
+          <button onClick={onMapSelect} style={{
             padding: '15px 0', fontSize: 15, fontWeight: 700,
             background: 'linear-gradient(135deg, #7a5a30, #4a3018)',
             color: '#f0e8d8', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, cursor: 'pointer',
@@ -1231,9 +1255,12 @@ function CatapultPathModal({ unit, onChoose }: { unit: GameUnit; onChoose: (path
 }
 
 
-const LS_CAMPAIGN_MAP   = 'sacred_campaign_map'
-const LS_CAMPAIGN_UNITS = 'sacred_campaign_units'
-const LS_CAMPAIGN_DEAD  = 'sacred_campaign_dead'
+const LS_CAMPAIGN_MAP    = 'sacred_campaign_map'
+const LS_CAMPAIGN_UNITS  = 'sacred_campaign_units'
+const LS_CAMPAIGN_DEAD   = 'sacred_campaign_dead'
+const LS_CAMPAIGN2_MAP   = 'sacred_campaign2_map'
+const LS_CAMPAIGN2_UNITS = 'sacred_campaign2_units'
+const LS_CAMPAIGN2_DEAD  = 'sacred_campaign2_dead'
 
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
@@ -1615,7 +1642,12 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
 
 
 // ── Root component ─────────────────────────────────────────────────────────────
-type RootScreen = 'landing' | 'army-builder' | 'placement' | 'battle' | 'free-battle' | 'world-map' | 'world-battle' | 'campaign-victory'
+type RootScreen =
+  | 'landing' | 'map-select'
+  | 'army-builder' | 'placement' | 'battle' | 'free-battle'
+  | 'world-map'  | 'world-battle'  | 'campaign-victory'
+  | 'world-map-2' | 'world-battle-2' | 'region-final-battle-2' | 'region-choice-2' | 'campaign-victory-2'
+  | 'level-up'
 
 export default function SacredGame() {
   const router = useRouter()
@@ -1628,14 +1660,25 @@ export default function SacredGame() {
   const [worldDeadUnits, setWorldDeadUnits] = useState<GameUnit[]>([])
   const [worldFightTerritoryId, setWorldFightTerritoryId] = useState<string | null>(null)
   const [worldBattleResult, setWorldBattleResult] = useState<WorldBattleResult | null>(null)
-  const [hasCampaignSave, setHasCampaignSave] = useState(false)
+  const [hasCampaignSave,  setHasCampaignSave]  = useState(false)
   const worldPreBattleUnits = useRef<GameUnit[] | null>(null)
+
+  // ── Map 2 state ──────────────────────────────────────────────────────────────
+  const [map2State,              setMap2State]              = useState<TerritoryMap2State>(createInitialTerritoryMap2State)
+  const [world2PlayerUnits,      setWorld2PlayerUnits]      = useState<GameUnit[] | null>(null)
+  const [world2DeadUnits,        setWorld2DeadUnits]        = useState<GameUnit[]>([])
+  const [world2FightDistrictId,  setWorld2FightDistrictId]  = useState<string | null>(null)
+  const [world2FightRegionId,    setWorld2FightRegionId]    = useState<string | null>(null)
+  const [world2BattleResult,     setWorld2BattleResult]     = useState<WorldBattleResult | null>(null)
+  const [hasCampaign2Save,       setHasCampaign2Save]       = useState(false)
+  const [levelUpUnits,           setLevelUpUnits]           = useState<GameUnit[]>([])
+  const [afterLevelUpScreen,     setAfterLevelUpScreen]     = useState<RootScreen>('world-map')
+  const world2PreBattleUnits = useRef<GameUnit[] | null>(null)
 
   useEffect(() => {
     try {
-      setHasCampaignSave(
-        !!localStorage.getItem(LS_CAMPAIGN_MAP) && !!localStorage.getItem(LS_CAMPAIGN_UNITS)
-      )
+      setHasCampaignSave(!!localStorage.getItem(LS_CAMPAIGN_MAP) && !!localStorage.getItem(LS_CAMPAIGN_UNITS))
+      setHasCampaign2Save(!!localStorage.getItem(LS_CAMPAIGN2_MAP) && !!localStorage.getItem(LS_CAMPAIGN2_UNITS))
     } catch {}
   }, [])
 
@@ -1649,6 +1692,16 @@ export default function SacredGame() {
     } catch {}
   }, [territoryState, worldPlayerUnits, worldDeadUnits])
 
+  useEffect(() => {
+    if (!world2PlayerUnits) return
+    try {
+      localStorage.setItem(LS_CAMPAIGN2_MAP,   JSON.stringify(map2State))
+      localStorage.setItem(LS_CAMPAIGN2_UNITS, JSON.stringify(world2PlayerUnits))
+      localStorage.setItem(LS_CAMPAIGN2_DEAD,  JSON.stringify(world2DeadUnits))
+      setHasCampaign2Save(true)
+    } catch {}
+  }, [map2State, world2PlayerUnits, world2DeadUnits])
+
   function clearCampaignSave() {
     try {
       localStorage.removeItem(LS_CAMPAIGN_MAP)
@@ -1656,6 +1709,15 @@ export default function SacredGame() {
       localStorage.removeItem(LS_CAMPAIGN_DEAD)
     } catch {}
     setHasCampaignSave(false)
+  }
+
+  function clearCampaign2Save() {
+    try {
+      localStorage.removeItem(LS_CAMPAIGN2_MAP)
+      localStorage.removeItem(LS_CAMPAIGN2_UNITS)
+      localStorage.removeItem(LS_CAMPAIGN2_DEAD)
+    } catch {}
+    setHasCampaign2Save(false)
   }
 
   function handleContinueCampaign() {
@@ -1701,6 +1763,225 @@ export default function SacredGame() {
     setWorldPlayerUnits([])
     setWorldDeadUnits([])
     setScreen('world-map')
+  }
+
+  function handleContinueCampaign2() {
+    try {
+      const mapData   = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_MAP)   ?? '')
+      const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_UNITS) ?? '')
+      const deadData  = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_DEAD)  ?? '[]')
+      setMap2State(mapData)
+      setWorld2PlayerUnits(unitsData)
+      setWorld2DeadUnits(Array.isArray(deadData) ? deadData : [])
+      setScreen('world-map-2')
+    } catch { handleWorldMap2() }
+  }
+
+  function handleWorldMap2() {
+    clearCampaign2Save()
+    setMap2State(createInitialTerritoryMap2State())
+    setWorld2PlayerUnits([])
+    setWorld2DeadUnits([])
+    setScreen('world-map-2')
+  }
+
+  // ── Map 2 handlers ────────────────────────────────────────────────────────────
+  function handleMap2Move(districtId: string) {
+    setMap2State(prev => ({ ...prev, armyNodeId: districtId, ap: prev.ap - 1 }))
+  }
+
+  function handleMap2Attack(districtId: string) {
+    world2PreBattleUnits.current = world2PlayerUnits
+    setWorld2FightDistrictId(districtId)
+    setMap2State(prev => ({ ...prev, ap: prev.ap - 1 }))
+    setScreen('world-battle-2')
+  }
+
+  function handleMap2FinalBattle(regionId: string) {
+    world2PreBattleUnits.current = world2PlayerUnits
+    setWorld2FightRegionId(regionId)
+    setScreen('region-final-battle-2')
+  }
+
+  function handleMap2DistrictBattleEnd(units: GameUnit[], won: boolean) {
+    const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+    setWorld2PlayerUnits(survived)
+    setWorld2DeadUnits(prev => [...prev, ...fallen])
+
+    const district    = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
+    const levelUps: GameUnit[] = []
+    if (won && world2PreBattleUnits.current) {
+      for (const u of survived) {
+        const prev = world2PreBattleUnits.current.find(p => p.id === u.id)
+        if (prev && (u.level ?? 1) > (prev.level ?? 1)) levelUps.push(u)
+      }
+    }
+
+    const fightId = world2FightDistrictId
+    if (won && fightId) {
+      setMap2State(prev => {
+        const newOwnership = { ...prev.ownership, [fightId]: 'player' as const }
+        const regionId = district?.regionId ?? ''
+        const regionNowComplete = regionId && isRegionComplete(regionId, newOwnership)
+        return {
+          ...prev,
+          ownership:          newOwnership,
+          armyNodeId:         fightId,
+          pendingFinalBattle: regionNowComplete ? regionId : prev.pendingFinalBattle,
+        }
+      })
+    }
+
+    world2PreBattleUnits.current = null
+    setWorld2FightDistrictId(null)
+
+    if (levelUps.length > 0) {
+      setLevelUpUnits(levelUps)
+      setAfterLevelUpScreen('world-map-2')
+      setScreen('level-up')
+    } else {
+      if (won) setWorld2BattleResult({ gold: 0, levelUps: [] })
+      setScreen('world-map-2')
+    }
+  }
+
+  function handleMap2FinalBattleEnd(units: GameUnit[], won: boolean) {
+    const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+    setWorld2PlayerUnits(survived)
+    setWorld2DeadUnits(prev => [...prev, ...fallen])
+
+    const regionId = world2FightRegionId
+    const levelUps: GameUnit[] = []
+    if (won && world2PreBattleUnits.current) {
+      for (const u of survived) {
+        const prev = world2PreBattleUnits.current.find(p => p.id === u.id)
+        if (prev && (u.level ?? 1) > (prev.level ?? 1)) levelUps.push(u)
+      }
+    }
+
+    world2PreBattleUnits.current = null
+    setWorld2FightRegionId(null)
+
+    if (won && regionId) {
+      const region = getRegionById(regionId)
+      if (region?.isBoss) {
+        // Final boss beaten → victory
+        if (levelUps.length > 0) {
+          setLevelUpUnits(levelUps)
+          setAfterLevelUpScreen('campaign-victory-2')
+          setScreen('level-up')
+        } else {
+          setScreen('campaign-victory-2')
+        }
+        return
+      }
+      setMap2State(prev => ({
+        ...prev,
+        conqueredRegions:   [...prev.conqueredRegions, regionId],
+        pendingFinalBattle: null,
+        gold:               prev.gold + 5,
+      }))
+      if (levelUps.length > 0) {
+        setLevelUpUnits(levelUps)
+        setAfterLevelUpScreen('region-choice-2')
+        setScreen('level-up')
+      } else {
+        setScreen('region-choice-2')
+      }
+    } else {
+      setScreen('world-map-2')
+    }
+  }
+
+  function handleMap2RegionChoice(regionId: string) {
+    setMap2State(prev => ({ ...prev, activeRegionId: regionId }))
+    setScreen('world-map-2')
+  }
+
+  function handleMap2EndTurn() {
+    const income = getDailyIncome(map2State.ownership)
+    setMap2State(prev => ({
+      ...prev,
+      turn:           prev.turn + 1,
+      ap:             2,
+      restedThisTurn: false,
+      gold:           prev.gold + income,
+    }))
+  }
+
+  function handleMap2Rest() {
+    const atStart = map2State.armyNodeId === 'terr_221'
+    if (!atStart && map2State.gold < 1) return
+    setWorld2PlayerUnits(prev => prev?.map(u => ({ ...u, hp: u.maxHp })) ?? prev)
+    setMap2State(prev => ({ ...prev, gold: atStart ? prev.gold : prev.gold - 1, restedThisTurn: true }))
+  }
+
+  function handleMap2HireUnit(unitClass: UnitClass, row: number, slot: number) {
+    if (!world2PlayerUnits) return
+    const cost = HIRE_COSTS_2[unitClass]
+    if (map2State.gold < cost) return
+    setWorld2PlayerUnits(addUnitAtSlot(world2PlayerUnits, unitClass, row, slot))
+    setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
+  }
+
+  function handleMap2ReorderUnits(id1: string, id2: string) {
+    setWorld2PlayerUnits(prev => {
+      if (!prev) return prev
+      const u1 = prev.find(u => u.id === id1)
+      const u2 = prev.find(u => u.id === id2)
+      if (!u1 || !u2) return prev
+      return prev.map(u => {
+        if (u.id === id1) return { ...u, row: u2.row, slot: u2.slot }
+        if (u.id === id2) return { ...u, row: u1.row, slot: u1.slot }
+        return u
+      })
+    })
+  }
+
+  function handleMap2MoveUnitSlot(id: string, row: number, slot: number) {
+    setWorld2PlayerUnits(prev => {
+      if (!prev) return prev
+      return prev.map(u => u.id === id ? { ...u, row: row as Row, slot } : u)
+    })
+  }
+
+  function handleMap2UpgradeFortress() {
+    const { fortressLevel, gold } = map2State
+    if (fortressLevel >= 5) return
+    const cost = FORTRESS_UPGRADE_COST_2[fortressLevel + 1]
+    if (gold < cost) return
+    setMap2State(prev => ({ ...prev, gold: prev.gold - cost, fortressLevel: (prev.fortressLevel + 1) as 1|2|3|4|5 }))
+  }
+
+  function handleMap2PurchaseSlot() {
+    const { maxArmySlots, gold } = map2State
+    if (maxArmySlots >= 8) return
+    const cost = SLOT_COSTS_2[maxArmySlots]
+    if (!cost || gold < cost) return
+    setMap2State(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
+  }
+
+  function handleMap2ReviveUnit(id: string) {
+    const unit = world2DeadUnits.find(u => u.id === id)
+    if (!unit) return
+    const cost = getReviveCost2(unit)
+    if (map2State.gold < cost) return
+    setWorld2DeadUnits(prev => prev.filter(u => u.id !== id))
+    setWorld2PlayerUnits(prev => prev ? [...prev, { ...unit, hp: Math.round(unit.maxHp * 0.5) }] : [{ ...unit, hp: Math.round(unit.maxHp * 0.5) }])
+    setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
+  }
+
+  // Trigger level-up screen for map 1 battles too
+  function maybeShowLevelUp(levelUpUnitsArr: GameUnit[], nextScreen: RootScreen, callback: () => void) {
+    if (levelUpUnitsArr.length > 0) {
+      setLevelUpUnits(levelUpUnitsArr)
+      setAfterLevelUpScreen(nextScreen)
+      setScreen('level-up')
+    } else {
+      callback()
+    }
   }
 
   function handleTerritoryMove(territoryId: string) {
@@ -1752,10 +2033,14 @@ export default function SacredGame() {
     worldPreBattleUnits.current = null
     setWorldFightTerritoryId(null)
 
-    if (won && fightId === 'bebe') {
-      setScreen('campaign-victory')
+    const nextScreen: RootScreen = (won && fightId === 'bebe') ? 'campaign-victory' : 'world-map'
+    const levelUpObjs = survived.filter(u => levelUps.includes(u.name))
+    if (levelUpObjs.length > 0) {
+      setLevelUpUnits(levelUpObjs)
+      setAfterLevelUpScreen(nextScreen)
+      setScreen('level-up')
     } else {
-      setScreen('world-map')
+      setScreen(nextScreen)
     }
   }
 
@@ -1854,12 +2139,93 @@ export default function SacredGame() {
     <Landing
       onFreeBattle={handleFreeBattle}
       onQuickTest={handleQuickTest}
-      onWorldMap={handleWorldMap}
+      onMapSelect={() => setScreen('map-select')}
       onContinueCampaign={handleContinueCampaign}
+      onContinueCampaign2={handleContinueCampaign2}
       onMapEditor={() => router.push('/sacred/map-editor')}
       hasCampaignSave={hasCampaignSave}
+      hasCampaign2Save={hasCampaign2Save}
     />
   )
+
+  if (screen === 'map-select') return (
+    <div style={{
+      position: 'fixed', inset: 0, background: '#0f0e09', zIndex: 100,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '24px 20px', fontFamily: "'Inter', sans-serif",
+    }}>
+      <button onClick={() => setScreen('landing')} style={{ position: 'absolute', top: 20, left: 20, background: 'none', border: 'none', color: 'rgba(240,232,216,0.4)', fontSize: 22, cursor: 'pointer' }}>←</button>
+      <div style={{ fontSize: 22, fontWeight: 800, color: '#d4a85a', marginBottom: 8 }}>Оберіть кампанію</div>
+      <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.4)', marginBottom: 40 }}>Кожна кампанія має окреме збереження</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', maxWidth: 340 }}>
+        <button onClick={handleWorldMap} style={{
+          padding: '20px 24px', borderRadius: 16, textAlign: 'left',
+          background: 'linear-gradient(135deg, rgba(122,90,48,0.25), rgba(74,48,24,0.15))',
+          border: '1px solid rgba(212,168,90,0.35)', cursor: 'pointer', color: '#f0e8d8',
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Стародавні землі</div>
+          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>Оригінальна кампанія · 9 територій</div>
+        </button>
+        <button onClick={handleWorldMap2} style={{
+          padding: '20px 24px', borderRadius: 16, textAlign: 'left',
+          background: 'linear-gradient(135deg, rgba(42,90,74,0.25), rgba(26,58,42,0.15))',
+          border: '1px solid rgba(100,200,150,0.3)', cursor: 'pointer', color: '#f0e8d8',
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Саларійські землі</div>
+          <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.45)' }}>Нова кампанія · 31 район · 7 областей</div>
+        </button>
+      </div>
+    </div>
+  )
+
+  if (screen === 'level-up') return (
+    <LevelUpScreen
+      units={levelUpUnits}
+      onDone={() => setScreen(afterLevelUpScreen)}
+    />
+  )
+
+  if (screen === 'region-choice-2') {
+    const conquered = map2State.conqueredRegions
+    const activeId  = map2State.activeRegionId
+    const currentRegion = getRegionById(activeId)
+    const unlocked  = getUnlockedRegions(conquered)
+    const choices   = REGIONS_2.filter(r =>
+      !conquered.includes(r.id) &&
+      r.id !== activeId &&
+      unlocked.has(r.id) &&
+      (currentRegion?.adjacentRegions ?? []).includes(r.id)
+    )
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(10,9,6,0.97)', zIndex: 100,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '24px 20px', fontFamily: "'Inter', sans-serif",
+      }}>
+        <div style={{ fontSize: 11, letterSpacing: 3, color: '#d4a85a', textTransform: 'uppercase', marginBottom: 12, opacity: 0.7 }}>Область завойована!</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#f0e8d8', marginBottom: 8 }}>{currentRegion?.name}</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 40 }}>+5 💰 · Оберіть наступну область:</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320 }}>
+          {choices.map(r => (
+            <button key={r.id} onClick={() => handleMap2RegionChoice(r.id)}
+              style={{
+                padding: '18px 20px', borderRadius: 14, textAlign: 'left',
+                background: r.isBoss ? 'rgba(139,32,32,0.15)' : 'rgba(212,168,90,0.07)',
+                border: `1px solid ${r.isBoss ? 'rgba(139,32,32,0.4)' : 'rgba(212,168,90,0.3)'}`,
+                color: '#f0e8d8', fontSize: 16, fontWeight: 600, cursor: 'pointer',
+              }}>
+              {r.name}
+              {r.isBoss && <span style={{ fontSize: 11, color: '#cc4444', marginLeft: 10 }}>☠ Фінальна битва</span>}
+            </button>
+          ))}
+          {choices.length === 0 && (
+            <div style={{ color: 'rgba(240,232,216,0.4)', textAlign: 'center' }}>Немає доступних областей</div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (screen === 'world-map') return (
     <WorldMap
       mapState={territoryState}
@@ -1953,6 +2319,92 @@ export default function SacredGame() {
         >
           ← До меню
         </button>
+      </div>
+    )
+  }
+
+  if (screen === 'world-map-2') return (
+    <WorldMap2
+      mapState={map2State}
+      playerUnits={world2PlayerUnits ?? []}
+      deadUnits={world2DeadUnits}
+      battleResult={world2BattleResult}
+      onClearBattleResult={() => setWorld2BattleResult(null)}
+      onMove={handleMap2Move}
+      onAttack={handleMap2Attack}
+      onFinalBattle={handleMap2FinalBattle}
+      onEndTurn={handleMap2EndTurn}
+      onRest={handleMap2Rest}
+      onBack={() => setScreen('landing')}
+      onHireUnit={handleMap2HireUnit}
+      onReorderUnits={handleMap2ReorderUnits}
+      onMoveUnitSlot={handleMap2MoveUnitSlot}
+      onUpgradeFortress={handleMap2UpgradeFortress}
+      onPurchaseSlot={handleMap2PurchaseSlot}
+      onReviveUnit={handleMap2ReviveUnit}
+    />
+  )
+
+  if (screen === 'world-battle-2') {
+    const district = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
+    if (district && world2PlayerUnits) return (
+      <Battle
+        counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
+        playerUnits={world2PlayerUnits}
+        prebuiltAiUnits={buildArmyFromSpecs2(district.army, 'ai')}
+        fortressLevelCap={map2State.fortressLevel}
+        onRestart={() => handleMap2DistrictBattleEnd(world2PlayerUnits, false)}
+        onBattleEnd={handleMap2DistrictBattleEnd}
+      />
+    )
+    return null
+  }
+
+  if (screen === 'region-final-battle-2') {
+    const region = world2FightRegionId ? getRegionById(world2FightRegionId) : null
+    if (region && world2PlayerUnits) return (
+      <Battle
+        counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
+        playerUnits={world2PlayerUnits}
+        prebuiltAiUnits={buildArmyFromSpecs2(region.finalBattleArmy, 'ai')}
+        fortressLevelCap={map2State.fortressLevel}
+        onRestart={() => handleMap2FinalBattleEnd(world2PlayerUnits, false)}
+        onBattleEnd={handleMap2FinalBattleEnd}
+      />
+    )
+    return null
+  }
+
+  if (screen === 'campaign-victory-2') {
+    const ownedCount = Object.values(map2State.ownership).filter(o => o === 'player').length
+    const alive      = (world2PlayerUnits ?? []).length
+    return (
+      <div style={{
+        maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+        color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '32px 24px', textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 52, marginBottom: 12 }}>🏆</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: '#d4a85a', marginBottom: 6 }}>Саларійські землі звільнено!</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 32 }}>Болсовер впав. Континент вільний.</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%', maxWidth: 320, marginBottom: 32 }}>
+          {[
+            ['Ходів витрачено', map2State.turn],
+            ['Золото зібрано', `${map2State.gold} 💰`],
+            ['Районів захоплено', `${ownedCount}/31`],
+            ['Юнітів вижило', alive],
+          ].map(([label, value]) => (
+            <div key={label as string} style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(212,168,90,0.08)', border: '1px solid rgba(212,168,90,0.2)' }}>
+              <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => { clearCampaign2Save(); setMap2State(createInitialTerritoryMap2State()); setWorld2PlayerUnits(null); setScreen('landing') }}
+          style={{ padding: '14px 36px', background: '#d4a85a', color: '#0f0e09', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+        >← До меню</button>
       </div>
     )
   }
