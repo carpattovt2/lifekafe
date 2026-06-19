@@ -273,20 +273,6 @@ export default function WorldMap2({
     setHirePopup({ row, slot })
   }
 
-  // ── District fill color ──────────────────────────────────────────────────────
-  function districtFill(d: typeof DISTRICTS_2[0]): string {
-    if (ownership[d.id] === 'player') {
-      if (d.id === armyNodeId) return '#d4a85a'
-      return '#2d5a2d'
-    }
-    if (attackable.has(d.id)) return '#8b2020'
-    const regionColor = REGION_COLORS[d.regionId] ?? '#3a3028'
-    // Darken if not in active region
-    if (d.regionId !== activeRegionId && !conqueredRegions.includes(d.regionId)) {
-      return 'rgba(20,15,10,0.6)'
-    }
-    return regionColor
-  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: '#0f0e09' }}>
@@ -319,7 +305,7 @@ export default function WorldMap2({
           transformOrigin: '0 0', willChange: 'transform',
         }}>
           <img
-            src="/sacred/world-map.jpg" alt=""
+            src="/sacred/map2.png" alt=""
             draggable={false}
             style={{ position: 'absolute', top: 0, left: 0, width: MAP2_WIDTH, height: MAP2_HEIGHT, display: 'block', userSelect: 'none' }}
           />
@@ -338,7 +324,7 @@ export default function WorldMap2({
 
             {/* Territories */}
             {DISTRICTS_2.map(d => {
-              const pts = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+              const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isPlayer   = ownership[d.id] === 'player'
               const isArmy     = d.id === armyNodeId
               const isAttack   = attackable.has(d.id)
@@ -346,16 +332,24 @@ export default function WorldMap2({
               const isActive   = d.regionId === activeRegionId
               const isConq     = conqueredRegions.includes(d.regionId)
               const isSelected = popupDistrictId === d.id
-              const opacity    = (!isActive && !isConq && !isPlayer) ? 0.35 : 1
+
+              const fillColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const fillOpacity = isSelected ? 0.65 : isAttack ? 0.45 : isMove ? 0.4 : isPlayer ? 0.35 : (!isActive && !isConq) ? 0.05 : 0.15
+              const strokeColor = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : isPlayer ? '#8fd49a' : '#e08080'
+              const strokeW     = isSelected || isArmy ? 3 : isAttack || isMove ? 2 : 1
+              const strokeOpacity = isSelected || isArmy || isAttack || isMove ? 1 : (!isActive && !isConq) ? 0.2 : 0.6
 
               return (
-                <g key={d.id} style={{ opacity }} onClick={() => handleDistrictTap(d.id)}>
+                <g key={d.id} onClick={() => handleDistrictTap(d.id)} style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default' }}>
                   <polygon
                     points={pts}
-                    fill={districtFill(d)}
-                    stroke={isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#cc4444' : isMove ? '#44aa44' : 'rgba(240,232,216,0.12)'}
-                    strokeWidth={isSelected || isArmy ? 2.5 : isAttack || isMove ? 1.5 : 0.6}
-                    style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default', filter: isArmy ? 'url(#glow2)' : undefined }}
+                    fill={fillColor}
+                    fillOpacity={fillOpacity}
+                    stroke={strokeColor}
+                    strokeWidth={strokeW}
+                    strokeOpacity={strokeOpacity}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ filter: isArmy ? 'url(#glow2)' : undefined }}
                   />
                   {/* Capital crown */}
                   {d.isCapital && isPlayer && (
@@ -365,7 +359,7 @@ export default function WorldMap2({
                   {(isActive || isConq) && (() => {
                     const [cx, cy] = polyCentroid(d.polygon)
                     return (
-                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="9" fill="rgba(240,232,216,0.65)" style={{ pointerEvents: 'none', userSelect: 'none' }}>
+                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="9" fill="rgba(240,232,216,0.9)" style={{ pointerEvents: 'none', userSelect: 'none', filter: 'drop-shadow(0 0 4px rgba(0,0,0,0.95))' }}>
                         {d.name}
                       </text>
                     )
