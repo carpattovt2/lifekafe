@@ -330,9 +330,15 @@ export default function WorldMap2({
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
+              {/* Per-district clip paths — halo is cut strictly to polygon interior */}
+              {DISTRICTS_2.map(d => (
+                <clipPath key={`cp-${d.id}`} id={`cp-${d.id}`}>
+                  <polygon points={d.polygon.map(([x, y]) => `${x},${y}`).join(' ')} />
+                </clipPath>
+              ))}
             </defs>
 
-            {/* Pass 1 — border halo: wide stroke, no fill, fixed screen-pixel width */}
+            {/* Pass 1 — inner halo: wide stroke clipped to polygon interior only */}
             {DISTRICTS_2.map(d => {
               const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isPlayer   = ownership[d.id] === 'player'
@@ -343,8 +349,7 @@ export default function WorldMap2({
               const isSelected = popupDistrictId === d.id
 
               const haloColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const haloOpacity = isSelected ? 0.75 : isAttack ? 0.65 : isMove ? 0.65 : isPlayer ? 0.5 : (!isActive && !isConq) ? 0.1 : 0.32
-              const haloWidth   = isSelected ? 32 : isAttack || isMove ? 28 : 20
+              const haloOpacity = isSelected ? 0.7 : isAttack ? 0.6 : isMove ? 0.6 : isPlayer ? 0.45 : (!isActive && !isConq) ? 0.08 : 0.28
 
               return (
                 <polygon
@@ -352,9 +357,9 @@ export default function WorldMap2({
                   points={pts}
                   fill="none"
                   stroke={haloColor}
-                  strokeWidth={haloWidth}
+                  strokeWidth={50}
                   strokeOpacity={haloOpacity}
-                  vectorEffect="non-scaling-stroke"
+                  clipPath={`url(#cp-${d.id})`}
                   style={{ pointerEvents: 'none' }}
                 />
               )
