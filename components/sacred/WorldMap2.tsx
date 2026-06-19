@@ -326,41 +326,35 @@ export default function WorldMap2({
             onClick={e => { if (dragRef.current.moved) return; if ((e.target as SVGElement).tagName === 'svg') setPopupDistrictId(null) }}
           >
             <defs>
-              {/* Army glow */}
               <filter id="glow2">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              {/* Edge-only fill: erode shape → subtract → blur → clip back */}
-              <filter id="edge-fill" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-                <feMorphology in="SourceAlpha" operator="erode" radius="18" result="eroded" />
-                <feComposite in="SourceGraphic" in2="eroded" operator="out" result="edge" />
-                <feGaussianBlur in="edge" stdDeviation="8" result="blurred" />
-                <feComposite in="blurred" in2="SourceGraphic" operator="in" />
-              </filter>
             </defs>
 
-            {/* Pass 1 — edge-only fill (blurred inner glow along borders) */}
+            {/* Pass 1 — border halo: wide stroke, no fill, fixed screen-pixel width */}
             {DISTRICTS_2.map(d => {
-              const pts      = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
-              const isPlayer = ownership[d.id] === 'player'
-              const isAttack = attackable.has(d.id)
-              const isMove   = movable.has(d.id)
-              const isActive = d.regionId === activeRegionId
-              const isConq   = conqueredRegions.includes(d.regionId)
+              const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+              const isPlayer   = ownership[d.id] === 'player'
+              const isAttack   = attackable.has(d.id)
+              const isMove     = movable.has(d.id)
+              const isActive   = d.regionId === activeRegionId
+              const isConq     = conqueredRegions.includes(d.regionId)
               const isSelected = popupDistrictId === d.id
 
-              const fillColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const fillOpacity = isSelected ? 0.75 : isAttack ? 0.65 : isMove ? 0.65 : isPlayer ? 0.55 : (!isActive && !isConq) ? 0.2 : 0.45
+              const haloColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const haloOpacity = isSelected ? 0.75 : isAttack ? 0.65 : isMove ? 0.65 : isPlayer ? 0.5 : (!isActive && !isConq) ? 0.1 : 0.32
+              const haloWidth   = isSelected ? 32 : isAttack || isMove ? 28 : 20
 
               return (
                 <polygon
-                  key={`fill-${d.id}`}
+                  key={`halo-${d.id}`}
                   points={pts}
-                  fill={fillColor}
-                  fillOpacity={fillOpacity}
-                  stroke="none"
-                  filter="url(#edge-fill)"
+                  fill="none"
+                  stroke={haloColor}
+                  strokeWidth={haloWidth}
+                  strokeOpacity={haloOpacity}
+                  vectorEffect="non-scaling-stroke"
                   style={{ pointerEvents: 'none' }}
                 />
               )
