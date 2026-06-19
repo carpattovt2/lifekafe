@@ -31,6 +31,16 @@ const REGION_COLORS: Record<string, string> = {
   terr_242: '#1a1a1a',
 }
 
+// Districts that touch at least one district from a different region
+const BOUNDARY_DISTRICT_IDS = new Set(
+  DISTRICTS_2.filter(d =>
+    d.adjacentTo.some(adjId => {
+      const adj = DISTRICTS_2.find(x => x.id === adjId)
+      return adj !== undefined && adj.regionId !== d.regionId
+    })
+  ).map(d => d.id)
+)
+
 function getPortrait(unit: GameUnit): string {
   const lvl = unit.level ?? 1
   if (unit.class === 'warrior') {
@@ -322,7 +332,7 @@ export default function WorldMap2({
               </filter>
             </defs>
 
-            {/* Territories */}
+            {/* Pass 1 — fills + district dashes */}
             {DISTRICTS_2.map(d => {
               const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isPlayer   = ownership[d.id] === 'player'
@@ -332,12 +342,13 @@ export default function WorldMap2({
               const isActive   = d.regionId === activeRegionId
               const isConq     = conqueredRegions.includes(d.regionId)
               const isSelected = popupDistrictId === d.id
+              const isSpecial  = isSelected || isArmy || isAttack || isMove
 
-              const fillColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const fillOpacity = isSelected ? 0.65 : isAttack ? 0.45 : isMove ? 0.4 : isPlayer ? 0.35 : (!isActive && !isConq) ? 0.05 : 0.15
-              const strokeColor = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : isPlayer ? '#8fd49a' : '#e08080'
-              const strokeW     = isSelected || isArmy ? 3 : isAttack || isMove ? 2 : 1
-              const strokeOpacity = isSelected || isArmy || isAttack || isMove ? 1 : (!isActive && !isConq) ? 0.2 : 0.6
+              const fillColor    = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const fillOpacity  = isSelected ? 0.5 : isAttack ? 0.35 : isMove ? 0.35 : isPlayer ? 0.22 : (!isActive && !isConq) ? 0.04 : 0.1
+              const strokeColor  = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const strokeW      = isSpecial ? 2 : 0.8
+              const strokeOpacity = isSpecial ? 1 : (!isActive && !isConq) ? 0.18 : 0.5
 
               return (
                 <g key={d.id} onClick={() => handleDistrictTap(d.id)} style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default' }}>
@@ -348,25 +359,52 @@ export default function WorldMap2({
                     stroke={strokeColor}
                     strokeWidth={strokeW}
                     strokeOpacity={strokeOpacity}
+                    strokeDasharray={isSpecial ? undefined : '4 3'}
                     vectorEffect="non-scaling-stroke"
                     style={{ filter: isArmy ? 'url(#glow2)' : undefined }}
                   />
-                  {/* Capital crown */}
+                </g>
+              )
+            })}
+
+            {/* Pass 2 — region boundary dashes (gold, thicker, longer) */}
+            {DISTRICTS_2.filter(d => BOUNDARY_DISTRICT_IDS.has(d.id)).map(d => {
+              const pts      = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+              const isActive = d.regionId === activeRegionId
+              const isConq   = conqueredRegions.includes(d.regionId)
+              const opacity  = isActive ? 0.9 : isConq ? 0.6 : 0.18
+              return (
+                <polygon
+                  key={`rb-${d.id}`}
+                  points={pts}
+                  fill="none"
+                  stroke="#c8a040"
+                  strokeWidth={2}
+                  strokeOpacity={opacity}
+                  strokeDasharray="10 6"
+                  vectorEffect="non-scaling-stroke"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )
+            })}
+
+            {/* Pass 3 — labels + capitals + army (always on top) */}
+            {DISTRICTS_2.map(d => {
+              const isPlayer   = ownership[d.id] === 'player'
+              const isActive   = d.regionId === activeRegionId
+              const isConq     = conqueredRegions.includes(d.regionId)
+              const [cx, cy]   = polyCentroid(d.polygon)
+              const labelOpacity = isActive ? 0.9 : isConq ? 0.75 : 0.3
+              return (
+                <g key={`lbl-${d.id}`} style={{ pointerEvents: 'none' }}>
                   {d.isCapital && isPlayer && (
-                    <text x={polyCentroid(d.polygon)[0]} y={polyCentroid(d.polygon)[1] + 5} textAnchor="middle" fontSize="16" fill="#d4a85a" style={{ pointerEvents: 'none' }}>★</text>
+                    <text x={cx} y={cy + 5} textAnchor="middle" fontSize="16" fill="#d4a85a">★</text>
                   )}
-                  {/* District label */}
-                  {(() => {
-                    const [cx, cy] = polyCentroid(d.polygon)
-                    const labelOpacity = isActive ? 0.9 : isConq ? 0.75 : 0.35
-                    return (
-                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="9"
-                        fill="#f0e8d8" opacity={labelOpacity}
-                        style={{ pointerEvents: 'none', userSelect: 'none', filter: 'drop-shadow(0 0 5px rgba(0,0,0,1)) drop-shadow(0 0 3px rgba(0,0,0,1))' }}>
-                        {d.name}
-                      </text>
-                    )
-                  })()}
+                  <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="9"
+                    fill="#f0e8d8" opacity={labelOpacity}
+                    style={{ userSelect: 'none', filter: 'drop-shadow(0 0 5px rgba(0,0,0,1)) drop-shadow(0 0 3px rgba(0,0,0,1))' }}>
+                    {d.name}
+                  </text>
                 </g>
               )
             })}
