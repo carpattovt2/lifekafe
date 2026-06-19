@@ -77,23 +77,25 @@ function ApDots({ ap }: { ap: number }) {
 }
 
 interface Props {
-  mapState:          TerritoryMap2State
-  playerUnits:       GameUnit[]
-  deadUnits:         GameUnit[]
-  onMove:            (districtId: string) => void
-  onAttack:          (districtId: string) => void
-  onFinalBattle:     (regionId: string) => void
-  onEndTurn:         () => void
-  onRest:            () => void
-  onBack:            () => void
-  onHireUnit:        (cls: UnitClass, row: number, slot: number) => void
-  onReorderUnits:    (id1: string, id2: string) => void
-  onMoveUnitSlot:    (id: string, row: number, slot: number) => void
-  onUpgradeFortress: () => void
-  onPurchaseSlot:    () => void
-  onReviveUnit:      (id: string) => void
-  battleResult?:     { gold: number; levelUps: string[] } | null
+  mapState:             TerritoryMap2State
+  playerUnits:          GameUnit[]
+  deadUnits:            GameUnit[]
+  onMove:               (districtId: string) => void
+  onAttack:             (districtId: string) => void
+  onFinalBattle:        (regionId: string) => void
+  onEndTurn:            () => void
+  onRest:               () => void
+  onBack:               () => void
+  onHireUnit:           (cls: UnitClass, row: number, slot: number) => void
+  onReorderUnits:       (id1: string, id2: string) => void
+  onMoveUnitSlot:       (id: string, row: number, slot: number) => void
+  onUpgradeFortress:    () => void
+  onPurchaseSlot:       () => void
+  onReviveUnit:         (id: string) => void
+  battleResult?:        { gold: number; levelUps: string[] } | null
   onClearBattleResult?: () => void
+  botMessage?:          string | null
+  onClearBotMessage?:   () => void
 }
 
 type FortressTab = 'army' | 'upgrade' | 'revive'
@@ -107,6 +109,7 @@ export default function WorldMap2({
   onHireUnit, onReorderUnits, onMoveUnitSlot,
   onUpgradeFortress, onPurchaseSlot, onReviveUnit,
   battleResult, onClearBattleResult,
+  botMessage, onClearBotMessage,
 }: Props) {
   const [popupDistrictId, setPopupDistrictId] = useState<string | null>(null)
   const [fortressOpen,    setFortressOpen]    = useState(false)
@@ -129,6 +132,7 @@ export default function WorldMap2({
   const atStart        = armyNodeId === 'terr_221'
   const dailyIncome    = getDailyIncome(ownership)
   const ownedCount     = Object.values(ownership).filter(o => o === 'player').length
+  const botCount       = Object.values(ownership).filter(o => o === 'bot').length
   const totalDistricts = DISTRICTS_2.length
   const activeRegion   = REGIONS_2.find(r => r.id === activeRegionId)
   const activeDistricts = activeRegion?.districts ?? []
@@ -297,6 +301,7 @@ export default function WorldMap2({
           <ApDots ap={ap} />
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>День {turn}</span>
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>{capturedInRegion}/{activeDistricts.length}</span>
+          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount}</span>
         </div>
       </div>
 
@@ -336,6 +341,7 @@ export default function WorldMap2({
             {DISTRICTS_2.map(d => {
               const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isPlayer   = ownership[d.id] === 'player'
+              const isBot      = ownership[d.id] === 'bot'
               const isArmy     = d.id === armyNodeId
               const isAttack   = attackable.has(d.id)
               const isMove     = movable.has(d.id)
@@ -344,8 +350,8 @@ export default function WorldMap2({
               const isSelected = popupDistrictId === d.id
               const isSpecial  = isSelected || isArmy || isAttack || isMove
 
-              const color       = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const fillOpacity = isSelected ? 0.55 : isAttack ? 0.4 : isMove ? 0.4 : isPlayer ? 0.3 : (!isActive && !isConq) ? 0.04 : 0.12
+              const color       = isPlayer ? '#6fa67a' : isBot ? '#8a3a9a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const fillOpacity = isSelected ? 0.55 : isAttack ? 0.4 : isMove ? 0.4 : isPlayer ? 0.3 : isBot ? 0.3 : (!isActive && !isConq) ? 0.04 : 0.12
               const strokeColor = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : color
               const strokeW     = isSpecial ? 2 : 1
               const strokeOp    = isSpecial ? 1 : (!isActive && !isConq) ? 0.2 : 0.65
@@ -484,6 +490,22 @@ export default function WorldMap2({
             {battleResult.levelUps.map(n => (
               <div key={n} style={{ color: '#f0e8d8', fontSize: 12 }}>{n} — ↑ рівень!</div>
             ))}
+          </div>
+        )}
+
+        {/* Bot message toast */}
+        {botMessage && (
+          <div
+            onClick={onClearBotMessage}
+            style={{
+              position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(80,20,90,0.92)', border: '1px solid rgba(138,58,154,0.6)',
+              borderRadius: 12, padding: '10px 18px', zIndex: 20, textAlign: 'center',
+              color: '#e0b0f0', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+              cursor: 'pointer',
+            }}
+          >
+            {botMessage}
           </div>
         )}
 

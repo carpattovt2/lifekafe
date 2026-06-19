@@ -36,17 +36,18 @@ export interface Region2 {
 }
 
 export interface TerritoryMap2State {
-  ownership:          Record<string, 'player' | 'enemy'>
-  conqueredRegions:   string[]
-  activeRegionId:     string
-  pendingFinalBattle: string | null
-  gold:               number
-  turn:               number
-  ap:                 number
-  armyNodeId:         string
-  maxArmySlots:       number
-  fortressLevel:      1 | 2 | 3 | 4 | 5
-  restedThisTurn:     boolean
+  ownership:           Record<string, 'player' | 'enemy' | 'bot'>
+  conqueredRegions:    string[]
+  botConqueredRegions: string[]
+  activeRegionId:      string
+  pendingFinalBattle:  string | null
+  gold:                number
+  turn:                number
+  ap:                  number
+  armyNodeId:          string
+  maxArmySlots:        number
+  fortressLevel:       1 | 2 | 3 | 4 | 5
+  restedThisTurn:      boolean
 }
 
 export const MAP2_WIDTH  = 1796
@@ -480,7 +481,7 @@ export function getRegionById(id: string): Region2 | undefined {
 }
 
 // ── Game helpers ──────────────────────────────────────────────────────────────
-export function getDailyIncome(ownership: Record<string, 'player' | 'enemy'>): number {
+export function getDailyIncome(ownership: Record<string, 'player' | 'enemy' | 'bot'>): number {
   let total = 0
   for (const [id, owner] of Object.entries(ownership)) {
     if (owner === 'player') total += (DISTRICT_MAP.get(id)?.goldPerDay ?? 0)
@@ -488,14 +489,14 @@ export function getDailyIncome(ownership: Record<string, 'player' | 'enemy'>): n
   return total
 }
 
-export function isRegionComplete(regionId: string, ownership: Record<string, 'player' | 'enemy'>): boolean {
+export function isRegionComplete(regionId: string, ownership: Record<string, 'player' | 'enemy' | 'bot'>): boolean {
   const region = REGION_MAP.get(regionId)
   if (!region || region.isBoss) return false
   return region.districts.every(id => ownership[id] === 'player')
 }
 
 export function getAttackableDistricts(
-  ownership:      Record<string, 'player' | 'enemy'>,
+  ownership:      Record<string, 'player' | 'enemy' | 'bot'>,
   armyNodeId:     string,
   activeRegionId: string,
 ): Set<string> {
@@ -512,7 +513,7 @@ export function getAttackableDistricts(
 }
 
 export function getMovableDistricts(
-  ownership:  Record<string, 'player' | 'enemy'>,
+  ownership:  Record<string, 'player' | 'enemy' | 'bot'>,
   armyNodeId: string,
 ): Set<string> {
   const district = DISTRICT_MAP.get(armyNodeId)
@@ -558,19 +559,82 @@ export function buildArmyFromSpecs2(specs: UnitSpec2[], side: Side): GameUnit[] 
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 export function createInitialTerritoryMap2State(): TerritoryMap2State {
-  const ownership: Record<string, 'player' | 'enemy'> = {}
+  const ownership: Record<string, 'player' | 'enemy' | 'bot'> = {}
   for (const d of DISTRICTS_2) ownership[d.id] = d.isStart ? 'player' : 'enemy'
+  ownership['terr_240'] = 'bot'
   return {
     ownership,
-    conqueredRegions:   [],
-    activeRegionId:     'terr_218',
-    pendingFinalBattle: null,
-    gold:               10,
-    turn:               1,
-    ap:                 2,
-    armyNodeId:         'terr_221',
-    maxArmySlots:       4,
-    fortressLevel:      1,
-    restedThisTurn:     false,
+    conqueredRegions:    [],
+    botConqueredRegions: [],
+    activeRegionId:      'terr_218',
+    pendingFinalBattle:  null,
+    gold:                10,
+    turn:                1,
+    ap:                  2,
+    armyNodeId:          'terr_221',
+    maxArmySlots:        4,
+    fortressLevel:       1,
+    restedThisTurn:      false,
+  }
+}
+
+// ── Bot AI ────────────────────────────────────────────────────────────────────
+export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2State; botMessage: string | null } {
+  const ownership = { ...state.ownership }
+  const botConqueredRegions = [...state.botConqueredRegions]
+
+  const botDistricts = Object.entries(ownership)
+    .filter(([, o]) => o === 'bot')
+    .map(([id]) => id)
+
+  if (botDistricts.length === 0) return { state, botMessage: null }
+
+  const power = 8 + botDistricts.length * 4 + Math.floor(state.turn * 0.5)
+
+  // Collect all districts adjacent to bot that aren't bot-owned
+  const attackable = new Set<string>()
+  for (const distId of botDistricts) {
+    const d = DISTRICT_MAP.get(distId)
+    if (!d) continue
+    for (const adjId of d.adjacentTo) {
+      if (ownership[adjId] !== 'bot') attackable.add(adjId)
+    }
+  }
+
+  // Sort: enemy (neutral) first, then player; within same type prefer weaker defense
+  const targets = Array.from(attackable).sort((a, b) => {
+    const ao = ownership[a], bo = ownership[b]
+    if (ao === 'enemy' && bo === 'player') return -1
+    if (ao === 'player' && bo === 'enemy') return 1
+    const defA = (DISTRICT_MAP.get(a)?.army ?? []).reduce((s, u) => s + u.level, 0)
+    const defB = (DISTRICT_MAP.get(b)?.army ?? []).reduce((s, u) => s + u.level, 0)
+    return defA - defB
+  })
+
+  let captured = 0
+  const capturedNames: string[] = []
+
+  for (const targetId of targets) {
+    if (captured >= 2) break
+    const district = DISTRICT_MAP.get(targetId)
+    if (!district) continue
+    const defense = district.army.reduce((s, u) => s + u.level, 0)
+    if (power > defense) {
+      ownership[targetId] = 'bot'
+      capturedNames.push(district.name)
+      captured++
+      const regionId = district.regionId
+      if (!botConqueredRegions.includes(regionId)) {
+        const region = REGION_MAP.get(regionId)
+        if (region && !region.isBoss && region.districts.every(id => ownership[id] === 'bot')) {
+          botConqueredRegions.push(regionId)
+        }
+      }
+    }
+  }
+
+  return {
+    state: { ...state, ownership, botConqueredRegions },
+    botMessage: capturedNames.length > 0 ? `Ворог захопив: ${capturedNames.join(', ')}` : null,
   }
 }

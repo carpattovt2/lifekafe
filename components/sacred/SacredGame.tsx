@@ -23,6 +23,7 @@ import {
   REGIONS_2, DISTRICTS_2,
   createInitialTerritoryMap2State, getDistrictById, getRegionById,
   buildArmyFromSpecs2, getDailyIncome, isRegionComplete, getUnlockedRegions,
+  doBotTurn,
   HIRE_COSTS as HIRE_COSTS_2, FORTRESS_UPGRADE_COST as FORTRESS_UPGRADE_COST_2,
   SLOT_COSTS as SLOT_COSTS_2, getReviveCost as getReviveCost2,
 } from '@/lib/sacred/territories2'
@@ -1673,6 +1674,7 @@ export default function SacredGame() {
   const [hasCampaign2Save,       setHasCampaign2Save]       = useState(false)
   const [levelUpUnits,           setLevelUpUnits]           = useState<GameUnit[]>([])
   const [afterLevelUpScreen,     setAfterLevelUpScreen]     = useState<RootScreen>('world-map')
+  const [botMessage,             setBotMessage]             = useState<string | null>(null)
   const world2PreBattleUnits = useRef<GameUnit[] | null>(null)
 
   useEffect(() => {
@@ -1770,6 +1772,7 @@ export default function SacredGame() {
       const mapData   = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_MAP)   ?? '')
       const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_UNITS) ?? '')
       const deadData  = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_DEAD)  ?? '[]')
+      if (!mapData.botConqueredRegions) mapData.botConqueredRegions = []
       setMap2State(mapData)
       setWorld2PlayerUnits(unitsData)
       setWorld2DeadUnits(Array.isArray(deadData) ? deadData : [])
@@ -1902,13 +1905,19 @@ export default function SacredGame() {
 
   function handleMap2EndTurn() {
     const income = getDailyIncome(map2State.ownership)
-    setMap2State(prev => ({
-      ...prev,
-      turn:           prev.turn + 1,
+    const afterPlayer = {
+      ...map2State,
+      turn:           map2State.turn + 1,
       ap:             2,
       restedThisTurn: false,
-      gold:           prev.gold + income,
-    }))
+      gold:           map2State.gold + income,
+    }
+    const { state: afterBot, botMessage: msg } = doBotTurn(afterPlayer)
+    setMap2State(afterBot)
+    if (msg) {
+      setBotMessage(msg)
+      setTimeout(() => setBotMessage(null), 4000)
+    }
   }
 
   function handleMap2Rest() {
@@ -2330,6 +2339,8 @@ export default function SacredGame() {
       deadUnits={world2DeadUnits}
       battleResult={world2BattleResult}
       onClearBattleResult={() => setWorld2BattleResult(null)}
+      botMessage={botMessage}
+      onClearBotMessage={() => setBotMessage(null)}
       onMove={handleMap2Move}
       onAttack={handleMap2Attack}
       onFinalBattle={handleMap2FinalBattle}
