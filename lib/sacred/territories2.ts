@@ -90,14 +90,14 @@ export const REGIONS_2: Region2[] = [
     adjacentRegions: ['terr_218', 'terr_225', 'terr_206', 'terr_230'],
     districts: ['terr_238', 'terr_239', 'terr_240', 'terr_241'],
     finalBattleArmy: [
-      { class: 'warrior', level: 2 },
-      { class: 'warrior', level: 2 },
-      { class: 'warrior', level: 2 },
-      { class: 'warrior', level: 2 },
-      { class: 'archer',  level: 2 },
-      { class: 'archer',  level: 2 },
-      { class: 'mage',    level: 2, magePath: 'water' },
-      { class: 'mage',    level: 2, magePath: 'earth' },
+      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
+      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
+      { class: 'warrior',  level: 4, warriorPath: 'champion' },
+      { class: 'archer',   level: 3 },
+      { class: 'archer',   level: 3 },
+      { class: 'mage',     level: 4, magePath: 'water' },
+      { class: 'mage',     level: 4, magePath: 'earth' },
+      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
     ],
   },
   {
@@ -105,13 +105,14 @@ export const REGIONS_2: Region2[] = [
     adjacentRegions: ['terr_237', 'terr_230', 'terr_242'],
     districts: ['terr_209', 'terr_210', 'terr_211', 'terr_215', 'terr_214', 'terr_208', 'terr_207', 'terr_213', 'terr_212', 'terr_217'],
     finalBattleArmy: [
-      { class: 'warrior',  level: 3, warriorPath: 'paladin' },
-      { class: 'warrior',  level: 3, warriorPath: 'paladin' },
-      { class: 'warrior',  level: 3, warriorPath: 'paladin' },
+      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
+      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
+      { class: 'warrior',  level: 4, warriorPath: 'champion' },
+      { class: 'warrior',  level: 4, warriorPath: 'champion' },
       { class: 'archer',   level: 3 },
       { class: 'archer',   level: 3 },
-      { class: 'mage',     level: 3, magePath: 'water' },
-      { class: 'catapult', level: 2, catapultPath: 'ballista' },
+      { class: 'mage',     level: 4, magePath: 'water' },
+      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
     ],
   },
   {
@@ -133,13 +134,12 @@ export const REGIONS_2: Region2[] = [
     adjacentRegions: ['terr_230', 'terr_242'],
     districts: ['terr_229', 'terr_227', 'terr_226'],
     finalBattleArmy: [
-      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
-      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
-      { class: 'warrior',  level: 4, warriorPath: 'paladin' },
-      { class: 'archer',   level: 3 },
-      { class: 'archer',   level: 3 },
-      { class: 'mage',     level: 4, magePath: 'fire' },
-      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
+      { class: 'warrior', level: 2 },
+      { class: 'warrior', level: 2 },
+      { class: 'warrior', level: 2 },
+      { class: 'archer',  level: 1 },
+      { class: 'archer',  level: 1 },
+      { class: 'mage',    level: 1 },
     ],
   },
   {
@@ -230,8 +230,10 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 3,
     adjacentTo: ['terr_203', 'terr_205', 'terr_209', 'terr_210', 'terr_211', 'terr_219', 'terr_239'],
     army: [
-      { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 },
-      { class: 'archer',  level: 2 }, { class: 'mage',    level: 1 },
+      { class: 'warrior',  level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'champion' },
+      { class: 'archer',   level: 3 }, { class: 'archer', level: 3 },
+      { class: 'mage',     level: 4, magePath: 'water' },
+      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
     ],
     polygon: [[625.8,489.9],[689.4,502.9],[723.7,515.2],[776.8,556],[851,604.1],[880.4,629.4],[894.2,671.1],[865.6,693.6],[816.4,705.7],[787.3,716.6],[753.9,703.3],[737.5,693],[713.2,696.6],[685.2,694.2],[654.3,694.2],[639.7,722.7],[605,723.9],[574.7,736.7],[554,751.3],[537,757.9],[501.8,747],[439.7,752.7],[501.3,712.7],[519.7,686.8],[549.9,643.5],[552.1,594.9],[533.7,550.6],[505.6,521.4],[549.6,489.8],[573.5,458]],
   },
@@ -240,8 +242,9 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 1,
     adjacentTo: ['terr_211', 'terr_220', 'terr_231', 'terr_234', 'terr_238', 'terr_240'],
     army: [
-      { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 },
-      { class: 'archer',  level: 2 }, { class: 'archer',  level: 2 },
+      { class: 'warrior', level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 3, warriorPath: 'paladin' },
+      { class: 'warrior', level: 4, warriorPath: 'champion' },
+      { class: 'archer',  level: 3 }, { class: 'archer',  level: 3 },
     ],
     polygon: [[945.7,347.8],[965.3,387.8],[1008.6,423.7],[1070.6,424.6],[1123.3,412.1],[1143.9,457.9],[1154.2,503.7],[1128,548.5],[1083.1,601.8],[1012.6,643.7],[975.6,628.6],[950.7,640.7],[926.4,666.8],[894.2,671.1],[880.4,629.4],[851,604.1],[776.8,556],[723.7,515.2],[689.4,502.9],[625.8,489.9],[573.5,458],[589.3,437.2],[620,417.4],[676.6,356.9],[683.1,346.9],[701.8,319.4],[717,324.1],[752.7,334.6],[772.5,311.2],[798.2,290.8],[779.5,263.3],[804.1,238.7],[818.7,242.8],[828.6,232.3],[844.4,249.3],[890,250.4],[950.8,236.4],[974.7,252.8],[960.4,288.2]],
   },
@@ -250,7 +253,8 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 1,
     adjacentTo: ['terr_234', 'terr_239', 'terr_241'],
     army: [
-      { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 }, { class: 'archer', level: 1 },
+      { class: 'warrior', level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 3, warriorPath: 'paladin' },
+      { class: 'archer',  level: 3 }, { class: 'mage', level: 3, magePath: 'fire' },
     ],
     polygon: [[1150.6,272.7],[1221.6,285],[1274.5,311.9],[1229,330.6],[1189.3,365.6],[1123.3,412.1],[1070.6,424.6],[1008.6,423.7],[965.3,387.8],[945.7,347.8],[960.4,288.2],[974.7,252.8],[980.6,233.5],[975.3,218.9],[982.9,206.6],[1001,220.6],[1022.7,231.7],[1060.7,244.6],[1048.4,278.5],[1075.3,290.3],[1096.9,274.4],[1096.9,256.9],[1085.2,265],[1070.6,252.2],[1089.3,213.6],[1117.1,239.3]],
   },
@@ -259,8 +263,9 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 1,
     adjacentTo: ['terr_227', 'terr_234', 'terr_235', 'terr_240'],
     army: [
-      { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 }, { class: 'warrior', level: 2 },
-      { class: 'archer',  level: 2 }, { class: 'mage',    level: 2, magePath: 'earth' },
+      { class: 'warrior', level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'champion' },
+      { class: 'archer',  level: 3 }, { class: 'archer', level: 3 },
+      { class: 'mage',    level: 4, magePath: 'earth' },
     ],
     polygon: [[1089.4,214.8],[1070,197.2],[1058.3,178.5],[1035.5,162.2],[1061.2,160.4],[1067.7,152.8],[1067.7,124.2],[1092.8,114.3],[1109.2,140.6],[1153,129.5],[1168.8,140],[1195.1,140],[1207.9,162.2],[1222.5,183.8],[1247.7,192.6],[1274,174.5],[1300.9,179.7],[1323.7,196.1],[1326.6,175],[1339.4,162.2],[1371.6,166.3],[1379.8,193.2],[1364,201.3],[1357,225.9],[1375.7,247.5],[1378.4,265.5],[1398.8,304],[1344.6,325.9],[1274.5,311.9],[1221.6,285],[1150.6,272.7],[1117.1,239.3]],
   },
@@ -363,9 +368,11 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 3,
     adjacentTo: ['terr_212', 'terr_213', 'terr_214', 'terr_215'],
     army: [
-      { class: 'warrior',  level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 3, warriorPath: 'paladin' }, { class: 'warrior', level: 3, warriorPath: 'paladin' },
-      { class: 'archer',   level: 3 }, { class: 'archer', level: 3 }, { class: 'mage', level: 3, magePath: 'water' },
-      { class: 'catapult', level: 1 },
+      { class: 'warrior',  level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' },
+      { class: 'warrior',  level: 4, warriorPath: 'champion' },
+      { class: 'archer',   level: 3 }, { class: 'archer', level: 3 },
+      { class: 'mage',     level: 4, magePath: 'water' },
+      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
     ],
     polygon: [[1170.2,862.1],[1140.6,849.2],[1135,888.8],[1121.5,900.7],[1120.7,926.9],[1118.4,950.7],[1094.5,957.1],[1076.4,974.1],[1100.7,991.6],[1132.6,999.9],[1165.3,1002.2],[1203.3,964.2],[1261.2,957.9],[1309.6,969],[1340.5,990.4],[1344.5,965],[1344.5,936.9],[1372.6,906.5],[1356.6,892.9],[1373.3,880],[1365,856.4],[1342.2,857.9],[1324.7,883],[1313.3,873.9],[1268.5,845.8],[1257.9,857.9],[1264,869.3],[1254.1,876.9],[1238.9,864],[1219.9,872.4],[1210.8,853.4]],
   },
@@ -441,10 +448,7 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 1,
     adjacentTo: ['terr_226', 'terr_227'],
     army: [
-      { class: 'warrior',  level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' },
-      { class: 'warrior',  level: 4, warriorPath: 'champion' }, { class: 'warrior', level: 4, warriorPath: 'champion' },
-      { class: 'archer',   level: 3 }, { class: 'archer', level: 3 }, { class: 'mage', level: 4, magePath: 'fire' },
-      { class: 'catapult', level: 2, catapultPath: 'ballista' },
+      { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 }, { class: 'archer', level: 1 },
     ],
     polygon: [[1462.6,139.3],[1509.7,124.4],[1535.2,114],[1568.4,104.7],[1565.8,80.7],[1553.1,53.2],[1560.2,35.5],[1545.5,37.6],[1526.2,54.8],[1521.2,25.5],[1498.5,22.1],[1483.8,33],[1481.3,48.5],[1467.5,45.6],[1472.1,29.7],[1472.1,14.1],[1443.2,16.2],[1438.1,41.8],[1418.9,103.4],[1429.3,115.2]],
   },
@@ -453,9 +457,8 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 3,
     adjacentTo: ['terr_226', 'terr_229', 'terr_235', 'terr_241'],
     army: [
-      { class: 'warrior',  level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' },
-      { class: 'archer',   level: 3 }, { class: 'archer', level: 3 }, { class: 'mage', level: 4, magePath: 'fire' },
-      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
+      { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 },
+      { class: 'archer',  level: 1 },
     ],
     polygon: [[1509.7,124.4],[1535.2,114],[1568.4,104.7],[1590.3,141.4],[1607.6,167.4],[1629.6,201.6],[1624,235.8],[1597.4,284.8],[1570.4,305.7],[1552,341.9],[1535.2,372.5],[1524,414.3],[1520.9,467.4],[1505.3,506.2],[1475,480],[1474.2,453],[1480.7,435.8],[1473.4,418.6],[1470.4,406.3],[1469.3,400.6],[1452.1,389.9],[1448,370.3],[1460.3,356.4],[1435.7,335.1],[1398.8,304],[1378.4,265.5],[1395.4,246.4],[1411.3,249.8],[1422.6,240.6],[1424.7,221.7],[1417.6,199],[1426,185.2],[1455.3,163.8],[1463.3,139.5]],
   },
@@ -464,9 +467,7 @@ export const DISTRICTS_2: District[] = [
     goldPerDay: 1,
     adjacentTo: ['terr_227', 'terr_229', 'terr_236'],
     army: [
-      { class: 'warrior',  level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'paladin' }, { class: 'warrior', level: 4, warriorPath: 'champion' },
-      { class: 'archer',   level: 3 }, { class: 'archer', level: 3 }, { class: 'mage', level: 4, magePath: 'earth' },
-      { class: 'catapult', level: 3, catapultPath: 'trebuchet' },
+      { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 },
     ],
     polygon: [[1556.7,460.4],[1561.4,455.6],[1590.3,435.5],[1597.1,444.7],[1620.5,428.4],[1640.2,407],[1646.5,412.5],[1652.4,395.3],[1645.7,389],[1653.7,368.9],[1670.4,357.5],[1684.3,337.4],[1649.5,336.6],[1644.4,298.8],[1659.5,295.9],[1672.5,300.5],[1673.8,290],[1655.3,274.9],[1655.8,259],[1663.3,251],[1680.1,258.2],[1685.5,254.4],[1678,237.6],[1699.4,212.9],[1709.8,212.9],[1699.8,178.1],[1711.5,167.2],[1720.3,157.1],[1715.3,146.6],[1730,124],[1717.8,113.9],[1698.9,122.7],[1689.7,109.7],[1693.9,97.6],[1679.7,89.6],[1665.8,58.2],[1649,38.5],[1617.6,24.6],[1617.6,41.4],[1610.1,57.3],[1601.7,44.3],[1590.3,30.5],[1560.2,35.5],[1553.1,53.2],[1565.8,80.7],[1568.4,104.7],[1590.3,141.4],[1607.6,167.4],[1629.6,201.6],[1624,235.8],[1597.4,284.8],[1570.4,305.7],[1552,341.9],[1535.2,372.5],[1524,414.3],[1520.9,467.4],[1505.3,506.2],[1529,512],[1546.2,529.2],[1561.8,536.5],[1575.7,557],[1596.2,566],[1598.7,538.7],[1605.9,519],[1617.6,511.8],[1605,484.6],[1580.7,466.5]],
   },
@@ -564,7 +565,7 @@ export function buildArmyFromSpecs2(specs: UnitSpec2[], side: Side): GameUnit[] 
 export function createInitialTerritoryMap2State(): TerritoryMap2State {
   const ownership: Record<string, 'player' | 'enemy' | 'bot'> = {}
   for (const d of DISTRICTS_2) ownership[d.id] = d.isStart ? 'player' : 'enemy'
-  ownership['terr_240'] = 'bot'
+  ownership['terr_229'] = 'bot'  // bot starts in Тетрарія
   return {
     ownership,
     conqueredRegions:    [],
@@ -624,13 +625,26 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     }
   }
 
-  // Neutral districts first, player second; within each group fewest units first
-  const targets = Array.from(reachable).sort((a, b) => {
-    const ao = ownership[a] === 'enemy', bo = ownership[b] === 'enemy'
-    if (ao && !bo) return -1
-    if (!ao && bo) return 1
-    return (DISTRICT_MAP.get(a)?.army.length ?? 0) - (DISTRICT_MAP.get(b)?.army.length ?? 0)
-  })
+  // Linear region progression: Тетрарія → Калідонія → Фаленор
+  const BOT_REGION_PATH = ['terr_223', 'terr_230', 'terr_237']
+  const allowedBotRegions = new Set<string>()
+  for (const rid of BOT_REGION_PATH) {
+    allowedBotRegions.add(rid)
+    if (!botConqueredRegions.includes(rid)) break
+  }
+
+  // Neutral districts first (enemy), player districts as fallback; fewest units first
+  const targets = Array.from(reachable)
+    .filter(id => {
+      const d = DISTRICT_MAP.get(id)
+      return d && allowedBotRegions.has(d.regionId)
+    })
+    .sort((a, b) => {
+      const ao = ownership[a] === 'enemy', bo = ownership[b] === 'enemy'
+      if (ao && !bo) return -1
+      if (!ao && bo) return 1
+      return (DISTRICT_MAP.get(a)?.army.length ?? 0) - (DISTRICT_MAP.get(b)?.army.length ?? 0)
+    })
 
   for (const targetId of targets) {
     const district = DISTRICT_MAP.get(targetId)
