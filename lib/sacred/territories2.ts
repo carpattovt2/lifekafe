@@ -589,23 +589,21 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
 
   if (botDistricts.length === 0) return { state, botMessage: null }
 
-  const power = 8 + botDistricts.length * 4 + Math.floor(state.turn * 0.5)
+  // Power grows with time + owned count, hard cap at 30 to never auto-beat endgame armies
+  const power = Math.min(10 + state.turn + botDistricts.length, 30)
 
-  // Collect all districts adjacent to bot that aren't bot-owned
+  // Only attack neutral ('enemy') districts — never the player
   const attackable = new Set<string>()
   for (const distId of botDistricts) {
     const d = DISTRICT_MAP.get(distId)
     if (!d) continue
     for (const adjId of d.adjacentTo) {
-      if (ownership[adjId] !== 'bot') attackable.add(adjId)
+      if (ownership[adjId] === 'enemy') attackable.add(adjId)
     }
   }
 
-  // Sort: enemy (neutral) first, then player; within same type prefer weaker defense
+  // Sort by weakest defense first
   const targets = Array.from(attackable).sort((a, b) => {
-    const ao = ownership[a], bo = ownership[b]
-    if (ao === 'enemy' && bo === 'player') return -1
-    if (ao === 'player' && bo === 'enemy') return 1
     const defA = (DISTRICT_MAP.get(a)?.army ?? []).reduce((s, u) => s + u.level, 0)
     const defB = (DISTRICT_MAP.get(b)?.army ?? []).reduce((s, u) => s + u.level, 0)
     return defA - defB
@@ -615,7 +613,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
   const capturedNames: string[] = []
 
   for (const targetId of targets) {
-    if (captured >= 2) break
+    if (captured >= 1) break  // max 1 capture per turn
     const district = DISTRICT_MAP.get(targetId)
     if (!district) continue
     const defense = district.army.reduce((s, u) => s + u.level, 0)
