@@ -356,15 +356,40 @@ export default function WorldMap2({
                     <text x={polyCentroid(d.polygon)[0]} y={polyCentroid(d.polygon)[1] + 5} textAnchor="middle" fontSize="16" fill="#d4a85a" style={{ pointerEvents: 'none' }}>★</text>
                   )}
                   {/* District label */}
-                  {(isActive || isConq) && (() => {
+                  {(() => {
                     const [cx, cy] = polyCentroid(d.polygon)
+                    const labelOpacity = isActive ? 0.9 : isConq ? 0.75 : 0.35
                     return (
-                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="9" fill="rgba(240,232,216,0.9)" style={{ pointerEvents: 'none', userSelect: 'none', filter: 'drop-shadow(0 0 4px rgba(0,0,0,0.95))' }}>
+                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="9"
+                        fill="#f0e8d8" opacity={labelOpacity}
+                        style={{ pointerEvents: 'none', userSelect: 'none', filter: 'drop-shadow(0 0 5px rgba(0,0,0,1)) drop-shadow(0 0 3px rgba(0,0,0,1))' }}>
                         {d.name}
                       </text>
                     )
                   })()}
                 </g>
+              )
+            })}
+
+            {/* Region name labels */}
+            {REGIONS_2.map(region => {
+              if (region.isBoss) return null
+              const rDistricts = DISTRICTS_2.filter(d => region.districts.includes(d.id))
+              if (rDistricts.length === 0) return null
+              const allPts = rDistricts.flatMap(d => d.polygon)
+              const cx = allPts.reduce((s, [x]) => s + x, 0) / allPts.length
+              const cy = allPts.reduce((s, [, y]) => s + y, 0) / allPts.length
+              const isActiveReg = region.id === activeRegionId
+              const isConqReg   = conqueredRegions.includes(region.id)
+              const opacity     = isActiveReg ? 1 : isConqReg ? 0.65 : 0.3
+              const fill        = isConqReg ? '#6fa67a' : isActiveReg ? '#d4a85a' : '#f0e8d8'
+              return (
+                <text key={region.id} x={cx} y={cy - 14}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize="13" fontWeight="bold" fill={fill} opacity={opacity}
+                  style={{ pointerEvents: 'none', userSelect: 'none', filter: 'drop-shadow(0 0 6px rgba(0,0,0,1)) drop-shadow(0 0 4px rgba(0,0,0,1))' }}>
+                  {region.name}
+                </text>
               )
             })}
 

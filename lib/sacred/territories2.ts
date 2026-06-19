@@ -49,8 +49,8 @@ export interface TerritoryMap2State {
   restedThisTurn:     boolean
 }
 
-export const MAP2_WIDTH  = 1760
-export const MAP2_HEIGHT = 1340
+export const MAP2_WIDTH  = 1796
+export const MAP2_HEIGHT = 1336
 
 // ── Regions ───────────────────────────────────────────────────────────────────
 export const REGIONS_2: Region2[] = [
