@@ -330,44 +330,12 @@ export default function WorldMap2({
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              {/* Per-district clip paths — halo is cut strictly to polygon interior */}
-              {DISTRICTS_2.map(d => (
-                <clipPath key={`cp-${d.id}`} id={`cp-${d.id}`}>
-                  <polygon points={d.polygon.map(([x, y]) => `${x},${y}`).join(' ')} />
-                </clipPath>
-              ))}
             </defs>
 
-            {/* Pass 1 — inner halo: wide stroke clipped to polygon interior only */}
+            {/* Pass 2 — fill + dashed border */}
             {DISTRICTS_2.map(d => {
               const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isPlayer   = ownership[d.id] === 'player'
-              const isAttack   = attackable.has(d.id)
-              const isMove     = movable.has(d.id)
-              const isActive   = d.regionId === activeRegionId
-              const isConq     = conqueredRegions.includes(d.regionId)
-              const isSelected = popupDistrictId === d.id
-
-              const haloColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const haloOpacity = isSelected ? 0.7 : isAttack ? 0.6 : isMove ? 0.6 : isPlayer ? 0.45 : (!isActive && !isConq) ? 0.08 : 0.28
-
-              return (
-                <polygon
-                  key={`halo-${d.id}`}
-                  points={pts}
-                  fill="none"
-                  stroke={haloColor}
-                  strokeWidth={50}
-                  strokeOpacity={haloOpacity}
-                  clipPath={`url(#cp-${d.id})`}
-                  style={{ pointerEvents: 'none' }}
-                />
-              )
-            })}
-
-            {/* Pass 2 — district dashes (thin, clickable) */}
-            {DISTRICTS_2.map(d => {
-              const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isArmy     = d.id === armyNodeId
               const isAttack   = attackable.has(d.id)
               const isMove     = movable.has(d.id)
@@ -376,19 +344,22 @@ export default function WorldMap2({
               const isSelected = popupDistrictId === d.id
               const isSpecial  = isSelected || isArmy || isAttack || isMove
 
-              const strokeColor   = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const strokeW       = isSpecial ? 2 : 0.8
-              const strokeOpacity = isSpecial ? 1 : (!isActive && !isConq) ? 0.2 : 0.55
+              const color       = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const fillOpacity = isSelected ? 0.55 : isAttack ? 0.4 : isMove ? 0.4 : isPlayer ? 0.3 : (!isActive && !isConq) ? 0.04 : 0.12
+              const strokeColor = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : color
+              const strokeW     = isSpecial ? 2 : 1
+              const strokeOp    = isSpecial ? 1 : (!isActive && !isConq) ? 0.2 : 0.65
 
               return (
                 <polygon
                   key={`dst-${d.id}`}
                   points={pts}
-                  fill="none"
+                  fill={color}
+                  fillOpacity={fillOpacity}
                   stroke={strokeColor}
                   strokeWidth={strokeW}
-                  strokeOpacity={strokeOpacity}
-                  strokeDasharray={isSpecial ? undefined : '4 3'}
+                  strokeOpacity={strokeOp}
+                  strokeDasharray={isSpecial ? undefined : '5 4'}
                   vectorEffect="non-scaling-stroke"
                   onClick={() => handleDistrictTap(d.id)}
                   style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default', filter: isArmy ? 'url(#glow2)' : undefined }}
