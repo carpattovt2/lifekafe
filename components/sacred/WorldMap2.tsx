@@ -359,7 +359,7 @@ export default function WorldMap2({
                   stroke={strokeColor}
                   strokeWidth={strokeW}
                   strokeOpacity={strokeOp}
-                  strokeDasharray={isSpecial ? undefined : '5 4'}
+                  strokeDasharray={isSpecial ? undefined : '15 10'}
                   vectorEffect="non-scaling-stroke"
                   onClick={() => handleDistrictTap(d.id)}
                   style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default', filter: isArmy ? 'url(#glow2)' : undefined }}
@@ -381,7 +381,7 @@ export default function WorldMap2({
                   stroke="#c8a040"
                   strokeWidth={2.5}
                   strokeOpacity={opacity}
-                  strokeDasharray="10 6"
+                  strokeDasharray="25 15"
                   vectorEffect="non-scaling-stroke"
                   style={{ pointerEvents: 'none' }}
                 />
