@@ -275,7 +275,7 @@ export default function WorldMap2({
 
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: '#0f0e09' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 210, background: '#0f0e09', paddingTop: 'env(safe-area-inset-top)' }}>
     <div style={{ maxWidth: 560, margin: '0 auto', height: '100%', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
 
       {/* Header */}
@@ -497,9 +497,23 @@ export default function WorldMap2({
           position: 'absolute', inset: 0, background: '#12100c', zIndex: 50,
           display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(240,232,216,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontWeight: 700, color: '#d4a85a' }}>🏰 {FORTRESS_NAMES[fortressLevel]}</div>
-            <button onClick={closeFortress} style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.5)', fontSize: 22, cursor: 'pointer' }}>×</button>
+          {/* City image header */}
+          <div style={{ position: 'relative', height: 170, flexShrink: 0 }}>
+            <img
+              src={`/sacred/fortress/fortress-${fortressLevel}.jpg`}
+              alt=""
+              draggable={false}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+            />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(18,16,12,0.88) 100%)' }} />
+            <button
+              onClick={closeFortress}
+              style={{ position: 'absolute', top: 10, right: 12, background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(240,232,216,0.2)', borderRadius: 20, color: '#f0e8d8', fontSize: 18, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >×</button>
+            <div style={{ position: 'absolute', bottom: 14, left: 16 }}>
+              <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.5)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Рівень фортеці</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>🏰 {FORTRESS_NAMES[fortressLevel]}</div>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -582,10 +596,6 @@ export default function WorldMap2({
             {/* Upgrade tab */}
             {fortressTab === 'upgrade' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(212,168,90,0.06)', border: '1px solid rgba(212,168,90,0.15)' }}>
-                  <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.5)', marginBottom: 4 }}>Рівень фортеці</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>{FORTRESS_NAMES[fortressLevel]}</div>
-                </div>
                 {fortressLevel < 5 && (
                   <button onClick={onUpgradeFortress} disabled={gold < FORTRESS_UPGRADE_COST[fortressLevel + 1]}
                     style={{
