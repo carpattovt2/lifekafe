@@ -326,16 +326,49 @@ export default function WorldMap2({
             onClick={e => { if (dragRef.current.moved) return; if ((e.target as SVGElement).tagName === 'svg') setPopupDistrictId(null) }}
           >
             <defs>
+              {/* Army glow */}
               <filter id="glow2">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
+              {/* Edge-only fill: erode shape → subtract → blur → clip back */}
+              <filter id="edge-fill" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+                <feMorphology in="SourceAlpha" operator="erode" radius="18" result="eroded" />
+                <feComposite in="SourceGraphic" in2="eroded" operator="out" result="edge" />
+                <feGaussianBlur in="edge" stdDeviation="8" result="blurred" />
+                <feComposite in="blurred" in2="SourceGraphic" operator="in" />
+              </filter>
             </defs>
 
-            {/* Pass 1 — fills + district dashes */}
+            {/* Pass 1 — edge-only fill (blurred inner glow along borders) */}
+            {DISTRICTS_2.map(d => {
+              const pts      = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
+              const isPlayer = ownership[d.id] === 'player'
+              const isAttack = attackable.has(d.id)
+              const isMove   = movable.has(d.id)
+              const isActive = d.regionId === activeRegionId
+              const isConq   = conqueredRegions.includes(d.regionId)
+              const isSelected = popupDistrictId === d.id
+
+              const fillColor   = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const fillOpacity = isSelected ? 0.75 : isAttack ? 0.65 : isMove ? 0.65 : isPlayer ? 0.55 : (!isActive && !isConq) ? 0.2 : 0.45
+
+              return (
+                <polygon
+                  key={`fill-${d.id}`}
+                  points={pts}
+                  fill={fillColor}
+                  fillOpacity={fillOpacity}
+                  stroke="none"
+                  filter="url(#edge-fill)"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )
+            })}
+
+            {/* Pass 2 — district dashes (thin, clickable) */}
             {DISTRICTS_2.map(d => {
               const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
-              const isPlayer   = ownership[d.id] === 'player'
               const isArmy     = d.id === armyNodeId
               const isAttack   = attackable.has(d.id)
               const isMove     = movable.has(d.id)
@@ -344,42 +377,39 @@ export default function WorldMap2({
               const isSelected = popupDistrictId === d.id
               const isSpecial  = isSelected || isArmy || isAttack || isMove
 
-              const fillColor    = isPlayer ? '#6fa67a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const fillOpacity  = isSelected ? 0.5 : isAttack ? 0.35 : isMove ? 0.35 : isPlayer ? 0.22 : (!isActive && !isConq) ? 0.04 : 0.1
-              const strokeColor  = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const strokeW      = isSpecial ? 2 : 0.8
-              const strokeOpacity = isSpecial ? 1 : (!isActive && !isConq) ? 0.18 : 0.5
+              const strokeColor   = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
+              const strokeW       = isSpecial ? 2 : 0.8
+              const strokeOpacity = isSpecial ? 1 : (!isActive && !isConq) ? 0.2 : 0.55
 
               return (
-                <g key={d.id} onClick={() => handleDistrictTap(d.id)} style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default' }}>
-                  <polygon
-                    points={pts}
-                    fill={fillColor}
-                    fillOpacity={fillOpacity}
-                    stroke={strokeColor}
-                    strokeWidth={strokeW}
-                    strokeOpacity={strokeOpacity}
-                    strokeDasharray={isSpecial ? undefined : '4 3'}
-                    vectorEffect="non-scaling-stroke"
-                    style={{ filter: isArmy ? 'url(#glow2)' : undefined }}
-                  />
-                </g>
+                <polygon
+                  key={`dst-${d.id}`}
+                  points={pts}
+                  fill="none"
+                  stroke={strokeColor}
+                  strokeWidth={strokeW}
+                  strokeOpacity={strokeOpacity}
+                  strokeDasharray={isSpecial ? undefined : '4 3'}
+                  vectorEffect="non-scaling-stroke"
+                  onClick={() => handleDistrictTap(d.id)}
+                  style={{ cursor: (isAttack || isMove) ? 'pointer' : 'default', filter: isArmy ? 'url(#glow2)' : undefined }}
+                />
               )
             })}
 
-            {/* Pass 2 — region boundary dashes (gold, thicker, longer) */}
+            {/* Pass 3 — region boundary dashes (gold, thicker) */}
             {DISTRICTS_2.filter(d => BOUNDARY_DISTRICT_IDS.has(d.id)).map(d => {
               const pts      = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isActive = d.regionId === activeRegionId
               const isConq   = conqueredRegions.includes(d.regionId)
-              const opacity  = isActive ? 0.9 : isConq ? 0.6 : 0.18
+              const opacity  = isActive ? 0.9 : isConq ? 0.65 : 0.2
               return (
                 <polygon
                   key={`rb-${d.id}`}
                   points={pts}
                   fill="none"
                   stroke="#c8a040"
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   strokeOpacity={opacity}
                   strokeDasharray="10 6"
                   vectorEffect="non-scaling-stroke"
