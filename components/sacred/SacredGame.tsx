@@ -1982,6 +1982,10 @@ export default function SacredGame() {
     setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
   }
 
+  function handleMap2DismissUnit(id: string) {
+    setWorld2PlayerUnits(prev => prev ? prev.filter(u => u.id !== id) : prev)
+  }
+
   // Trigger level-up screen for map 1 battles too
   function maybeShowLevelUp(levelUpUnitsArr: GameUnit[], nextScreen: RootScreen, callback: () => void) {
     if (levelUpUnitsArr.length > 0) {
@@ -2353,6 +2357,7 @@ export default function SacredGame() {
       onUpgradeFortress={handleMap2UpgradeFortress}
       onPurchaseSlot={handleMap2PurchaseSlot}
       onReviveUnit={handleMap2ReviveUnit}
+      onDismissUnit={handleMap2DismissUnit}
     />
   )
 

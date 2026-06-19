@@ -92,6 +92,7 @@ interface Props {
   onUpgradeFortress:    () => void
   onPurchaseSlot:       () => void
   onReviveUnit:         (id: string) => void
+  onDismissUnit:        (id: string) => void
   battleResult?:        { gold: number; levelUps: string[] } | null
   onClearBattleResult?: () => void
   botMessage?:          string | null
@@ -107,7 +108,7 @@ export default function WorldMap2({
   mapState, playerUnits, deadUnits,
   onMove, onAttack, onFinalBattle, onEndTurn, onRest, onBack,
   onHireUnit, onReorderUnits, onMoveUnitSlot,
-  onUpgradeFortress, onPurchaseSlot, onReviveUnit,
+  onUpgradeFortress, onPurchaseSlot, onReviveUnit, onDismissUnit,
   battleResult, onClearBattleResult,
   botMessage, onClearBotMessage,
 }: Props) {
@@ -351,10 +352,10 @@ export default function WorldMap2({
               const isSpecial  = isSelected || isArmy || isAttack || isMove
 
               const color       = isPlayer ? '#6fa67a' : isBot ? '#8a3a9a' : isAttack ? '#c07070' : isMove ? '#88ccff' : REGION_COLORS[d.regionId] ?? '#8a7a60'
-              const fillOpacity = isSelected ? 0.55 : isAttack ? 0.4 : isMove ? 0.4 : isPlayer ? 0.3 : isBot ? 0.3 : (!isActive && !isConq) ? 0.04 : 0.12
+              const fillOpacity = isSelected ? 0.55 : isAttack ? 0.4 : isMove ? 0.4 : isPlayer ? 0.3 : isBot ? 0.3 : (!isActive && !isConq) ? 0.1 : 0.15
               const strokeColor = isSelected ? '#fff' : isArmy ? '#d4a85a' : isAttack ? '#ffd700' : isMove ? '#88ccff' : color
               const strokeW     = isSpecial ? 2 : 1
-              const strokeOp    = isSpecial ? 1 : (!isActive && !isConq) ? 0.2 : 0.65
+              const strokeOp    = isSpecial ? 1 : (isPlayer || isBot) ? 0.75 : (!isActive && !isConq) ? 0.45 : 0.65
 
               return (
                 <polygon
@@ -378,7 +379,7 @@ export default function WorldMap2({
               const pts      = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isActive = d.regionId === activeRegionId
               const isConq   = conqueredRegions.includes(d.regionId)
-              const opacity  = isActive ? 0.9 : isConq ? 0.65 : 0.2
+              const opacity  = isActive ? 0.9 : isConq ? 0.65 : 0.4
               return (
                 <polygon
                   key={`rb-${d.id}`}
@@ -400,7 +401,7 @@ export default function WorldMap2({
               const isActive   = d.regionId === activeRegionId
               const isConq     = conqueredRegions.includes(d.regionId)
               const [cx, cy]   = polyCentroid(d.polygon)
-              const labelOpacity = isActive ? 0.9 : isConq ? 0.75 : 0.3
+              const labelOpacity = isActive ? 0.9 : isConq ? 0.75 : 0.5
               return (
                 <g key={`lbl-${d.id}`} style={{ pointerEvents: 'none' }}>
                   {d.isCapital && isPlayer && (
@@ -425,7 +426,7 @@ export default function WorldMap2({
               const cy = allPts.reduce((s, [, y]) => s + y, 0) / allPts.length
               const isActiveReg = region.id === activeRegionId
               const isConqReg   = conqueredRegions.includes(region.id)
-              const opacity     = isActiveReg ? 1 : isConqReg ? 0.65 : 0.3
+              const opacity     = isActiveReg ? 1 : isConqReg ? 0.65 : 0.5
               const fill        = isConqReg ? '#6fa67a' : isActiveReg ? '#d4a85a' : '#f0e8d8'
               return (
                 <text key={region.id} x={cx} y={cy - 14}
@@ -653,6 +654,32 @@ export default function WorldMap2({
                     </div>
                   </div>
                 ))}
+
+                {/* Selected unit actions */}
+                {selectedUnitId && (() => {
+                  const su = playerUnits.find(u => u.id === selectedUnitId)
+                  if (!su) return null
+                  return (
+                    <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(212,168,90,0.07)', border: '1px solid rgba(212,168,90,0.25)' }}>
+                      <div style={{ fontSize: 11, color: '#d4a85a', fontWeight: 700, marginBottom: 4 }}>
+                        {CLASS_UA[su.class]} lv{su.level}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginBottom: 10 }}>
+                        Натисніть інший слот у тому ж ряді щоб поміняти місцями
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => { onDismissUnit(selectedUnitId); setSelectedUnitId(null) }}
+                          style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'rgba(180,50,50,0.15)', border: '1px solid rgba(180,50,50,0.4)', color: '#e07070', fontSize: 12, cursor: 'pointer' }}
+                        >Демобілізувати</button>
+                        <button
+                          onClick={() => setSelectedUnitId(null)}
+                          style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'none', border: '1px solid rgba(240,232,216,0.15)', color: 'rgba(240,232,216,0.5)', fontSize: 12, cursor: 'pointer' }}
+                        >Скасувати</button>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {/* Hire popup */}
                 {hirePopup && (
