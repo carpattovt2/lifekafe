@@ -10,6 +10,7 @@ import {
 } from '@/lib/sacred/territories2'
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import type { GameUnit, UnitClass } from '@/lib/sacred/types'
+import type { UnitSpec2 } from '@/lib/sacred/territories2'
 
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
   { cls: 'warrior',  label: 'Воїн',       cost: HIRE_COSTS.warrior,  desc: 'Передній ряд, щит, провокація' },
@@ -52,6 +53,20 @@ function getPortrait(unit: GameUnit): string {
     return lvl > 1 && unit.magePath ? `/sacred/mages/${unit.magePath}/level${lvl}.jpg` : '/sacred/mages/level1.jpg'
   if (unit.class === 'catapult')
     return lvl > 1 && unit.catapultPath ? `/sacred/catapults/${unit.catapultPath}/level${lvl}.jpg` : '/sacred/catapults/level1.jpg'
+  return ''
+}
+
+function getSpec2Portrait(spec: UnitSpec2): string {
+  const lvl = spec.level ?? 1
+  if (spec.class === 'warrior') {
+    if (spec.warriorPath === 'champion' && lvl >= 3) return `/sacred/warriors/champion/level${lvl}.jpg`
+    return `/sacred/warriors/level${Math.min(lvl, 4)}.jpg`
+  }
+  if (spec.class === 'archer')  return `/sacred/archers/level${Math.min(lvl, 3)}.jpg`
+  if (spec.class === 'mage')
+    return lvl > 1 && spec.magePath ? `/sacred/mages/${spec.magePath}/level${lvl}.jpg` : '/sacred/mages/level1.jpg'
+  if (spec.class === 'catapult')
+    return lvl > 1 && spec.catapultPath ? `/sacred/catapults/${spec.catapultPath}/level${lvl}.jpg` : '/sacred/catapults/level1.jpg'
   return ''
 }
 
@@ -260,7 +275,8 @@ export default function WorldMap2({
       else setPopupDistrictId(districtId)
       return
     }
-    if (attackable.has(districtId)) {
+    const o = ownership[districtId]
+    if (attackable.has(districtId) || o === 'enemy' || o === 'bot') {
       setPopupDistrictId(prev => prev === districtId ? null : districtId)
       return
     }
@@ -302,7 +318,7 @@ export default function WorldMap2({
           <ApDots ap={ap} />
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>День {turn}</span>
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>{capturedInRegion}/{activeDistricts.length}</span>
-          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount}</span>
+          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount} <span style={{ color: 'rgba(154,90,170,0.7)', fontWeight: 400 }}>⚔{mapState.botUnits}</span></span>
         </div>
       </div>
 
@@ -454,29 +470,53 @@ export default function WorldMap2({
         </div>
 
         {/* District popup */}
-        {popupDistrict && attackable.has(popupDistrict.id) && (
+        {popupDistrict && (ownership[popupDistrict.id] === 'enemy' || ownership[popupDistrict.id] === 'bot') && (
           <div style={{
             position: 'absolute', bottom: 80, left: '50%', transform: 'translateX(-50%)',
-            background: '#1e1a12', border: '1px solid rgba(212,168,90,0.35)',
-            borderRadius: 14, padding: '14px 18px', minWidth: 220, zIndex: 10,
+            background: '#1e1a12', border: `1px solid ${ownership[popupDistrict.id] === 'bot' ? 'rgba(138,58,154,0.5)' : 'rgba(212,168,90,0.35)'}`,
+            borderRadius: 14, padding: '14px 18px', minWidth: 240, zIndex: 10,
           }}>
             <div style={{ fontWeight: 700, color: '#f0e8d8', marginBottom: 4 }}>{popupDistrict.name}</div>
-            {popupDistrict.isCapital && <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 8 }}>★ Столиця</div>}
-            <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', marginBottom: 12 }}>
-              Армія: {popupDistrict.army.length} юнітів
-            </div>
-            <button
-              onClick={() => { onAttack(popupDistrict.id); setPopupDistrictId(null) }}
-              disabled={ap <= 0}
-              style={{
-                width: '100%', padding: '10px 0', borderRadius: 10,
-                background: ap > 0 ? '#8b2020' : 'rgba(139,32,32,0.3)',
-                color: ap > 0 ? '#f0e8d8' : 'rgba(240,232,216,0.35)',
-                border: 'none', fontWeight: 700, fontSize: 13, cursor: ap > 0 ? 'pointer' : 'not-allowed',
-              }}
-            >
-              {ap > 0 ? '⚔ Атакувати' : 'Немає ходів'}
-            </button>
+            {popupDistrict.isCapital && <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 6 }}>★ Столиця</div>}
+            {/* Unit portraits */}
+            {popupDistrict.army.length > 0 ? (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                {popupDistrict.army.map((spec, i) => (
+                  <div key={i} style={{ position: 'relative', width: 44, height: 52 }}>
+                    <img
+                      src={getSpec2Portrait(spec)}
+                      alt=""
+                      style={{ width: 44, height: 52, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top' }}
+                    />
+                    <div style={{
+                      position: 'absolute', bottom: 2, right: 3,
+                      fontSize: 9, color: '#d4a85a', fontWeight: 700,
+                      background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 3px',
+                    }}>lv{spec.level}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 12 }}>Армія відсутня</div>
+            )}
+            {attackable.has(popupDistrict.id) ? (
+              <button
+                onClick={() => { onAttack(popupDistrict.id); setPopupDistrictId(null) }}
+                disabled={ap <= 0}
+                style={{
+                  width: '100%', padding: '10px 0', borderRadius: 10,
+                  background: ap > 0 ? '#8b2020' : 'rgba(139,32,32,0.3)',
+                  color: ap > 0 ? '#f0e8d8' : 'rgba(240,232,216,0.35)',
+                  border: 'none', fontWeight: 700, fontSize: 13, cursor: ap > 0 ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {ap > 0 ? '⚔ Атакувати' : 'Немає ходів'}
+              </button>
+            ) : (
+              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', textAlign: 'center' }}>
+                Не в зоні досяжності
+              </div>
+            )}
           </div>
         )}
 

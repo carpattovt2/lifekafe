@@ -1773,6 +1773,9 @@ export default function SacredGame() {
       const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_UNITS) ?? '')
       const deadData  = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_DEAD)  ?? '[]')
       if (!mapData.botConqueredRegions) mapData.botConqueredRegions = []
+      if (mapData.botUnits    == null) mapData.botUnits    = 3
+      if (mapData.botGold     == null) mapData.botGold     = 0
+      if (mapData.botRestTurns == null) mapData.botRestTurns = 0
       setMap2State(mapData)
       setWorld2PlayerUnits(unitsData)
       setWorld2DeadUnits(Array.isArray(deadData) ? deadData : [])
