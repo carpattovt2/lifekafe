@@ -48,6 +48,9 @@ export interface TerritoryMap2State {
   maxArmySlots:        number
   fortressLevel:       1 | 2 | 3 | 4 | 5
   restedThisTurn:      boolean
+  botUnits:            number   // bot army size (unit count)
+  botGold:             number   // bot accumulated gold
+  botRestTurns:        number   // turns until bot can act again
 }
 
 export const MAP2_WIDTH  = 1796
@@ -575,6 +578,9 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     maxArmySlots:        4,
     fortressLevel:       1,
     restedThisTurn:      false,
+    botUnits:            3,
+    botGold:             0,
+    botRestTurns:        0,
   }
 }
 
@@ -583,61 +589,81 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
   const ownership = { ...state.ownership }
   const botConqueredRegions = [...state.botConqueredRegions]
 
-  const botDistricts = Object.entries(ownership)
-    .filter(([, o]) => o === 'bot')
-    .map(([id]) => id)
+  // Earn gold from owned districts (like player's daily income)
+  let botGold = state.botGold
+  for (const [id, o] of Object.entries(ownership)) {
+    if (o === 'bot') botGold += (DISTRICT_MAP.get(id)?.goldPerDay ?? 0)
+  }
 
-  if (botDistricts.length === 0) return { state, botMessage: null }
+  // Hire one unit per turn while affordable (3 gold each, max 8)
+  let botUnits = state.botUnits
+  if (botGold >= 3 && botUnits < 8) {
+    botUnits++
+    botGold -= 3
+  }
 
-  // Power grows with time + owned count, hard cap at 30 to never auto-beat endgame armies
-  const power = Math.min(10 + state.turn + botDistricts.length, 30)
+  // Decrement rest — bot is recovering after last battle
+  let botRestTurns = Math.max(0, state.botRestTurns - 1)
+  if (botRestTurns > 0) {
+    return {
+      state: { ...state, ownership, botConqueredRegions, botGold, botUnits, botRestTurns },
+      botMessage: null,
+    }
+  }
 
-  // Collect adjacent non-bot districts; neutral preferred, player is fallback
-  const attackable = new Set<string>()
+  // Collect adjacent non-bot districts
+  const botDistricts = Object.entries(ownership).filter(([, o]) => o === 'bot').map(([id]) => id)
+  if (botDistricts.length === 0) return { state: { ...state, botGold, botUnits, botRestTurns }, botMessage: null }
+
+  const reachable = new Set<string>()
   for (const distId of botDistricts) {
     const d = DISTRICT_MAP.get(distId)
     if (!d) continue
     for (const adjId of d.adjacentTo) {
-      if (ownership[adjId] !== 'bot') attackable.add(adjId)
+      if (ownership[adjId] !== 'bot') reachable.add(adjId)
     }
   }
 
-  // Neutral first, player second; within each group weakest defense first
-  const targets = Array.from(attackable).sort((a, b) => {
+  // Neutral districts first, player second; within each group fewest units first
+  const targets = Array.from(reachable).sort((a, b) => {
     const ao = ownership[a] === 'enemy', bo = ownership[b] === 'enemy'
     if (ao && !bo) return -1
     if (!ao && bo) return 1
-    const defA = (DISTRICT_MAP.get(a)?.army ?? []).reduce((s, u) => s + u.level, 0)
-    const defB = (DISTRICT_MAP.get(b)?.army ?? []).reduce((s, u) => s + u.level, 0)
-    return defA - defB
+    return (DISTRICT_MAP.get(a)?.army.length ?? 0) - (DISTRICT_MAP.get(b)?.army.length ?? 0)
   })
 
-  let captured = 0
-  const capturedNames: string[] = []
-
   for (const targetId of targets) {
-    if (captured >= 1) break  // max 1 capture per turn
     const district = DISTRICT_MAP.get(targetId)
     if (!district) continue
-    const baseDefense = district.army.reduce((s, u) => s + u.level, 0)
-    // Player districts are defended by their actual army; treat 0 as 8 (player garrison)
-    const defense = ownership[targetId] === 'player' ? Math.max(baseDefense, 8) : baseDefense
-    if (power > defense) {
-      ownership[targetId] = 'bot'
-      capturedNames.push(district.name)
-      captured++
-      const regionId = district.regionId
-      if (!botConqueredRegions.includes(regionId)) {
-        const region = REGION_MAP.get(regionId)
-        if (region && !region.isBoss && region.districts.every(id => ownership[id] === 'bot')) {
-          botConqueredRegions.push(regionId)
-        }
+
+    // Defense = number of enemy units; player districts have min garrison of 3
+    const rawDef = district.army.length
+    const defense = ownership[targetId] === 'player' ? Math.max(rawDef, 3) : rawDef
+
+    // Bot needs strictly more units than defenders to attack
+    if (botUnits <= defense) continue
+
+    // Battle won — take casualties, then rest proportional to fight difficulty
+    botUnits = Math.max(1, botUnits - Math.ceil(defense * 0.5))
+    botRestTurns = Math.max(1, defense)  // 1 rest turn per enemy unit
+
+    ownership[targetId] = 'bot'
+    const regionId = district.regionId
+    if (!botConqueredRegions.includes(regionId)) {
+      const region = REGION_MAP.get(regionId)
+      if (region && !region.isBoss && region.districts.every(id => ownership[id] === 'bot')) {
+        botConqueredRegions.push(regionId)
       }
+    }
+
+    return {
+      state: { ...state, ownership, botConqueredRegions, botGold, botUnits, botRestTurns },
+      botMessage: `Ворог захопив ${district.name}`,
     }
   }
 
   return {
-    state: { ...state, ownership, botConqueredRegions },
-    botMessage: capturedNames.length > 0 ? `Ворог захопив: ${capturedNames.join(', ')}` : null,
+    state: { ...state, ownership, botConqueredRegions, botGold, botUnits, botRestTurns },
+    botMessage: null,
   }
 }

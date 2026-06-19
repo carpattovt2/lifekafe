@@ -456,7 +456,8 @@ function resolveAttack(
   const windShieldBonus = getBuffValue(def, 'wind_shield')
 
   const woundedEvaMult = def.hp < def.maxHp * 0.2 ? 0.5 : 1
-  if (!opts.forceHit && !ignoreEvasion && Math.random() < (def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) * woundedEvaMult) {
+  const isFrozen = def.buffs.some(b => b.type === 'frozen')
+  if (!opts.forceHit && !ignoreEvasion && !isFrozen && Math.random() < (def.evasion + moraleEvaBonus + rangerEvaBonus + windShieldBonus) * woundedEvaMult) {
     logs.push(log(`${def.name} ухиляється!`, 'evade'))
     events.push(ev(def.id, 'Ухил!', 'evade', atk.id))
     return { hit: true, evaded: true, crit: false, damage: 0, logs, events }
