@@ -24,6 +24,7 @@ const en = {
     sacred:    'Seraphites',
     games:     'Games',
     shopping:  'Shopping',
+    finance:   'Finance',
     logout:    'LOGOUT',
   },
   dashboard: {
@@ -334,6 +335,7 @@ const ua: typeof en = {
     sacred:    'Серафити',
     games:     'Ігри',
     shopping:  'Покупки',
+    finance:   'Фінанси',
     logout:    'ВИЙТИ',
   },
   dashboard: {

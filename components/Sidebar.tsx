@@ -19,6 +19,7 @@ export default function Sidebar({ email }: { email: string }) {
     { href: '/journal',   label: t.nav.journal,   icon: '📓' },
     { href: '/shopping',  label: t.nav.shopping,   icon: '🛒' },
     { href: '/games',     label: t.nav.games,      icon: '🎮' },
+    { href: '/finance',   label: t.nav.finance,    icon: '💰' },
   ]
 
   async function logout() {
