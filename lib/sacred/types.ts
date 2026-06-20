@@ -307,7 +307,7 @@ export const WARRIOR_LEVELS: Record<number, WarriorLevelData> = {
 export const WARRIOR_PATHS: Record<WarriorPath, Record<number, WarriorLevelData>> = {
   paladin: {
     3: { name: 'Лицар',   hp: 145, minDmg: 18, maxDmg: 26, accuracy: 0.80, defense: 0.20, evasion: 0.10, initiative: 50, critChance: 0,    critMult: 2.0, morale: 65, actions: ['strike', 'shield', 'battle_cry'], frontLineBonus: 0.25, xpToNext: 350 },
-    4: { name: 'Паладін', hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08, initiative: 50, critChance: 0,    critMult: 2.0, morale: 80, actions: ['sacred_strike', 'shield', 'consecration'], frontLineBonus: 0.30, xpToNext: Infinity },
+    4: { name: 'Паладін', hp: 190, minDmg: 24, maxDmg: 34, accuracy: 0.80, defense: 0.35, evasion: 0.08, initiative: 50, critChance: 0,    critMult: 2.0, morale: 80, actions: ['strike', 'sacred_strike', 'shield', 'consecration'], frontLineBonus: 0.30, xpToNext: Infinity },
   },
   champion: {
     3: { name: 'Звитяжець', hp: 125, minDmg: 22, maxDmg: 35, accuracy: 0.80, defense: 0, evasion: 0.15, initiative: 70, critChance: 0.15, critMult: 2.0, morale: 65, actions: ['strike'],           frontLineBonus: 0.20, xpToNext: 350 },
