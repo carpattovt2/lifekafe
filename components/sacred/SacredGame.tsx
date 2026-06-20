@@ -1883,18 +1883,27 @@ export default function SacredGame() {
         }
         return
       }
+      // Linear player path: Ерідія → Сілонія → Паліндор → Болсовер (boss)
+      const NEXT_REGION: Record<string, string> = {
+        'terr_218': 'terr_225',
+        'terr_225': 'terr_206',
+        'terr_206': 'terr_242',
+      }
+      const nextRegionId   = NEXT_REGION[regionId as string] ?? null
+      const nextIsBoss     = nextRegionId ? (getRegionById(nextRegionId)?.isBoss ?? false) : false
       setMap2State(prev => ({
         ...prev,
         conqueredRegions:   [...prev.conqueredRegions, regionId],
-        pendingFinalBattle: null,
+        pendingFinalBattle: nextIsBoss ? nextRegionId : null,
         gold:               prev.gold + 5,
+        activeRegionId:     nextRegionId ?? prev.activeRegionId,
       }))
       if (levelUps.length > 0) {
         setLevelUpUnits(levelUps)
-        setAfterLevelUpScreen('region-choice-2')
+        setAfterLevelUpScreen('world-map-2')
         setScreen('level-up')
       } else {
-        setScreen('region-choice-2')
+        setScreen('world-map-2')
       }
     } else {
       setScreen('world-map-2')

@@ -1903,6 +1903,10 @@ function advanceQueue(state: BattleState): BattleState {
   }
 
   const next = units.find(u => u.id === queue[idx])
+  // DoT (poison/burning) may have killed the unit whose turn it is — skip to next
+  if (next && next.hp === 0) {
+    return advanceQueue({ ...state, units, queue, queueIdx: idx, round })
+  }
   const phase: Phase = next?.side === 'player' ? 'player-turn' : 'ai-thinking'
   return { ...state, units, queue, queueIdx: idx, round, phase, ...TURN_RESET }
 }
