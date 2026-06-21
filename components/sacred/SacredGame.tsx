@@ -153,6 +153,7 @@ const CLASS_SVG: Record<string, AvatarComponent> = {
 }
 
 function getPortraitSrc(unit: GameUnit): string | null {
+  if (unit.isHero && unit.heroId) return `/sacred/heroes/${unit.heroId}.jpg`
   const lvl = unit.level ?? 1
   if (unit.class === 'warrior')
     return lvl >= 3 && unit.warriorPath === 'champion'
@@ -357,7 +358,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
       : unit.class === 'catapult'
         ? 'unit-portrait-catapult'
         : 'unit-portrait-idle'
-  const unitLevelName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
+  const unitLevelName = unit.isHero
+                        ? unit.name
+                      : unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
                         ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
                       : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                       : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
@@ -365,7 +368,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
                         ? MAGE_PATHS[unit.magePath][unit.level]?.name
                         : unit.class === 'mage' ? MAGE_BASE.name
                         : undefined
-  const portraitSrc = unit.level
+  const portraitSrc = unit.isHero && unit.heroId
+    ? `/sacred/heroes/${unit.heroId}.jpg`
+    : unit.level
     ? (unit.class === 'warrior'
         ? ((unit.level >= 3 && unit.warriorPath === 'champion')
             ? `/sacred/warriors/champion/level${unit.level}.jpg`
