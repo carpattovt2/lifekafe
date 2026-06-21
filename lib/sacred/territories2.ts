@@ -578,7 +578,7 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     botConqueredRegions: [],
     activeRegionId:      'terr_218',
     pendingFinalBattle:  null,
-    gold:                10,
+    gold:                20,
     turn:                1,
     ap:                  2,
     army2Ap:             2,

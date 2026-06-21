@@ -318,6 +318,7 @@ export default function WorldMap2({
   }
 
   function handleSlotClick(row: number, slot: number) {
+    if (!activeHero) return  // no hero hired — army is inactive
     // Hero occupies fixed slot — not interactive
     if (row === activeHeroRow && slot === activeHeroSlot && activeHero) return
     if (!isSlotUnlockedForArmy(row, slot, activeUnlockedSlots, activeHeroRow, activeHeroSlot)) return
@@ -533,15 +534,15 @@ export default function WorldMap2({
             {attackable.has(popupDistrict.id) ? (
               <button
                 onClick={() => { onAttack(popupDistrict.id); setPopupDistrictId(null) }}
-                disabled={activeAp <= 0}
+                disabled={activeAp <= 0 || !activeHero}
                 style={{
                   width: '100%', padding: '10px 0', borderRadius: 10,
-                  background: activeAp > 0 ? '#8b2020' : 'rgba(139,32,32,0.3)',
-                  color: activeAp > 0 ? '#f0e8d8' : 'rgba(240,232,216,0.35)',
-                  border: 'none', fontWeight: 700, fontSize: 13, cursor: activeAp > 0 ? 'pointer' : 'not-allowed',
+                  background: activeAp > 0 && activeHero ? '#8b2020' : 'rgba(139,32,32,0.3)',
+                  color: activeAp > 0 && activeHero ? '#f0e8d8' : 'rgba(240,232,216,0.35)',
+                  border: 'none', fontWeight: 700, fontSize: 13, cursor: activeAp > 0 && activeHero ? 'pointer' : 'not-allowed',
                 }}
               >
-                {activeAp > 0 ? `⚔ Атакувати (Армія ${activeArmy})` : 'Немає ходів у активної армії'}
+                {!activeHero ? 'Найміть героя щоб атакувати' : activeAp > 0 ? `⚔ Атакувати (Армія ${activeArmy})` : 'Немає ходів у активної армії'}
               </button>
             ) : (
               <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', textAlign: 'center' }}>
@@ -607,7 +608,8 @@ export default function WorldMap2({
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={() => onFinalBattle(activeRegionId)}
-              style={{ padding: '8px 14px', background: '#8b2020', border: 'none', borderRadius: 10, color: '#f0e8d8', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+              disabled={!activeHero}
+              style={{ padding: '8px 14px', background: activeHero ? '#8b2020' : 'rgba(139,32,32,0.3)', border: 'none', borderRadius: 10, color: activeHero ? '#f0e8d8' : 'rgba(240,232,216,0.35)', fontWeight: 700, fontSize: 12, cursor: activeHero ? 'pointer' : 'not-allowed' }}
             >Готовий</button>
             <button
               onClick={() => {}}

@@ -1411,7 +1411,7 @@ export function executeAction(
     const prev = prevUnitMap.get(u.id)
     return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
   }).length
-  const xpGain = kills * 50 + (hitLanded ? 10 : 0)
+  const xpGain = kills * 25 + (hitLanded ? 5 : 0)
   if (actor.isHero) {
     // Heroes accumulate XP but never level up mid-battle (post-battle only)
     if (xpGain > 0) {
@@ -1929,22 +1929,22 @@ function advanceQueue(state: BattleState): BattleState {
     const roundCap = state.fortressLevelCap
     for (const u of units.filter(x => !x.isHero && (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
       if (u.class === 'warrior') {
-        const { unit: updated } = grantWarriorXp(u, 15, roundLogs, roundEvents, roundCap)
+        const { unit: updated } = grantWarriorXp(u, 8, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'archer') {
-        const updated = grantArcherXp(u, 15, roundLogs, roundEvents, roundCap)
+        const updated = grantArcherXp(u, 8, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'mage') {
-        const { unit: updated } = grantMageXp(u, 15, roundLogs, roundEvents, roundCap)
+        const { unit: updated } = grantMageXp(u, 8, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       } else if (u.class === 'catapult') {
-        const { unit: updated } = grantCatapultXp(u, 15, roundLogs, roundEvents, roundCap)
+        const { unit: updated } = grantCatapultXp(u, 8, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       }
     }
     // Heroes get round survival XP (accumulated, leveled post-battle)
     for (const u of units.filter(x => x.isHero && x.hp > 0)) {
-      units = units.map(x => x.id === u.id ? { ...x, xp: (x.xp ?? 0) + 15 } : x)
+      units = units.map(x => x.id === u.id ? { ...x, xp: (x.xp ?? 0) + 8 } : x)
     }
     state = {
       ...state, units,
