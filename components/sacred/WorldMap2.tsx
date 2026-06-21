@@ -697,15 +697,30 @@ export default function WorldMap2({
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(240,232,216,0.1)' }}>
             {(['army', 'upgrade', 'tavern', 'revive'] as FortressTab[]).map(tab => {
               const labels: Record<FortressTab, string> = { army: 'Армія', upgrade: 'Поліпшення', tavern: 'Таверна', revive: 'Воскресити' }
-              const heroDeadHere = tab === 'tavern' && activeHero && !activeHero.isAlive
-              const disabled = tab === 'revive' && activeDeadUnits.length === 0
+              const artanHero   = mapState.heroes?.artan
+              const sybillaHero = mapState.heroes?.sybilla
+              const tavernNeedsAction =
+                !artanHero || (artanHero && !artanHero.isAlive) ||
+                !sybillaHero || (sybillaHero && !sybillaHero.isAlive)
+              const showBadge = tab === 'tavern' && tavernNeedsAction
+              const disabled  = tab === 'revive' && activeDeadUnits.length === 0
               return (
                 <button key={tab} onClick={() => !disabled && setFortressTab(tab)} style={{
                   flex: 1, padding: '10px 0', background: 'none',
                   border: 'none', borderBottom: fortressTab === tab ? '2px solid #d4a85a' : '2px solid transparent',
-                  color: fortressTab === tab ? '#d4a85a' : disabled ? 'rgba(240,232,216,0.2)' : heroDeadHere ? '#cc7070' : 'rgba(240,232,216,0.5)',
+                  color: fortressTab === tab ? '#d4a85a' : disabled ? 'rgba(240,232,216,0.2)' : 'rgba(240,232,216,0.5)',
                   fontSize: 11, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
-                }}>{labels[tab]}</button>
+                  position: 'relative',
+                }}>
+                  {labels[tab]}
+                  {showBadge && (
+                    <span style={{
+                      position: 'absolute', top: 6, right: '50%', marginRight: -28,
+                      width: 8, height: 8, borderRadius: '50%', background: '#cc7070',
+                      boxShadow: '0 0 4px rgba(204,112,112,0.6)',
+                    }} />
+                  )}
+                </button>
               )
             })}
           </div>
@@ -724,12 +739,14 @@ export default function WorldMap2({
                         const unlocked    = isSlotUnlockedForArmy(row, slot, activeUnlockedSlots, activeHeroRow, activeHeroSlot)
                         const unit        = activeRegularUnits.find(u => u.row === row && u.slot === slot)
                         const isSel       = unit?.id === selectedUnitId
-                        const heroAlive   = activeHero?.isAlive ?? false
+                        const heroNotHired = isHeroSlot && !activeHero
+                        const heroAlive    = isHeroSlot && activeHero?.isAlive
+                        const heroDead     = isHeroSlot && activeHero && !activeHero.isAlive
                         return (
                           <div key={slot} onClick={() => !isHeroSlot && unlocked && handleSlotClick(row, slot)} style={{
                             height: 72, borderRadius: 10, overflow: 'hidden',
                             border: isHeroSlot
-                              ? `2px solid ${heroAlive ? 'rgba(212,168,90,0.6)' : 'rgba(180,50,50,0.4)'}`
+                              ? `2px solid ${heroAlive ? 'rgba(212,168,90,0.6)' : heroDead ? 'rgba(180,50,50,0.4)' : 'rgba(240,232,216,0.18)'}`
                               : isSel ? '2px solid #d4a85a' : '1px solid rgba(240,232,216,0.15)',
                             background: unlocked ? (unit || isHeroSlot ? 'transparent' : 'rgba(240,232,216,0.04)') : 'rgba(0,0,0,0.3)',
                             cursor: isHeroSlot ? 'default' : unlocked ? 'pointer' : 'not-allowed',
@@ -742,10 +759,23 @@ export default function WorldMap2({
                                   alt=""
                                   style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
                                 />
-                              ) : (
+                              ) : heroDead ? (
                                 <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, background: 'rgba(180,50,50,0.08)' }}>
                                   <span style={{ fontSize: 18, opacity: 0.5 }}>☠</span>
                                   <span style={{ fontSize: 9, color: '#c07070' }}>Загинув</span>
+                                </div>
+                              ) : (
+                                <div style={{ position: 'relative', height: '100%' }}>
+                                  <img
+                                    src={`/sacred/heroes/${activeHeroId}.jpg`}
+                                    alt=""
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', opacity: 0.18, filter: 'grayscale(1)' }}
+                                  />
+                                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4 }}>
+                                    <span style={{ fontSize: 8, color: 'rgba(212,168,90,0.7)', textAlign: 'center', lineHeight: 1.2, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                                      Найміть<br/>у Таверні
+                                    </span>
+                                  </div>
                                 </div>
                               )
                             ) : unit ? (
@@ -755,7 +785,7 @@ export default function WorldMap2({
                             ) : (
                               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'rgba(240,232,216,0.15)' }}>🔒</div>
                             )}
-                            {isHeroSlot && heroAlive && (
+                            {heroAlive && (
                               <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>lv{activeHero?.level}</div>
                             )}
                             {!isHeroSlot && unit && (
@@ -838,79 +868,88 @@ export default function WorldMap2({
               </div>
             )}
 
-            {/* Tavern tab — hero revival */}
+            {/* Tavern tab — both heroes (army-independent) */}
             {fortressTab === 'tavern' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {activeHero ? (
-                  <div style={{ padding: '12px', borderRadius: 12, background: 'rgba(240,232,216,0.04)', border: `1px solid ${activeHero.isAlive ? 'rgba(212,168,90,0.2)' : 'rgba(180,50,50,0.3)'}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <img
-                        src={`/sacred/heroes/${activeHeroId}.jpg`}
-                        alt=""
-                        style={{ width: 52, height: 62, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', opacity: activeHero.isAlive ? 1 : 0.4 }}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: activeHero.isAlive ? '#f0e8d8' : 'rgba(240,232,216,0.4)' }}>
-                          {activeHeroId === 'artan' ? 'Артан' : 'Сивілла'}
-                          {!activeHero.isAlive && <span style={{ fontSize: 11, color: '#c07070', marginLeft: 8 }}>☠ Загинув</span>}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 2 }}>
-                          Рівень {activeHero.level} · {activeHero.hp}/{activeHero.maxHp} HP
-                        </div>
-                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginTop: 2 }}>
-                          XP: {activeHero.xp}/{activeHero.xpToNext === Infinity ? '∞' : activeHero.xpToNext}
+                {(['artan', 'sybilla'] as HeroId[]).map(hid => {
+                  const hero = mapState.heroes?.[hid] ?? null
+                  const heroName = hid === 'artan' ? 'Артан' : 'Сивілла'
+                  const heroRole = hid === 'artan' ? 'Воїн · Армія 1' : 'Цілителька · Армія 2'
+                  const alive = hero?.isAlive ?? false
+                  const dead  = hero && !hero.isAlive
+                  const borderColor = !hero ? 'rgba(212,168,90,0.25)' : alive ? 'rgba(212,168,90,0.2)' : 'rgba(180,50,50,0.3)'
+                  return (
+                    <div key={hid} style={{
+                      padding: 12, borderRadius: 12,
+                      background: 'rgba(240,232,216,0.04)',
+                      border: `1px solid ${borderColor}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <img
+                          src={`/sacred/heroes/${hid}.jpg`}
+                          alt=""
+                          style={{
+                            width: 56, height: 68, borderRadius: 8,
+                            objectFit: 'cover', objectPosition: 'center top',
+                            opacity: alive ? 1 : !hero ? 0.4 : 0.4,
+                            filter: !hero ? 'grayscale(0.6)' : undefined,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: alive ? '#f0e8d8' : 'rgba(240,232,216,0.55)' }}>
+                            {heroName}
+                            {dead && <span style={{ fontSize: 11, color: '#c07070', marginLeft: 8 }}>☠ Загинув</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginTop: 2 }}>
+                            {heroRole}
+                          </div>
+                          {hero && (
+                            <>
+                              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 4 }}>
+                                Рівень {hero.level} · {hero.hp}/{hero.maxHp} HP
+                              </div>
+                              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginTop: 1 }}>
+                                XP: {hero.xp}/{hero.xpToNext === Infinity ? '∞' : hero.xpToNext}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
+                      {!hero && (
+                        <button
+                          onClick={() => onHireHero(hid)}
+                          disabled={gold < HERO_HIRE_COST}
+                          style={{
+                            width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 10,
+                            background: gold >= HERO_HIRE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
+                            border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
+                            fontSize: 13, fontWeight: 600, cursor: gold >= HERO_HIRE_COST ? 'pointer' : 'not-allowed',
+                          }}>
+                          Найняти ({HERO_HIRE_COST} 💰)
+                        </button>
+                      )}
+                      {dead && (
+                        <button
+                          onClick={() => onReviveHero(hid)}
+                          disabled={gold < HERO_REVIVE_COST}
+                          style={{
+                            width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 10,
+                            background: gold >= HERO_REVIVE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
+                            border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
+                            fontSize: 13, fontWeight: 600, cursor: gold >= HERO_REVIVE_COST ? 'pointer' : 'not-allowed',
+                          }}>
+                          Воскресити ({HERO_REVIVE_COST} 💰)
+                        </button>
+                      )}
+                      {alive && hero!.chosenPerks.length > 0 && (
+                        <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>
+                          Перки: {hero!.chosenPerks.join(', ')}
+                        </div>
+                      )}
                     </div>
-                    {!activeHero.isAlive && (
-                      <button
-                        onClick={() => onReviveHero(activeHeroId)}
-                        disabled={gold < HERO_REVIVE_COST}
-                        style={{
-                          width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 10,
-                          background: gold >= HERO_REVIVE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
-                          border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
-                          fontSize: 13, fontWeight: 600, cursor: gold >= HERO_REVIVE_COST ? 'pointer' : 'not-allowed',
-                        }}>
-                        Воскресити ({HERO_REVIVE_COST} 💰)
-                      </button>
-                    )}
-                    {activeHero.isAlive && activeHero.chosenPerks.length > 0 && (
-                      <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>
-                        Перки: {activeHero.chosenPerks.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <img
-                        src={`/sacred/heroes/${activeHeroId}.jpg`}
-                        alt=""
-                        style={{ width: 52, height: 62, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', opacity: 0.4, filter: 'grayscale(0.6)' }}
-                      />
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(240,232,216,0.55)' }}>
-                          {activeHeroId === 'artan' ? 'Артан' : 'Сивілла'}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.3)', marginTop: 2 }}>
-                          {activeHeroId === 'artan' ? 'Воїн · Армія 1' : 'Цілителька · Армія 2'}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onHireHero(activeHeroId)}
-                      disabled={gold < HERO_HIRE_COST}
-                      style={{
-                        width: '100%', padding: '10px 0', borderRadius: 10,
-                        background: gold >= HERO_HIRE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
-                        border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
-                        fontSize: 13, fontWeight: 600, cursor: gold >= HERO_HIRE_COST ? 'pointer' : 'not-allowed',
-                      }}>
-                      Найняти ({HERO_HIRE_COST} 💰)
-                    </button>
-                  </div>
-                )}
+                  )
+                })}
               </div>
             )}
 
