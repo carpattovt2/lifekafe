@@ -126,14 +126,13 @@ type FortressTab = 'army' | 'upgrade' | 'revive' | 'tavern'
 const MIN_SCALE = 0.08
 const MAX_SCALE = 4
 
-function isSlotUnlockedHero(row: number, slot: number, maxRegularSlots: number, heroRow: number, heroSlot: number): boolean {
+function isSlotUnlockedForArmy(
+  row: number, slot: number,
+  unlockedSlots: { row: 0|1; slot: number }[],
+  heroRow: number, heroSlot: number,
+): boolean {
   if (row === heroRow && slot === heroSlot) return true
-  const regularSlots: { r: number; s: number }[] = []
-  for (let r = 0; r <= 1; r++)
-    for (let s = 0; s <= 3; s++)
-      if (!(r === heroRow && s === heroSlot)) regularSlots.push({ r, s })
-  const idx = regularSlots.findIndex(p => p.r === row && p.s === slot)
-  return idx >= 0 && idx < maxRegularSlots
+  return unlockedSlots.some(s => s.row === row && s.slot === slot)
 }
 
 export default function WorldMap2({
@@ -154,7 +153,7 @@ export default function WorldMap2({
   const activeRegularUnits = activeArmy === 1 ? playerUnits : army2Units
   const activeDeadUnits    = activeArmy === 1 ? deadUnits   : army2DeadUnits
   const activeAp           = activeArmy === 1 ? mapState.ap : mapState.army2Ap
-  const activeMaxSlots     = activeArmy === 1 ? mapState.maxArmySlots : mapState.army2MaxArmySlots
+  const activeUnlockedSlots = activeArmy === 1 ? mapState.army1UnlockedSlots : mapState.army2UnlockedSlots
   const activeRested       = activeArmy === 1 ? mapState.restedThisTurn : mapState.army2RestedThisTurn
   const activeHero         = activeArmy === 1 ? mapState.heroes?.artan : mapState.heroes?.sybilla
   const activeHeroId: HeroId = activeArmy === 1 ? 'artan' : 'sybilla'
@@ -167,7 +166,7 @@ export default function WorldMap2({
 
   const {
     ownership, gold, turn, ap, armyNodeId,
-    maxArmySlots, fortressLevel, restedThisTurn,
+    fortressLevel, restedThisTurn,
     activeRegionId, conqueredRegions, pendingFinalBattle,
   } = mapState
 
@@ -320,7 +319,7 @@ export default function WorldMap2({
   function handleSlotClick(row: number, slot: number) {
     // Hero occupies fixed slot — not interactive
     if (row === activeHeroRow && slot === activeHeroSlot && activeHero) return
-    if (!isSlotUnlockedHero(row, slot, activeMaxSlots, activeHeroRow, activeHeroSlot)) return
+    if (!isSlotUnlockedForArmy(row, slot, activeUnlockedSlots, activeHeroRow, activeHeroSlot)) return
     const occupant = activeRegularUnits.find(u => u.row === row && u.slot === slot)
     if (selectedUnitId) {
       const selUnit = activeRegularUnits.find(u => u.id === selectedUnitId)
@@ -719,7 +718,7 @@ export default function WorldMap2({
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
                       {[0, 1, 2, 3].map(slot => {
                         const isHeroSlot  = row === activeHeroRow && slot === activeHeroSlot
-                        const unlocked    = isSlotUnlockedHero(row, slot, activeMaxSlots, activeHeroRow, activeHeroSlot)
+                        const unlocked    = isSlotUnlockedForArmy(row, slot, activeUnlockedSlots, activeHeroRow, activeHeroSlot)
                         const unit        = activeRegularUnits.find(u => u.row === row && u.slot === slot)
                         const isSel       = unit?.id === selectedUnitId
                         const heroAlive   = activeHero?.isAlive ?? false
@@ -831,7 +830,7 @@ export default function WorldMap2({
                   </button>
                 )}
                 <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginTop: 4 }}>
-                  Слоти армії визначаються рівнем героя (lv{activeHero?.level ?? 1} → {activeMaxSlots} слотів)
+                  Слоти армії обираються гравцем при підвищенні рівня героя (lv{activeHero?.level ?? 1}, відкрито: {activeUnlockedSlots.length})
                 </div>
               </div>
             )}

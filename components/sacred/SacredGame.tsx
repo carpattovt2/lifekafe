@@ -29,7 +29,7 @@ import {
 } from '@/lib/sacred/territories2'
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import {
-  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, heroSlotsFromLevel, HERO_REVIVE_COST,
+  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, HERO_REVIVE_COST,
 } from '@/lib/sacred/heroes'
 import type { HeroId, PerkId, HeroState } from '@/lib/sacred/heroes'
 
@@ -1658,7 +1658,7 @@ type RootScreen =
   | 'army-builder' | 'placement' | 'battle' | 'free-battle'
   | 'world-map'  | 'world-battle'  | 'campaign-victory'
   | 'world-map-2' | 'world-battle-2' | 'region-final-battle-2' | 'region-choice-2' | 'campaign-victory-2'
-  | 'level-up' | 'perk-choice'
+  | 'level-up' | 'perk-choice' | 'slot-choice'
 
 export default function SacredGame() {
   const router = useRouter()
@@ -1681,9 +1681,11 @@ export default function SacredGame() {
   const [world2Army2Units,       setWorld2Army2Units]       = useState<GameUnit[] | null>(null)  // army 2 (Сивілла) regular units
   const [world2Army2DeadUnits,   setWorld2Army2DeadUnits]   = useState<GameUnit[]>([])
   const [world2ActiveArmy,       setWorld2ActiveArmy]       = useState<1 | 2>(1)
-  const [world2PerkChoiceQueue,  setWorld2PerkChoiceQueue]  = useState<HeroId[]>([])
-  const [world2PendingPerkHeroId, setWorld2PendingPerkHeroId] = useState<HeroId | null>(null)
-  const [world2AfterPerkScreen,  setWorld2AfterPerkScreen]  = useState<RootScreen>('world-map-2')
+  const [world2PerkChoiceQueue,    setWorld2PerkChoiceQueue]    = useState<HeroId[]>([])
+  const [world2PendingPerkHeroId,  setWorld2PendingPerkHeroId]  = useState<HeroId | null>(null)
+  const [world2AfterPerkScreen,    setWorld2AfterPerkScreen]    = useState<RootScreen>('world-map-2')
+  const [world2PendingSlotUnlocks, setWorld2PendingSlotUnlocks] = useState<Array<1|2>>([])
+  const [world2AfterSlotScreen,    setWorld2AfterSlotScreen]    = useState<RootScreen>('world-map-2')
   const [world2ActiveBattleUnits,setWorld2ActiveBattleUnits] = useState<GameUnit[] | null>(null)
   const [world2FightDistrictId,  setWorld2FightDistrictId]  = useState<string | null>(null)
   const [world2FightRegionId,    setWorld2FightRegionId]    = useState<string | null>(null)
@@ -1803,9 +1805,21 @@ export default function SacredGame() {
       if (mapData.botGold      == null) mapData.botGold      = 0
       if (mapData.botRestTurns == null) mapData.botRestTurns = 0
       if (mapData.army2Ap      == null) mapData.army2Ap      = 2
-      if (mapData.army2MaxArmySlots == null) mapData.army2MaxArmySlots = 3
       if (mapData.army2RestedThisTurn == null) mapData.army2RestedThisTurn = false
       if (!mapData.heroes) mapData.heroes = { artan: null, sybilla: null }
+      // Convert old maxArmySlots number format to new unlocked-slots array format
+      if (!mapData.army1UnlockedSlots) {
+        const pool1 = [{row:0,slot:1},{row:0,slot:2},{row:0,slot:3},{row:1,slot:0},{row:1,slot:1},{row:1,slot:2},{row:1,slot:3}]
+        const count1 = Math.min(mapData.maxArmySlots ?? 3, pool1.length)
+        mapData.army1UnlockedSlots = pool1.slice(0, count1)
+        delete mapData.maxArmySlots
+      }
+      if (!mapData.army2UnlockedSlots) {
+        const pool2 = [{row:0,slot:0},{row:0,slot:1},{row:0,slot:2},{row:0,slot:3},{row:1,slot:1},{row:1,slot:2},{row:1,slot:3}]
+        const count2 = Math.min(mapData.army2MaxArmySlots ?? 3, pool2.length)
+        mapData.army2UnlockedSlots = pool2.slice(0, count2)
+        delete mapData.army2MaxArmySlots
+      }
       setMap2State(mapData)
       setWorld2PlayerUnits(unitsData)
       setWorld2DeadUnits(Array.isArray(deadData) ? deadData : [])
@@ -1823,7 +1837,10 @@ export default function SacredGame() {
     setWorld2Army2Units([])
     setWorld2Army2DeadUnits([])
     setWorld2ActiveArmy(1)
-    setScreen('world-map-2')
+    // Player chooses 3 slots for army1, then 3 slots for army2 before starting
+    setWorld2PendingSlotUnlocks([1, 1, 1, 2, 2, 2])
+    setWorld2AfterSlotScreen('world-map-2')
+    setScreen('slot-choice')
   }
 
   // ── Map 2 handlers ────────────────────────────────────────────────────────────
@@ -1870,9 +1887,11 @@ export default function SacredGame() {
   function syncHeroAfterBattle(units: GameUnit[], prevHeroes: TerritoryMap2State['heroes']): {
     updatedHeroes: TerritoryMap2State['heroes']
     perkChoiceQueue: HeroId[]
+    slotUnlocks: Array<1|2>
   } {
     let updatedHeroes = { ...prevHeroes }
     const perkChoiceQueue: HeroId[] = []
+    const slotUnlocks: Array<1|2> = []
     for (const heroUnit of units.filter(u => u.isHero && u.side === 'player')) {
       const heroId = heroUnit.heroId as HeroId
       const heroState = prevHeroes[heroId]
@@ -1885,21 +1904,28 @@ export default function SacredGame() {
         isAlive: heroUnit.hp > 0,
       }
       updatedHeroes = { ...updatedHeroes, [heroId]: finalState }
-      if (levelsGained > 0 && getAvailablePerks(finalState).length > 0) {
-        perkChoiceQueue.push(heroId)
+      if (levelsGained > 0) {
+        const army: 1|2 = heroId === 'artan' ? 1 : 2
+        for (let i = 0; i < levelsGained; i++) slotUnlocks.push(army)
+        if (getAvailablePerks(finalState).length > 0) perkChoiceQueue.push(heroId)
       }
     }
-    return { updatedHeroes, perkChoiceQueue }
+    return { updatedHeroes, perkChoiceQueue, slotUnlocks }
   }
 
   function applyBattleEndHeroSync(units: GameUnit[], won: boolean, nextScreen: RootScreen, callback: () => void) {
-    const { updatedHeroes, perkChoiceQueue } = syncHeroAfterBattle(units, map2State.heroes)
+    const { updatedHeroes, perkChoiceQueue, slotUnlocks } = syncHeroAfterBattle(units, map2State.heroes)
     setMap2State(prev => ({ ...prev, heroes: updatedHeroes }))
-    if (perkChoiceQueue.length > 0 && won) {
+    if (won && perkChoiceQueue.length > 0) {
+      setWorld2PendingSlotUnlocks(slotUnlocks)
       setWorld2PendingPerkHeroId(perkChoiceQueue[0])
       setWorld2PerkChoiceQueue(perkChoiceQueue.slice(1))
       setWorld2AfterPerkScreen(nextScreen)
       setScreen('perk-choice')
+    } else if (won && slotUnlocks.length > 0) {
+      setWorld2PendingSlotUnlocks(slotUnlocks)
+      setWorld2AfterSlotScreen(nextScreen)
+      setScreen('slot-choice')
     } else {
       callback()
     }
@@ -2123,12 +2149,24 @@ export default function SacredGame() {
     setMap2State(prev => ({ ...prev, gold: prev.gold - cost, fortressLevel: (prev.fortressLevel + 1) as 1|2|3|4|5 }))
   }
 
-  function handleMap2PurchaseSlot() {
-    const { maxArmySlots, gold } = map2State
-    if (maxArmySlots >= 8) return
-    const cost = SLOT_COSTS_2[maxArmySlots]
-    if (!cost || gold < cost) return
-    setMap2State(prev => ({ ...prev, gold: prev.gold - cost, maxArmySlots: prev.maxArmySlots + 1 }))
+  function handleMap2PurchaseSlot() { /* slots unlock via hero level-up, not purchased */ }
+
+  function handleMap2ChooseSlot(row: number, slot: number) {
+    const army = world2PendingSlotUnlocks[0]
+    if (!army) return
+    const key = army === 1 ? 'army1UnlockedSlots' : 'army2UnlockedSlots'
+    const heroRow = army === 1 ? 0 : 1
+    if (row === heroRow && slot === 0) return
+    if (map2State[key].some(s => s.row === row && s.slot === slot)) return
+    setMap2State(prev => ({
+      ...prev,
+      [key]: [...prev[key], { row: row as 0|1, slot }],
+    }))
+    const remaining = world2PendingSlotUnlocks.slice(1)
+    setWorld2PendingSlotUnlocks(remaining)
+    if (remaining.length === 0) {
+      setScreen(world2AfterSlotScreen)
+    }
   }
 
   function handleMap2ReviveUnit(id: string) {
@@ -2178,20 +2216,21 @@ export default function SacredGame() {
     const heroState = map2State.heroes[world2PendingPerkHeroId]
     if (!heroState) return
     const newHeroState = choosePerk(heroState, perkId)
-    // Update maxArmySlots when hero levels up
-    const newMaxSlots = heroSlotsFromLevel(newHeroState.level)
     setMap2State(prev => ({
       ...prev,
       heroes: { ...prev.heroes, [world2PendingPerkHeroId]: newHeroState },
-      ...(world2PendingPerkHeroId === 'artan'   ? { maxArmySlots: Math.max(prev.maxArmySlots, newMaxSlots) }   : {}),
-      ...(world2PendingPerkHeroId === 'sybilla' ? { army2MaxArmySlots: Math.max(prev.army2MaxArmySlots, newMaxSlots) } : {}),
     }))
     if (world2PerkChoiceQueue.length > 0) {
       setWorld2PendingPerkHeroId(world2PerkChoiceQueue[0])
       setWorld2PerkChoiceQueue(prev => prev.slice(1))
     } else {
       setWorld2PendingPerkHeroId(null)
-      setScreen(world2AfterPerkScreen)
+      if (world2PendingSlotUnlocks.length > 0) {
+        setWorld2AfterSlotScreen(world2AfterPerkScreen)
+        setScreen('slot-choice')
+      } else {
+        setScreen(world2AfterPerkScreen)
+      }
     }
   }
 
@@ -2588,11 +2627,86 @@ export default function SacredGame() {
           )}
         </div>
         {availablePerks.length === 0 && (
-          <button onClick={() => setScreen(world2AfterPerkScreen)}
+          <button onClick={() => {
+            if (world2PendingSlotUnlocks.length > 0) {
+              setWorld2AfterSlotScreen(world2AfterPerkScreen)
+              setScreen('slot-choice')
+            } else {
+              setScreen(world2AfterPerkScreen)
+            }
+          }}
             style={{ marginTop: 24, padding: '12px 32px', background: '#d4a85a', color: '#0f0e09', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
             Продовжити
           </button>
         )}
+      </div>
+    )
+  }
+
+  if (screen === 'slot-choice') {
+    const currentArmy = world2PendingSlotUnlocks[0]
+    if (!currentArmy) { setScreen(world2AfterSlotScreen); return null }
+    const heroId: HeroId = currentArmy === 1 ? 'artan' : 'sybilla'
+    const heroName = currentArmy === 1 ? 'Артан' : 'Сивілла'
+    const heroRow = currentArmy === 1 ? 0 : 1
+    const unlockedSlots = currentArmy === 1 ? map2State.army1UnlockedSlots : map2State.army2UnlockedSlots
+    let picksLeft = 0
+    for (const a of world2PendingSlotUnlocks) { if (a !== currentArmy) break; picksLeft++ }
+    return (
+      <div style={{
+        maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+        color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '32px 24px',
+      }}>
+        <div style={{ fontSize: 13, letterSpacing: 3, color: '#d4a85a', textTransform: 'uppercase', marginBottom: 8, opacity: 0.7 }}>Розблокування слоту</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: '#f0e8d8', marginBottom: 4 }}>{heroName}</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 8 }}>
+          Армія {currentArmy} — Оберіть слот для розблокування
+        </div>
+        <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 28, opacity: 0.8 }}>
+          Залишилось виборів: {picksLeft}
+        </div>
+        <div style={{ width: '100%' }}>
+          {[0, 1].map(row => (
+            <div key={row} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.35)', marginBottom: 8 }}>
+                {row === 0 ? 'Передній ряд' : 'Дальній ряд'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[0, 1, 2, 3].map(slot => {
+                  const isHero = row === heroRow && slot === 0
+                  const isUnlocked = unlockedSlots.some(s => s.row === row && s.slot === slot)
+                  const clickable = !isHero && !isUnlocked
+                  return (
+                    <div key={slot}
+                      onClick={() => clickable && handleMap2ChooseSlot(row, slot)}
+                      style={{
+                        height: 72, borderRadius: 10, overflow: 'hidden',
+                        border: isHero ? '2px solid rgba(212,168,90,0.7)' :
+                                isUnlocked ? '2px solid rgba(100,200,100,0.5)' :
+                                '1px solid rgba(240,232,216,0.2)',
+                        background: clickable ? 'rgba(240,232,216,0.06)' :
+                                    isUnlocked ? 'rgba(100,200,100,0.05)' : 'rgba(0,0,0,0.2)',
+                        cursor: clickable ? 'pointer' : 'default',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        position: 'relative',
+                        transition: 'border-color 0.15s',
+                      }}>
+                      {isHero ? (
+                        <img src={`/sacred/heroes/${heroId}.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                      ) : isUnlocked ? (
+                        <span style={{ fontSize: 20, opacity: 0.5 }}>✓</span>
+                      ) : (
+                        <span style={{ fontSize: 14, opacity: 0.25 }}>+</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

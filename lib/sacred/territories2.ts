@@ -6,7 +6,7 @@ export { HIRE_COSTS, FORTRESS_UPGRADE_COST, SLOT_COSTS, FORTRESS_NAMES }
 export { getReviveCost } from './territories'
 export { isSlotUnlocked } from './territories'
 import type { HeroState } from './heroes'
-import { createHeroState, heroSlotsFromLevel } from './heroes'
+import { createHeroState } from './heroes'
 export type { HeroState }
 
 export interface UnitSpec2 {
@@ -49,8 +49,8 @@ export interface TerritoryMap2State {
   ap:                   number
   army2Ap:              number
   armyNodeId:           string
-  maxArmySlots:         number   // army 1 (Артан) regular unit slots
-  army2MaxArmySlots:    number   // army 2 (Сивілла) regular unit slots
+  army1UnlockedSlots:   { row: 0|1; slot: number }[]  // army 1 (Артан) player-chosen unlocked slots
+  army2UnlockedSlots:   { row: 0|1; slot: number }[]  // army 2 (Сивілла) player-chosen unlocked slots
   fortressLevel:        1 | 2 | 3 | 4 | 5
   restedThisTurn:       boolean
   army2RestedThisTurn:  boolean
@@ -586,8 +586,8 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     ap:                  2,
     army2Ap:             2,
     armyNodeId:          'terr_221',
-    maxArmySlots:        heroSlotsFromLevel(1),
-    army2MaxArmySlots:   heroSlotsFromLevel(1),
+    army1UnlockedSlots:  [],
+    army2UnlockedSlots:  [],
     fortressLevel:       1,
     restedThisTurn:      false,
     army2RestedThisTurn: false,
