@@ -11,7 +11,7 @@ import {
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import type { GameUnit, UnitClass } from '@/lib/sacred/types'
 import type { UnitSpec2 } from '@/lib/sacred/territories2'
-import { HERO_REVIVE_COST } from '@/lib/sacred/heroes'
+import { HERO_REVIVE_COST, HERO_HIRE_COST } from '@/lib/sacred/heroes'
 import type { HeroId } from '@/lib/sacred/heroes'
 
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
@@ -102,6 +102,7 @@ interface Props {
   activeArmy:           1 | 2
   onSwitchArmy:         (army: 1 | 2) => void
   onReviveHero:         (heroId: HeroId) => void
+  onHireHero:           (heroId: HeroId) => void
   onMove:               (districtId: string) => void
   onAttack:             (districtId: string) => void
   onFinalBattle:        (regionId: string) => void
@@ -137,7 +138,7 @@ function isSlotUnlockedForArmy(
 
 export default function WorldMap2({
   mapState, playerUnits, deadUnits, army2Units, army2DeadUnits,
-  activeArmy, onSwitchArmy, onReviveHero,
+  activeArmy, onSwitchArmy, onReviveHero, onHireHero,
   onMove, onAttack, onFinalBattle, onEndTurn, onRest, onBack,
   onHireUnit, onReorderUnits, onMoveUnitSlot,
   onUpgradeFortress, onPurchaseSlot, onReviveUnit, onDismissUnit,
@@ -879,7 +880,34 @@ export default function WorldMap2({
                     )}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.35)', textAlign: 'center' }}>Герой не найнятий</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <img
+                        src={`/sacred/heroes/${activeHeroId}.jpg`}
+                        alt=""
+                        style={{ width: 52, height: 62, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', opacity: 0.4, filter: 'grayscale(0.6)' }}
+                      />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(240,232,216,0.55)' }}>
+                          {activeHeroId === 'artan' ? 'Артан' : 'Сивілла'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.3)', marginTop: 2 }}>
+                          {activeHeroId === 'artan' ? 'Воїн · Армія 1' : 'Цілителька · Армія 2'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onHireHero(activeHeroId)}
+                      disabled={gold < HERO_HIRE_COST}
+                      style={{
+                        width: '100%', padding: '10px 0', borderRadius: 10,
+                        background: gold >= HERO_HIRE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
+                        border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
+                        fontSize: 13, fontWeight: 600, cursor: gold >= HERO_HIRE_COST ? 'pointer' : 'not-allowed',
+                      }}>
+                      Найняти ({HERO_HIRE_COST} 💰)
+                    </button>
+                  </div>
                 )}
               </div>
             )}

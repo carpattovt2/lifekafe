@@ -6,7 +6,6 @@ export { HIRE_COSTS, FORTRESS_UPGRADE_COST, SLOT_COSTS, FORTRESS_NAMES }
 export { getReviveCost } from './territories'
 export { isSlotUnlocked } from './territories'
 import type { HeroState } from './heroes'
-import { createHeroState } from './heroes'
 export type { HeroState }
 
 export interface UnitSpec2 {
@@ -573,8 +572,6 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
   const ownership: Record<string, 'player' | 'enemy' | 'bot'> = {}
   for (const d of DISTRICTS_2) ownership[d.id] = d.isStart ? 'player' : 'enemy'
   ownership['terr_229'] = 'bot'  // bot starts in Тетрарія
-  const artanState   = createHeroState('artan')
-  const sybildaState = createHeroState('sybilla')
   return {
     ownership,
     conqueredRegions:    [],
@@ -591,7 +588,7 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     fortressLevel:       1,
     restedThisTurn:      false,
     army2RestedThisTurn: false,
-    heroes:              { artan: artanState, sybilla: sybildaState },
+    heroes:              { artan: null, sybilla: null },
     botUnits:            3,
     botGold:             0,
     botRestTurns:        0,

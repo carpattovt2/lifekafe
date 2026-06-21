@@ -29,7 +29,7 @@ import {
 } from '@/lib/sacred/territories2'
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import {
-  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, HERO_REVIVE_COST,
+  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, HERO_REVIVE_COST, HERO_HIRE_COST, createHeroState,
 } from '@/lib/sacred/heroes'
 import type { HeroId, PerkId, HeroState } from '@/lib/sacred/heroes'
 
@@ -1837,10 +1837,7 @@ export default function SacredGame() {
     setWorld2Army2Units([])
     setWorld2Army2DeadUnits([])
     setWorld2ActiveArmy(1)
-    // Player chooses 3 slots for army1, then 3 slots for army2 before starting
-    setWorld2PendingSlotUnlocks([1, 1, 1, 2, 2, 2])
-    setWorld2AfterSlotScreen('world-map-2')
-    setScreen('slot-choice')
+    setScreen('world-map-2')
   }
 
   // ── Map 2 handlers ────────────────────────────────────────────────────────────
@@ -2209,6 +2206,21 @@ export default function SacredGame() {
         [heroId]: { ...heroState, hp: Math.round(heroState.maxHp * 0.5), isAlive: true },
       },
     }))
+  }
+
+  function handleMap2HireHero(heroId: HeroId) {
+    if (map2State.gold < HERO_HIRE_COST) return
+    if (map2State.heroes[heroId]) return  // already hired
+    const newHeroState = createHeroState(heroId)
+    setMap2State(prev => ({
+      ...prev,
+      gold: prev.gold - HERO_HIRE_COST,
+      heroes: { ...prev.heroes, [heroId]: newHeroState },
+    }))
+    const army: 1|2 = heroId === 'artan' ? 1 : 2
+    setWorld2PendingSlotUnlocks([army, army, army])
+    setWorld2AfterSlotScreen('world-map-2')
+    setScreen('slot-choice')
   }
 
   function handleMap2ChoosePerk(perkId: PerkId) {
@@ -2721,6 +2733,7 @@ export default function SacredGame() {
       activeArmy={world2ActiveArmy}
       onSwitchArmy={handleMap2SwitchArmy}
       onReviveHero={handleMap2ReviveHero}
+      onHireHero={handleMap2HireHero}
       battleResult={world2BattleResult}
       onClearBattleResult={() => setWorld2BattleResult(null)}
       botMessage={botMessage}
