@@ -3,22 +3,24 @@ export type Side = 'player' | 'ai'
 export type Row = 0 | 1 | 2
 
 export type BuffType =
-  | 'defense_up'      // warrior shield: +50% damage reduction this turn
-  | 'aimed'           // archer aim: fixed acc bonus + crit for 2 turns
-  | 'morale_up'       // knight battle cry: +N morale → +1% acc/eva per 10 morale
-  | 'armor_break'     // paladin sacred strike: -10% target armor for 1 turn
-  | 'poison'          // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
-  | 'burning'         // fire mage: X dmg/turn for N turns (like poison, no stack)
-  | 'frozen'          // water/earth: skip next turn (turnsLeft = 1)
-  | 'accuracy_down'   // frost bolt / gust: -X% accuracy for N turns
-  | 'accuracy_up'     // air tailwind: +X% accuracy for N turns
-  | 'regen'           // ice shield lv3+ / stone skin lv3+: +X HP at turn start
-  | 'wind_shield'     // air lv4: +X% evasion
-  | 'fortress_buff'   // earth lv5: +X% defense (party)
-  | 'thorns'          // stone skin lv3: attacker takes X dmg on hit
-  | 'initiative_up'   // archer aim / air tailwind: +X initiative for queue ordering
-  | 'initiative_down' // air wind_gust: -X initiative for N turns
-  | 'cooldown'        // hurricane / armageddon: action blocked for 2 turns (uses actionKey)
+  | 'defense_up'        // warrior shield: +50% damage reduction this turn
+  | 'aimed'             // archer aim: fixed acc bonus + crit for 2 turns
+  | 'morale_up'         // knight battle cry: +N morale → +1% acc/eva per 10 morale
+  | 'armor_break'       // paladin sacred strike: -10% target armor for 1 turn
+  | 'poison'            // hunter poison_shot: 4 dmg/turn for 3 turns, no stack
+  | 'burning'           // fire mage: X dmg/turn for N turns (like poison, no stack)
+  | 'frozen'            // water/earth: skip next turn (turnsLeft = 1)
+  | 'accuracy_down'     // frost bolt / gust: -X% accuracy for N turns
+  | 'accuracy_up'       // air tailwind: +X% accuracy for N turns
+  | 'regen'             // ice shield lv3+ / stone skin lv3+: +X HP at turn start
+  | 'wind_shield'       // air lv4: +X% evasion
+  | 'fortress_buff'     // earth lv5: +X% defense (party)
+  | 'thorns'            // stone skin lv3: attacker takes X dmg on hit
+  | 'initiative_up'     // archer aim / air tailwind: +X initiative for queue ordering
+  | 'initiative_down'   // air wind_gust: -X initiative for N turns
+  | 'cooldown'          // hurricane / armageddon: action blocked for 2 turns (uses actionKey)
+  | 'noble_strike_buff' // Артан: next N turns attacks are force-hit / ignore evasion
+  | 'damage_up'         // Артан flank_strike: +X% damage bonus
 
 export interface Buff {
   id: string
@@ -69,6 +71,17 @@ export interface GameUnit {
   waterRes?: number
   earthRes?: number
   airRes?: number
+
+  // Hero fields
+  isHero?: boolean
+  heroId?: 'artan' | 'sybilla'
+  nobleStrikePerk?: boolean  // Артан: noble_strike action available
+  flankStrikePerk?: boolean  // Артан: flank_strike action available
+  armorPiercePerk?: boolean  // Артан: ignore 50% enemy base defense
+  massHealPerk?: boolean     // Сивілла: hero_mass_heal action available
+  prophecyPerk?: boolean     // Сивілла: prophecy action available
+  heroHealAmt?: number       // Сивілла: single-target heal amount
+  heroMassHealAmt?: number   // Сивілла: mass heal amount
 }
 
 export type MagePath = 'fire' | 'water' | 'earth' | 'air'
@@ -113,6 +126,12 @@ export type ActionKey =
   | 'twin_bolt'        // scorpion lv3: two shots, player picks 2 targets separately
   | 'trebuchet_volley' // trebuchet lv2: 45 dmg primary + 60% splash (75% adj acc)
   | 'plague_volley'    // plague trebuchet lv3: 60 dmg + 60% splash + 60% poison
+  // ── Hero actions ────────────────────────────────────────────────────────────────
+  | 'noble_strike'     // Артан (perk): force-hit buff for 3 hero-turns, CD 3
+  | 'flank_strike'     // Артан (perk ult): all allies +50% acc +25% dmg 2 turns, CD 3
+  | 'hero_heal'        // Сивілла lv1: heal single ally for heroHealAmt HP
+  | 'hero_mass_heal'   // Сивілла (perk): heal all allies for heroMassHealAmt HP
+  | 'prophecy'         // Сивілла (perk ult): heal all +20 HP + cleanse debuffs, CD 3
 
 export interface ActionDef {
   key: ActionKey

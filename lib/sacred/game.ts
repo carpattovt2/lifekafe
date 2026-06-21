@@ -420,6 +420,12 @@ function resolveAttack(
   let effectiveCritChance = opts.critChance ?? atk.critChance
   let effectiveCritMult   = opts.critMult   ?? atk.critMult
 
+  // Noble strike buff: force-hit and ignore evasion
+  if (atk.buffs.some(b => b.type === 'noble_strike_buff')) {
+    opts = { ...opts, forceHit: true, ignoreEvasion: true }
+    ignoreEvasion = true
+  }
+
   // Aimed buff: accuracy bonus only (crit removed from aim)
   const aimedBuff = atk.buffs.find(b => b.type === 'aimed')
   if (aimedBuff) {
@@ -467,11 +473,16 @@ function resolveAttack(
   const rawMax = opts.dmgMax ?? atk.maxDmg
   let dmg = (rawMin + Math.random() * (rawMax - rawMin)) * dmgMult
 
+  // damage_up buff (e.g. from flank_strike)
+  const dmgUpBonus = getBuffValue(atk, 'damage_up')
+  if (dmgUpBonus > 0) dmg *= (1 + dmgUpBonus)
+
   const isCrit = Math.random() < effectiveCritChance
   if (isCrit) dmg *= effectiveCritMult
 
-  const fortressBonus = getBuffValue(def, 'fortress_buff')
-  const defTotal = Math.max(0, def.defense + getBuffValue(def, 'defense_up') + getBuffValue(def, 'fortress_buff') + frontLineBonus(def, units))
+  // armorPiercePerk: hero ignores 50% of base defense
+  const baseDefense = atk.armorPiercePerk ? def.defense * 0.5 : def.defense
+  const defTotal = Math.max(0, baseDefense + getBuffValue(def, 'defense_up') + getBuffValue(def, 'fortress_buff') + frontLineBonus(def, units))
   dmg *= (1 - defTotal)
   dmg *= (1 + getBuffValue(def, 'armor_break'))  // armor break amplifies damage
   // Elemental resistance
@@ -520,7 +531,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
     return living(enemySide).map(u => u.id)
   }
 
-  if (['consecration', 'ice_shield', 'stone_skin', 'fortress_aura'].includes(action)) {
+  if (['consecration', 'ice_shield', 'stone_skin', 'fortress_aura', 'hero_heal'].includes(action)) {
     return living(actor.side).map(u => u.id)
   }
 
@@ -1299,6 +1310,80 @@ export function executeAction(
       update({ ...actorNow, buffs: [...actorNow.buffs, makeBuff('cooldown', 0, 4, 'hurricane')] })
       break
     }
+
+    // ── Hero actions ──────────────────────────────────────────────────────────
+    case 'noble_strike': {
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'noble_strike')) break
+      const a = getUnit(actor.id)
+      // turnsLeft=4 → active on next 3 of Артан's turns (ticked at start of each turn)
+      update({ ...a, buffs: [...a.buffs, makeBuff('noble_strike_buff', 1, 4), makeBuff('cooldown', 0, 3, 'noble_strike')] })
+      newLogs.push(log(`⚔ ${actor.name} — Благородний удар! Наступні 3 ходи атаки непромахуються`, 'buff'))
+      newEvents.push(ev(actor.id, '⚔ Благородний удар', 'buff'))
+      break
+    }
+
+    case 'flank_strike': {
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'flank_strike')) break
+      const flankAllies = units.filter(u => u.side === actor.side && u.hp > 0)
+      for (const ally of flankAllies) {
+        const a = getUnit(ally.id)
+        // turnsLeft=3 → active on next 2 of each ally's turns
+        update({ ...a, buffs: [...a.buffs, makeBuff('accuracy_up', 0.50, 3), makeBuff('damage_up', 0.25, 3)] })
+      }
+      newLogs.push(log(`🗡 ${actor.name} — Фланговий удар! Всі союзники +50% точн. та +25% урону на 2 ходи`, 'buff'))
+      newEvents.push(ev(actor.id, '🗡 Фланговий удар', 'buff'))
+      const actorAfterFlank = getUnit(actor.id)
+      update({ ...actorAfterFlank, buffs: [...actorAfterFlank.buffs, makeBuff('cooldown', 0, 3, 'flank_strike')] })
+      break
+    }
+
+    case 'hero_heal': {
+      if (!target) break
+      const tgt = getUnit(target.id)
+      if (tgt.hp <= 0) {
+        newLogs.push(log(`${actor.name} намагається благословити ${target.name}, але той вже мертвий — хід втрачено`, 'info'))
+        break
+      }
+      const healAmt = Math.min(actor.heroHealAmt ?? 15, tgt.maxHp - tgt.hp)
+      update({ ...tgt, hp: tgt.hp + healAmt })
+      newLogs.push(log(`✨ ${actor.name} — Благословіння! ${target.name} +${healAmt} HP`, 'heal'))
+      newEvents.push(ev(target.id, `✨ +${healAmt}`, 'heal', actor.id))
+      break
+    }
+
+    case 'hero_mass_heal': {
+      const massAmt = actor.heroMassHealAmt ?? 10
+      const massAllies = units.filter(u => u.side === actor.side && u.hp > 0)
+      for (const ally of massAllies) {
+        const a = getUnit(ally.id)
+        const healed = Math.min(a.maxHp, a.hp + massAmt)
+        const gain = healed - a.hp
+        update({ ...a, hp: healed })
+        if (gain > 0) newEvents.push(ev(a.id, `✨ +${gain}`, 'heal', actor.id))
+      }
+      newLogs.push(log(`✨ ${actor.name} — Масове лікування! Всі союзники +${massAmt} HP`, 'heal'))
+      newEvents.push(ev(actor.id, '✨ Масове лікування', 'heal'))
+      break
+    }
+
+    case 'prophecy': {
+      if (actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'prophecy')) break
+      const NEGATIVE_DEBUFFS_HERO: BuffType[] = ['poison', 'burning', 'frozen', 'accuracy_down', 'armor_break', 'initiative_down']
+      const prophecyAllies = units.filter(u => u.side === actor.side && u.hp > 0)
+      for (const ally of prophecyAllies) {
+        const a = getUnit(ally.id)
+        const healed = Math.min(a.maxHp, a.hp + 20)
+        const gain = healed - a.hp
+        const cleanedBuffs = a.buffs.filter(b => !NEGATIVE_DEBUFFS_HERO.includes(b.type))
+        update({ ...a, hp: healed, buffs: cleanedBuffs })
+        if (gain > 0) newEvents.push(ev(a.id, `🌟 +${gain}`, 'heal', actor.id))
+      }
+      newLogs.push(log(`🌟 ${actor.name} — Пророчество! Всі союзники +20 HP та зняття дебафів`, 'heal'))
+      newEvents.push(ev(actor.id, '🌟 Пророчество', 'heal'))
+      const actorAfterProphecy = getUnit(actor.id)
+      update({ ...actorAfterProphecy, buffs: [...actorAfterProphecy.buffs, makeBuff('cooldown', 0, 3, 'prophecy')] })
+      break
+    }
   }
 
   // ── Counter-attack passive (champion warrior) ──────────────────────────────
@@ -1322,12 +1407,18 @@ export function executeAction(
 
   // ── XP: per kill (+50) and per hit (+10) ──────────────────────────────────
   let pendingCatapultLevelUp: string | undefined
-  if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage' || actor.class === 'catapult') {
-    const kills = units.filter(u => {
-      const prev = prevUnitMap.get(u.id)
-      return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
-    }).length
-    const xpGain = kills * 50 + (hitLanded ? 10 : 0)
+  const kills = units.filter(u => {
+    const prev = prevUnitMap.get(u.id)
+    return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
+  }).length
+  const xpGain = kills * 50 + (hitLanded ? 10 : 0)
+  if (actor.isHero) {
+    // Heroes accumulate XP but never level up mid-battle (post-battle only)
+    if (xpGain > 0) {
+      const fresh = getUnit(actor.id)
+      update({ ...fresh, xp: (fresh.xp ?? 0) + xpGain })
+    }
+  } else if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage' || actor.class === 'catapult') {
     if (xpGain > 0) {
       const fresh = getUnit(actor.id)
       const cap = state.fortressLevelCap
@@ -1592,6 +1683,31 @@ export const ACTIONS: Record<ActionKey, ActionDef> = {
   twin_bolt:        { key: 'twin_bolt',        label: 'Подвійний болт',    desc: '2 постріли по 35 урону — обираєш 2 цілі',     needsTarget: true,  targetSide: 'ai' },
   trebuchet_volley: { key: 'trebuchet_volley', label: 'Залп Требюше',      desc: '45 урону + 60% урону сусідам (75% точн.)',    needsTarget: true,  targetSide: 'ai' },
   plague_volley:    { key: 'plague_volley',    label: 'Чумний залп',       desc: '60 урону + 60% по сусідах + 60% отруєння',   needsTarget: true,  targetSide: 'ai' },
+  noble_strike:     { key: 'noble_strike',     label: 'Благородний удар',  desc: 'Наступні 3 ходи атаки непромахуються (КД 3)', needsTarget: false, targetSide: null },
+  flank_strike:     { key: 'flank_strike',     label: 'Фланговий удар',    desc: 'Всі союзники +50% точн. та +25% урону на 2 ходи (КД 3)', needsTarget: false, targetSide: null },
+  hero_heal:        { key: 'hero_heal',        label: 'Благословіння',     desc: 'Лікує союзника',                              needsTarget: true,  targetSide: 'ally' },
+  hero_mass_heal:   { key: 'hero_mass_heal',   label: 'Масове лікування',  desc: 'Лікує всіх союзників',                        needsTarget: false, targetSide: null },
+  prophecy:         { key: 'prophecy',         label: 'Пророчество',       desc: 'Всі +20 HP + зняття негативних бафів (КД 3)', needsTarget: false, targetSide: null },
+}
+
+export function getMainActionsForHero(unit: GameUnit): ActionKey[] {
+  if (unit.heroId === 'artan') {
+    const actions: ActionKey[] = ['strike', 'shield']
+    if (unit.nobleStrikePerk && !unit.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'noble_strike')) {
+      actions.push('noble_strike')
+    }
+    if (unit.flankStrikePerk && !unit.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'flank_strike')) {
+      actions.push('flank_strike')
+    }
+    return actions
+  }
+  // Сивілла
+  const actions: ActionKey[] = ['hero_heal']
+  if (unit.massHealPerk) actions.push('hero_mass_heal')
+  if (unit.prophecyPerk && !unit.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'prophecy')) {
+    actions.push('prophecy')
+  }
+  return actions
 }
 
 export function getMainActions(cls: UnitClass, level?: number, magePath?: MagePath, catapultPath?: CatapultPath, warriorPath?: WarriorPath): ActionKey[] {
@@ -1811,7 +1927,7 @@ function advanceQueue(state: BattleState): BattleState {
     const roundLogs: LogEntry[] = []
     const roundEvents: BattleEvent[] = []
     const roundCap = state.fortressLevelCap
-    for (const u of units.filter(x => (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
+    for (const u of units.filter(x => !x.isHero && (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
       if (u.class === 'warrior') {
         const { unit: updated } = grantWarriorXp(u, 15, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
@@ -1825,6 +1941,10 @@ function advanceQueue(state: BattleState): BattleState {
         const { unit: updated } = grantCatapultXp(u, 15, roundLogs, roundEvents, roundCap)
         units = units.map(x => x.id === updated.id ? updated : x)
       }
+    }
+    // Heroes get round survival XP (accumulated, leveled post-battle)
+    for (const u of units.filter(x => x.isHero && x.hp > 0)) {
+      units = units.map(x => x.id === u.id ? { ...x, xp: (x.xp ?? 0) + 15 } : x)
     }
     state = {
       ...state, units,

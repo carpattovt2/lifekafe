@@ -5,6 +5,9 @@ import { HIRE_COSTS, FORTRESS_UPGRADE_COST, SLOT_COSTS, FORTRESS_NAMES, getReviv
 export { HIRE_COSTS, FORTRESS_UPGRADE_COST, SLOT_COSTS, FORTRESS_NAMES }
 export { getReviveCost } from './territories'
 export { isSlotUnlocked } from './territories'
+import type { HeroState } from './heroes'
+import { createHeroState, heroSlotsFromLevel } from './heroes'
+export type { HeroState }
 
 export interface UnitSpec2 {
   class: UnitClass
@@ -36,21 +39,25 @@ export interface Region2 {
 }
 
 export interface TerritoryMap2State {
-  ownership:           Record<string, 'player' | 'enemy' | 'bot'>
-  conqueredRegions:    string[]
-  botConqueredRegions: string[]
-  activeRegionId:      string
-  pendingFinalBattle:  string | null
-  gold:                number
-  turn:                number
-  ap:                  number
-  armyNodeId:          string
-  maxArmySlots:        number
-  fortressLevel:       1 | 2 | 3 | 4 | 5
-  restedThisTurn:      boolean
-  botUnits:            number   // bot army size (unit count)
-  botGold:             number   // bot accumulated gold
-  botRestTurns:        number   // turns until bot can act again
+  ownership:            Record<string, 'player' | 'enemy' | 'bot'>
+  conqueredRegions:     string[]
+  botConqueredRegions:  string[]
+  activeRegionId:       string
+  pendingFinalBattle:   string | null
+  gold:                 number
+  turn:                 number
+  ap:                   number
+  army2Ap:              number
+  armyNodeId:           string
+  maxArmySlots:         number   // army 1 (Артан) regular unit slots
+  army2MaxArmySlots:    number   // army 2 (Сивілла) regular unit slots
+  fortressLevel:        1 | 2 | 3 | 4 | 5
+  restedThisTurn:       boolean
+  army2RestedThisTurn:  boolean
+  heroes:               { artan: HeroState | null; sybilla: HeroState | null }
+  botUnits:             number
+  botGold:              number
+  botRestTurns:         number
 }
 
 export const MAP2_WIDTH  = 1796
@@ -566,6 +573,8 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
   const ownership: Record<string, 'player' | 'enemy' | 'bot'> = {}
   for (const d of DISTRICTS_2) ownership[d.id] = d.isStart ? 'player' : 'enemy'
   ownership['terr_229'] = 'bot'  // bot starts in Тетрарія
+  const artanState   = createHeroState('artan')
+  const sybildaState = createHeroState('sybilla')
   return {
     ownership,
     conqueredRegions:    [],
@@ -575,10 +584,14 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     gold:                10,
     turn:                1,
     ap:                  2,
+    army2Ap:             2,
     armyNodeId:          'terr_221',
-    maxArmySlots:        4,
+    maxArmySlots:        heroSlotsFromLevel(1),
+    army2MaxArmySlots:   heroSlotsFromLevel(1),
     fortressLevel:       1,
     restedThisTurn:      false,
+    army2RestedThisTurn: false,
+    heroes:              { artan: artanState, sybilla: sybildaState },
     botUnits:            3,
     botGold:             0,
     botRestTurns:        0,

@@ -3,7 +3,7 @@
 import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  createInitialState, battleReducer, getMainActions, getValidTargets, ACTIONS,
+  createInitialState, battleReducer, getMainActions, getMainActionsForHero, getValidTargets, ACTIONS,
   addUnitAtSlot, buildCustomArmy,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
@@ -28,6 +28,10 @@ import {
   SLOT_COSTS as SLOT_COSTS_2, getReviveCost as getReviveCost2,
 } from '@/lib/sacred/territories2'
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
+import {
+  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, heroSlotsFromLevel, HERO_REVIVE_COST,
+} from '@/lib/sacred/heroes'
+import type { HeroId, PerkId, HeroState } from '@/lib/sacred/heroes'
 
 type WorldBattleResult = { gold: number; levelUps: string[] }
 
@@ -1262,6 +1266,8 @@ const LS_CAMPAIGN_DEAD   = 'sacred_campaign_dead'
 const LS_CAMPAIGN2_MAP   = 'sacred_campaign2_map'
 const LS_CAMPAIGN2_UNITS = 'sacred_campaign2_units'
 const LS_CAMPAIGN2_DEAD  = 'sacred_campaign2_dead'
+const LS_CAMPAIGN2_ARMY2 = 'sacred_campaign2_army2'
+const LS_CAMPAIGN2_ARMY2_DEAD = 'sacred_campaign2_army2_dead'
 
 // ── Battle component ───────────────────────────────────────────────────────────
 const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
@@ -1290,7 +1296,11 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
 
   const actorId = state.queue[state.queueIdx]
   const actor   = state.units.find(u => u.id === actorId && u.hp > 0) ?? null
-  const mainActions = actor ? getMainActions(actor.class, actor.level, actor.magePath, actor.catapultPath, actor.warriorPath) : []
+  const mainActions = actor
+    ? actor.isHero
+      ? getMainActionsForHero(actor)
+      : getMainActions(actor.class, actor.level, actor.magePath, actor.catapultPath, actor.warriorPath)
+    : []
 
   const targetIds = actor && state.selectedAction
     ? getValidTargets(actor, state.selectedAction, state.units)
@@ -1648,7 +1658,7 @@ type RootScreen =
   | 'army-builder' | 'placement' | 'battle' | 'free-battle'
   | 'world-map'  | 'world-battle'  | 'campaign-victory'
   | 'world-map-2' | 'world-battle-2' | 'region-final-battle-2' | 'region-choice-2' | 'campaign-victory-2'
-  | 'level-up'
+  | 'level-up' | 'perk-choice'
 
 export default function SacredGame() {
   const router = useRouter()
@@ -1666,8 +1676,15 @@ export default function SacredGame() {
 
   // ── Map 2 state ──────────────────────────────────────────────────────────────
   const [map2State,              setMap2State]              = useState<TerritoryMap2State>(createInitialTerritoryMap2State)
-  const [world2PlayerUnits,      setWorld2PlayerUnits]      = useState<GameUnit[] | null>(null)
+  const [world2PlayerUnits,      setWorld2PlayerUnits]      = useState<GameUnit[] | null>(null)  // army 1 (Артан) regular units
   const [world2DeadUnits,        setWorld2DeadUnits]        = useState<GameUnit[]>([])
+  const [world2Army2Units,       setWorld2Army2Units]       = useState<GameUnit[] | null>(null)  // army 2 (Сивілла) regular units
+  const [world2Army2DeadUnits,   setWorld2Army2DeadUnits]   = useState<GameUnit[]>([])
+  const [world2ActiveArmy,       setWorld2ActiveArmy]       = useState<1 | 2>(1)
+  const [world2PerkChoiceQueue,  setWorld2PerkChoiceQueue]  = useState<HeroId[]>([])
+  const [world2PendingPerkHeroId, setWorld2PendingPerkHeroId] = useState<HeroId | null>(null)
+  const [world2AfterPerkScreen,  setWorld2AfterPerkScreen]  = useState<RootScreen>('world-map-2')
+  const [world2ActiveBattleUnits,setWorld2ActiveBattleUnits] = useState<GameUnit[] | null>(null)
   const [world2FightDistrictId,  setWorld2FightDistrictId]  = useState<string | null>(null)
   const [world2FightRegionId,    setWorld2FightRegionId]    = useState<string | null>(null)
   const [world2BattleResult,     setWorld2BattleResult]     = useState<WorldBattleResult | null>(null)
@@ -1697,12 +1714,17 @@ export default function SacredGame() {
   useEffect(() => {
     if (!world2PlayerUnits) return
     try {
-      localStorage.setItem(LS_CAMPAIGN2_MAP,   JSON.stringify(map2State))
-      localStorage.setItem(LS_CAMPAIGN2_UNITS, JSON.stringify(world2PlayerUnits))
-      localStorage.setItem(LS_CAMPAIGN2_DEAD,  JSON.stringify(world2DeadUnits))
+      // Save only non-hero units (heroes live in map2State.heroes)
+      const army1ToSave = world2PlayerUnits.filter(u => !u.isHero)
+      const army2ToSave = (world2Army2Units ?? []).filter(u => !u.isHero)
+      localStorage.setItem(LS_CAMPAIGN2_MAP,       JSON.stringify(map2State))
+      localStorage.setItem(LS_CAMPAIGN2_UNITS,     JSON.stringify(army1ToSave))
+      localStorage.setItem(LS_CAMPAIGN2_DEAD,      JSON.stringify(world2DeadUnits))
+      localStorage.setItem(LS_CAMPAIGN2_ARMY2,     JSON.stringify(army2ToSave))
+      localStorage.setItem(LS_CAMPAIGN2_ARMY2_DEAD,JSON.stringify(world2Army2DeadUnits))
       setHasCampaign2Save(true)
     } catch {}
-  }, [map2State, world2PlayerUnits, world2DeadUnits])
+  }, [map2State, world2PlayerUnits, world2DeadUnits, world2Army2Units, world2Army2DeadUnits])
 
   function clearCampaignSave() {
     try {
@@ -1718,6 +1740,8 @@ export default function SacredGame() {
       localStorage.removeItem(LS_CAMPAIGN2_MAP)
       localStorage.removeItem(LS_CAMPAIGN2_UNITS)
       localStorage.removeItem(LS_CAMPAIGN2_DEAD)
+      localStorage.removeItem(LS_CAMPAIGN2_ARMY2)
+      localStorage.removeItem(LS_CAMPAIGN2_ARMY2_DEAD)
     } catch {}
     setHasCampaign2Save(false)
   }
@@ -1769,16 +1793,24 @@ export default function SacredGame() {
 
   function handleContinueCampaign2() {
     try {
-      const mapData   = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_MAP)   ?? '')
-      const unitsData = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_UNITS) ?? '')
-      const deadData  = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_DEAD)  ?? '[]')
+      const mapData      = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_MAP)       ?? '')
+      const unitsData    = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_UNITS)     ?? '')
+      const deadData     = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_DEAD)      ?? '[]')
+      const army2Data    = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_ARMY2)     ?? '[]')
+      const army2DeadData= JSON.parse(localStorage.getItem(LS_CAMPAIGN2_ARMY2_DEAD)?? '[]')
       if (!mapData.botConqueredRegions) mapData.botConqueredRegions = []
-      if (mapData.botUnits    == null) mapData.botUnits    = 3
-      if (mapData.botGold     == null) mapData.botGold     = 0
+      if (mapData.botUnits     == null) mapData.botUnits     = 3
+      if (mapData.botGold      == null) mapData.botGold      = 0
       if (mapData.botRestTurns == null) mapData.botRestTurns = 0
+      if (mapData.army2Ap      == null) mapData.army2Ap      = 2
+      if (mapData.army2MaxArmySlots == null) mapData.army2MaxArmySlots = 3
+      if (mapData.army2RestedThisTurn == null) mapData.army2RestedThisTurn = false
+      if (!mapData.heroes) mapData.heroes = { artan: null, sybilla: null }
       setMap2State(mapData)
       setWorld2PlayerUnits(unitsData)
       setWorld2DeadUnits(Array.isArray(deadData) ? deadData : [])
+      setWorld2Army2Units(Array.isArray(army2Data) ? army2Data : [])
+      setWorld2Army2DeadUnits(Array.isArray(army2DeadData) ? army2DeadData : [])
       setScreen('world-map-2')
     } catch { handleWorldMap2() }
   }
@@ -1788,37 +1820,108 @@ export default function SacredGame() {
     setMap2State(createInitialTerritoryMap2State())
     setWorld2PlayerUnits([])
     setWorld2DeadUnits([])
+    setWorld2Army2Units([])
+    setWorld2Army2DeadUnits([])
+    setWorld2ActiveArmy(1)
     setScreen('world-map-2')
   }
 
   // ── Map 2 handlers ────────────────────────────────────────────────────────────
   function handleMap2Move(districtId: string) {
-    setMap2State(prev => ({ ...prev, armyNodeId: districtId, ap: prev.ap - 1 }))
+    setMap2State(prev => {
+      if (world2ActiveArmy === 1) return { ...prev, armyNodeId: districtId, ap: prev.ap - 1 }
+      return { ...prev, armyNodeId: districtId, army2Ap: prev.army2Ap - 1 }
+    })
+  }
+
+  function buildActiveArmyUnits(): GameUnit[] {
+    const { heroes } = map2State
+    if (world2ActiveArmy === 1) {
+      const regular = (world2PlayerUnits ?? []).filter(u => !u.isHero)
+      const hero = heroes.artan?.isAlive ? buildHeroUnit(heroes.artan, 'player') : null
+      return hero ? [hero, ...regular] : regular
+    } else {
+      const regular = (world2Army2Units ?? []).filter(u => !u.isHero)
+      const hero = heroes.sybilla?.isAlive ? buildHeroUnit(heroes.sybilla, 'player') : null
+      return hero ? [hero, ...regular] : regular
+    }
   }
 
   function handleMap2Attack(districtId: string) {
-    world2PreBattleUnits.current = world2PlayerUnits
+    const battleUnits = buildActiveArmyUnits()
+    world2PreBattleUnits.current = battleUnits
+    setWorld2ActiveBattleUnits(battleUnits)
     setWorld2FightDistrictId(districtId)
-    setMap2State(prev => ({ ...prev, ap: prev.ap - 1 }))
+    setMap2State(prev => {
+      if (world2ActiveArmy === 1) return { ...prev, ap: prev.ap - 1 }
+      return { ...prev, army2Ap: prev.army2Ap - 1 }
+    })
     setScreen('world-battle-2')
   }
 
   function handleMap2FinalBattle(regionId: string) {
-    world2PreBattleUnits.current = world2PlayerUnits
+    const battleUnits = buildActiveArmyUnits()
+    world2PreBattleUnits.current = battleUnits
+    setWorld2ActiveBattleUnits(battleUnits)
     setWorld2FightRegionId(regionId)
     setScreen('region-final-battle-2')
   }
 
-  function handleMap2DistrictBattleEnd(units: GameUnit[], won: boolean) {
-    const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
-    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
-    setWorld2PlayerUnits(survived)
-    setWorld2DeadUnits(prev => [...prev, ...fallen])
+  function syncHeroAfterBattle(units: GameUnit[], prevHeroes: TerritoryMap2State['heroes']): {
+    updatedHeroes: TerritoryMap2State['heroes']
+    perkChoiceQueue: HeroId[]
+  } {
+    let updatedHeroes = { ...prevHeroes }
+    const perkChoiceQueue: HeroId[] = []
+    for (const heroUnit of units.filter(u => u.isHero && u.side === 'player')) {
+      const heroId = heroUnit.heroId as HeroId
+      const heroState = prevHeroes[heroId]
+      if (!heroState) continue
+      const xpGained = Math.max(0, (heroUnit.xp ?? 0) - heroState.xp)
+      const { state: leveledState, levelsGained } = applyXpToHero(heroState, xpGained)
+      const finalState: HeroState = {
+        ...leveledState,
+        hp: Math.max(0, heroUnit.hp),
+        isAlive: heroUnit.hp > 0,
+      }
+      updatedHeroes = { ...updatedHeroes, [heroId]: finalState }
+      if (levelsGained > 0 && getAvailablePerks(finalState).length > 0) {
+        perkChoiceQueue.push(heroId)
+      }
+    }
+    return { updatedHeroes, perkChoiceQueue }
+  }
 
-    const district    = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
+  function applyBattleEndHeroSync(units: GameUnit[], won: boolean, nextScreen: RootScreen, callback: () => void) {
+    const { updatedHeroes, perkChoiceQueue } = syncHeroAfterBattle(units, map2State.heroes)
+    setMap2State(prev => ({ ...prev, heroes: updatedHeroes }))
+    if (perkChoiceQueue.length > 0 && won) {
+      setWorld2PendingPerkHeroId(perkChoiceQueue[0])
+      setWorld2PerkChoiceQueue(perkChoiceQueue.slice(1))
+      setWorld2AfterPerkScreen(nextScreen)
+      setScreen('perk-choice')
+    } else {
+      callback()
+    }
+  }
+
+  function handleMap2DistrictBattleEnd(units: GameUnit[], won: boolean) {
+    const heroUnit    = units.find(u => u.isHero && u.side === 'player')
+    const regularSurv = units.filter(u => u.hp > 0  && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+    const regularFall = units.filter(u => u.hp <= 0 && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+
+    if (world2ActiveArmy === 1) {
+      setWorld2PlayerUnits(regularSurv)
+      setWorld2DeadUnits(prev => [...prev, ...regularFall])
+    } else {
+      setWorld2Army2Units(regularSurv)
+      setWorld2Army2DeadUnits(prev => [...prev, ...regularFall])
+    }
+
+    const district = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
     const levelUps: GameUnit[] = []
     if (won && world2PreBattleUnits.current) {
-      for (const u of survived) {
+      for (const u of regularSurv) {
         const prev = world2PreBattleUnits.current.find(p => p.id === u.id)
         if (prev && (u.level ?? 1) > (prev.level ?? 1)) levelUps.push(u)
       }
@@ -1842,26 +1945,41 @@ export default function SacredGame() {
     world2PreBattleUnits.current = null
     setWorld2FightDistrictId(null)
 
-    if (levelUps.length > 0) {
-      setLevelUpUnits(levelUps)
-      setAfterLevelUpScreen('world-map-2')
-      setScreen('level-up')
+    const proceed = () => {
+      if (levelUps.length > 0) {
+        setLevelUpUnits(levelUps)
+        setAfterLevelUpScreen('world-map-2')
+        setScreen('level-up')
+      } else {
+        if (won) setWorld2BattleResult({ gold: 0, levelUps: [] })
+        setScreen('world-map-2')
+      }
+    }
+
+    if (heroUnit) {
+      applyBattleEndHeroSync(units, won, levelUps.length > 0 ? 'level-up' : 'world-map-2', proceed)
     } else {
-      if (won) setWorld2BattleResult({ gold: 0, levelUps: [] })
-      setScreen('world-map-2')
+      proceed()
     }
   }
 
   function handleMap2FinalBattleEnd(units: GameUnit[], won: boolean) {
-    const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
-    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
-    setWorld2PlayerUnits(survived)
-    setWorld2DeadUnits(prev => [...prev, ...fallen])
+    const heroUnit    = units.find(u => u.isHero && u.side === 'player')
+    const regularSurv = units.filter(u => u.hp > 0  && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+    const regularFall = units.filter(u => u.hp <= 0 && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+
+    if (world2ActiveArmy === 1) {
+      setWorld2PlayerUnits(regularSurv)
+      setWorld2DeadUnits(prev => [...prev, ...regularFall])
+    } else {
+      setWorld2Army2Units(regularSurv)
+      setWorld2Army2DeadUnits(prev => [...prev, ...regularFall])
+    }
 
     const regionId = world2FightRegionId
     const levelUps: GameUnit[] = []
     if (won && world2PreBattleUnits.current) {
-      for (const u of survived) {
+      for (const u of regularSurv) {
         const prev = world2PreBattleUnits.current.find(p => p.id === u.id)
         if (prev && (u.level ?? 1) > (prev.level ?? 1)) levelUps.push(u)
       }
@@ -1870,10 +1988,11 @@ export default function SacredGame() {
     world2PreBattleUnits.current = null
     setWorld2FightRegionId(null)
 
-    if (won && regionId) {
+    const proceed = () => {
+      if (!won || !regionId) { setScreen('world-map-2'); return }
+
       const region = getRegionById(regionId)
       if (region?.isBoss) {
-        // Final boss beaten → victory
         if (levelUps.length > 0) {
           setLevelUpUnits(levelUps)
           setAfterLevelUpScreen('campaign-victory-2')
@@ -1883,14 +2002,13 @@ export default function SacredGame() {
         }
         return
       }
-      // Linear player path: Ерідія → Сілонія → Паліндор → Болсовер (boss)
       const NEXT_REGION: Record<string, string> = {
         'terr_218': 'terr_225',
         'terr_225': 'terr_206',
         'terr_206': 'terr_242',
       }
-      const nextRegionId   = NEXT_REGION[regionId as string] ?? null
-      const nextIsBoss     = nextRegionId ? (getRegionById(nextRegionId)?.isBoss ?? false) : false
+      const nextRegionId = NEXT_REGION[regionId as string] ?? null
+      const nextIsBoss   = nextRegionId ? (getRegionById(nextRegionId)?.isBoss ?? false) : false
       setMap2State(prev => ({
         ...prev,
         conqueredRegions:   [...prev.conqueredRegions, regionId],
@@ -1905,8 +2023,12 @@ export default function SacredGame() {
       } else {
         setScreen('world-map-2')
       }
+    }
+
+    if (heroUnit) {
+      applyBattleEndHeroSync(units, won, 'world-map-2', proceed)
     } else {
-      setScreen('world-map-2')
+      proceed()
     }
   }
 
@@ -1919,10 +2041,12 @@ export default function SacredGame() {
     const income = getDailyIncome(map2State.ownership)
     const afterPlayer = {
       ...map2State,
-      turn:           map2State.turn + 1,
-      ap:             2,
-      restedThisTurn: false,
-      gold:           map2State.gold + income,
+      turn:                map2State.turn + 1,
+      ap:                  2,
+      army2Ap:             2,
+      restedThisTurn:      false,
+      army2RestedThisTurn: false,
+      gold:                map2State.gold + income,
     }
     const { state: afterBot, botMessage: msg } = doBotTurn(afterPlayer)
     setMap2State(afterBot)
@@ -1934,21 +2058,43 @@ export default function SacredGame() {
 
   function handleMap2Rest() {
     const atStart = map2State.armyNodeId === 'terr_221'
-    if (!atStart && map2State.gold < 1) return
-    setWorld2PlayerUnits(prev => prev?.map(u => ({ ...u, hp: u.maxHp })) ?? prev)
-    setMap2State(prev => ({ ...prev, gold: atStart ? prev.gold : prev.gold - 1, restedThisTurn: true }))
+    if (world2ActiveArmy === 1) {
+      if (!atStart && map2State.gold < 1) return
+      if (map2State.restedThisTurn) return
+      setWorld2PlayerUnits(prev => prev?.map(u => ({ ...u, hp: u.maxHp })) ?? prev)
+      setMap2State(prev => {
+        const heroes = { ...prev.heroes }
+        if (heroes.artan?.isAlive) heroes.artan = { ...heroes.artan, hp: heroes.artan.maxHp }
+        return { ...prev, gold: atStart ? prev.gold : prev.gold - 1, restedThisTurn: true, heroes }
+      })
+    } else {
+      if (!atStart && map2State.gold < 1) return
+      if (map2State.army2RestedThisTurn) return
+      setWorld2Army2Units(prev => prev?.map(u => ({ ...u, hp: u.maxHp })) ?? prev)
+      setMap2State(prev => {
+        const heroes = { ...prev.heroes }
+        if (heroes.sybilla?.isAlive) heroes.sybilla = { ...heroes.sybilla, hp: heroes.sybilla.maxHp }
+        return { ...prev, gold: atStart ? prev.gold : prev.gold - 1, army2RestedThisTurn: true, heroes }
+      })
+    }
   }
 
   function handleMap2HireUnit(unitClass: UnitClass, row: number, slot: number) {
-    if (!world2PlayerUnits) return
     const cost = HIRE_COSTS_2[unitClass]
     if (map2State.gold < cost) return
-    setWorld2PlayerUnits(addUnitAtSlot(world2PlayerUnits, unitClass, row, slot))
+    if (world2ActiveArmy === 1) {
+      if (!world2PlayerUnits) return
+      setWorld2PlayerUnits(addUnitAtSlot(world2PlayerUnits, unitClass, row, slot))
+    } else {
+      if (!world2Army2Units) return
+      setWorld2Army2Units(addUnitAtSlot(world2Army2Units, unitClass, row, slot))
+    }
     setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
   }
 
   function handleMap2ReorderUnits(id1: string, id2: string) {
-    setWorld2PlayerUnits(prev => {
+    const setter = world2ActiveArmy === 1 ? setWorld2PlayerUnits : setWorld2Army2Units
+    setter(prev => {
       if (!prev) return prev
       const u1 = prev.find(u => u.id === id1)
       const u2 = prev.find(u => u.id === id2)
@@ -1962,7 +2108,8 @@ export default function SacredGame() {
   }
 
   function handleMap2MoveUnitSlot(id: string, row: number, slot: number) {
-    setWorld2PlayerUnits(prev => {
+    const setter = world2ActiveArmy === 1 ? setWorld2PlayerUnits : setWorld2Army2Units
+    setter(prev => {
       if (!prev) return prev
       return prev.map(u => u.id === id ? { ...u, row: row as Row, slot } : u)
     })
@@ -1985,17 +2132,71 @@ export default function SacredGame() {
   }
 
   function handleMap2ReviveUnit(id: string) {
-    const unit = world2DeadUnits.find(u => u.id === id)
-    if (!unit) return
-    const cost = getReviveCost2(unit)
-    if (map2State.gold < cost) return
-    setWorld2DeadUnits(prev => prev.filter(u => u.id !== id))
-    setWorld2PlayerUnits(prev => prev ? [...prev, { ...unit, hp: Math.round(unit.maxHp * 0.5) }] : [{ ...unit, hp: Math.round(unit.maxHp * 0.5) }])
-    setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
+    if (world2ActiveArmy === 1) {
+      const unit = world2DeadUnits.find(u => u.id === id)
+      if (!unit) return
+      const cost = getReviveCost2(unit)
+      if (map2State.gold < cost) return
+      setWorld2DeadUnits(prev => prev.filter(u => u.id !== id))
+      setWorld2PlayerUnits(prev => prev ? [...prev, { ...unit, hp: Math.round(unit.maxHp * 0.5) }] : [{ ...unit, hp: Math.round(unit.maxHp * 0.5) }])
+      setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
+    } else {
+      const unit = world2Army2DeadUnits.find(u => u.id === id)
+      if (!unit) return
+      const cost = getReviveCost2(unit)
+      if (map2State.gold < cost) return
+      setWorld2Army2DeadUnits(prev => prev.filter(u => u.id !== id))
+      setWorld2Army2Units(prev => prev ? [...prev, { ...unit, hp: Math.round(unit.maxHp * 0.5) }] : [{ ...unit, hp: Math.round(unit.maxHp * 0.5) }])
+      setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
+    }
   }
 
   function handleMap2DismissUnit(id: string) {
-    setWorld2PlayerUnits(prev => prev ? prev.filter(u => u.id !== id) : prev)
+    if (world2ActiveArmy === 1) {
+      setWorld2PlayerUnits(prev => prev ? prev.filter(u => u.id !== id) : prev)
+    } else {
+      setWorld2Army2Units(prev => prev ? prev.filter(u => u.id !== id) : prev)
+    }
+  }
+
+  function handleMap2ReviveHero(heroId: HeroId) {
+    const heroState = map2State.heroes[heroId]
+    if (!heroState || heroState.isAlive) return
+    if (map2State.gold < HERO_REVIVE_COST) return
+    setMap2State(prev => ({
+      ...prev,
+      gold: prev.gold - HERO_REVIVE_COST,
+      heroes: {
+        ...prev.heroes,
+        [heroId]: { ...heroState, hp: Math.round(heroState.maxHp * 0.5), isAlive: true },
+      },
+    }))
+  }
+
+  function handleMap2ChoosePerk(perkId: PerkId) {
+    if (!world2PendingPerkHeroId) return
+    const heroState = map2State.heroes[world2PendingPerkHeroId]
+    if (!heroState) return
+    const newHeroState = choosePerk(heroState, perkId)
+    // Update maxArmySlots when hero levels up
+    const newMaxSlots = heroSlotsFromLevel(newHeroState.level)
+    setMap2State(prev => ({
+      ...prev,
+      heroes: { ...prev.heroes, [world2PendingPerkHeroId]: newHeroState },
+      ...(world2PendingPerkHeroId === 'artan'   ? { maxArmySlots: Math.max(prev.maxArmySlots, newMaxSlots) }   : {}),
+      ...(world2PendingPerkHeroId === 'sybilla' ? { army2MaxArmySlots: Math.max(prev.army2MaxArmySlots, newMaxSlots) } : {}),
+    }))
+    if (world2PerkChoiceQueue.length > 0) {
+      setWorld2PendingPerkHeroId(world2PerkChoiceQueue[0])
+      setWorld2PerkChoiceQueue(prev => prev.slice(1))
+    } else {
+      setWorld2PendingPerkHeroId(null)
+      setScreen(world2AfterPerkScreen)
+    }
+  }
+
+  function handleMap2SwitchArmy(army: 1 | 2) {
+    setWorld2ActiveArmy(army)
   }
 
   // Trigger level-up screen for map 1 battles too
@@ -2348,11 +2549,64 @@ export default function SacredGame() {
     )
   }
 
+  if (screen === 'perk-choice' && world2PendingPerkHeroId) {
+    const heroState = map2State.heroes[world2PendingPerkHeroId]
+    const availablePerks = heroState ? getAvailablePerks(heroState) : []
+    const heroName = world2PendingPerkHeroId === 'artan' ? 'Артан' : 'Сивілла'
+    return (
+      <div style={{
+        maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+        color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '32px 24px',
+      }}>
+        <div style={{ fontSize: 13, letterSpacing: 3, color: '#d4a85a', textTransform: 'uppercase', marginBottom: 8, opacity: 0.7 }}>Новий рівень</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: '#f0e8d8', marginBottom: 4 }}>{heroName}</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 32 }}>
+          Рівень {heroState?.level ?? 1} — Обери перк:
+        </div>
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {availablePerks.map(perkId => {
+            const def = PERK_DEFS.find(p => p.id === perkId)
+            if (!def) return null
+            return (
+              <button key={perkId} onClick={() => handleMap2ChoosePerk(perkId as PerkId)}
+                style={{
+                  padding: '16px 20px', borderRadius: 14, textAlign: 'left',
+                  background: 'rgba(212,168,90,0.08)', border: '1px solid rgba(212,168,90,0.3)',
+                  color: '#f0e8d8', cursor: 'pointer', width: '100%',
+                }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>{def.name}</div>
+                <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.55)' }}>{def.desc}</div>
+              </button>
+            )
+          })}
+          {availablePerks.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'rgba(240,232,216,0.4)', fontSize: 13 }}>
+              Немає доступних перків (потрібні передумови)
+            </div>
+          )}
+        </div>
+        {availablePerks.length === 0 && (
+          <button onClick={() => setScreen(world2AfterPerkScreen)}
+            style={{ marginTop: 24, padding: '12px 32px', background: '#d4a85a', color: '#0f0e09', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            Продовжити
+          </button>
+        )}
+      </div>
+    )
+  }
+
   if (screen === 'world-map-2') return (
     <WorldMap2
       mapState={map2State}
-      playerUnits={world2PlayerUnits ?? []}
+      playerUnits={(world2PlayerUnits ?? []).filter(u => !u.isHero)}
       deadUnits={world2DeadUnits}
+      army2Units={(world2Army2Units ?? []).filter(u => !u.isHero)}
+      army2DeadUnits={world2Army2DeadUnits}
+      activeArmy={world2ActiveArmy}
+      onSwitchArmy={handleMap2SwitchArmy}
+      onReviveHero={handleMap2ReviveHero}
       battleResult={world2BattleResult}
       onClearBattleResult={() => setWorld2BattleResult(null)}
       botMessage={botMessage}
@@ -2375,13 +2629,14 @@ export default function SacredGame() {
 
   if (screen === 'world-battle-2') {
     const district = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
-    if (district && world2PlayerUnits) return (
+    const bUnits = world2ActiveBattleUnits ?? (world2PlayerUnits ?? [])
+    if (district && bUnits.length > 0) return (
       <Battle
         counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
-        playerUnits={world2PlayerUnits}
+        playerUnits={bUnits}
         prebuiltAiUnits={buildArmyFromSpecs2(district.army, 'ai')}
         fortressLevelCap={map2State.fortressLevel}
-        onRestart={() => handleMap2DistrictBattleEnd(world2PlayerUnits, false)}
+        onRestart={() => handleMap2DistrictBattleEnd(bUnits, false)}
         onBattleEnd={handleMap2DistrictBattleEnd}
       />
     )
@@ -2390,13 +2645,14 @@ export default function SacredGame() {
 
   if (screen === 'region-final-battle-2') {
     const region = world2FightRegionId ? getRegionById(world2FightRegionId) : null
-    if (region && world2PlayerUnits) return (
+    const bUnits2 = world2ActiveBattleUnits ?? (world2PlayerUnits ?? [])
+    if (region && bUnits2.length > 0) return (
       <Battle
         counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
-        playerUnits={world2PlayerUnits}
+        playerUnits={bUnits2}
         prebuiltAiUnits={buildArmyFromSpecs2(region.finalBattleArmy, 'ai')}
         fortressLevelCap={map2State.fortressLevel}
-        onRestart={() => handleMap2FinalBattleEnd(world2PlayerUnits, false)}
+        onRestart={() => handleMap2FinalBattleEnd(bUnits2, false)}
         onBattleEnd={handleMap2FinalBattleEnd}
       />
     )

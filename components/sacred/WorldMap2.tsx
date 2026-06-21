@@ -11,6 +11,8 @@ import {
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import type { GameUnit, UnitClass } from '@/lib/sacred/types'
 import type { UnitSpec2 } from '@/lib/sacred/territories2'
+import { HERO_REVIVE_COST } from '@/lib/sacred/heroes'
+import type { HeroId } from '@/lib/sacred/heroes'
 
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
   { cls: 'warrior',  label: 'Воїн',       cost: HIRE_COSTS.warrior,  desc: 'Передній ряд, щит, провокація' },
@@ -93,8 +95,13 @@ function ApDots({ ap }: { ap: number }) {
 
 interface Props {
   mapState:             TerritoryMap2State
-  playerUnits:          GameUnit[]
+  playerUnits:          GameUnit[]   // army 1 (Артан) regular units (no heroes)
   deadUnits:            GameUnit[]
+  army2Units:           GameUnit[]   // army 2 (Сивілла) regular units
+  army2DeadUnits:       GameUnit[]
+  activeArmy:           1 | 2
+  onSwitchArmy:         (army: 1 | 2) => void
+  onReviveHero:         (heroId: HeroId) => void
   onMove:               (districtId: string) => void
   onAttack:             (districtId: string) => void
   onFinalBattle:        (regionId: string) => void
@@ -114,13 +121,24 @@ interface Props {
   onClearBotMessage?:   () => void
 }
 
-type FortressTab = 'army' | 'upgrade' | 'revive'
+type FortressTab = 'army' | 'upgrade' | 'revive' | 'tavern'
 
 const MIN_SCALE = 0.08
 const MAX_SCALE = 4
 
+function isSlotUnlockedHero(row: number, slot: number, maxRegularSlots: number, heroRow: number, heroSlot: number): boolean {
+  if (row === heroRow && slot === heroSlot) return true
+  const regularSlots: { r: number; s: number }[] = []
+  for (let r = 0; r <= 1; r++)
+    for (let s = 0; s <= 3; s++)
+      if (!(r === heroRow && s === heroSlot)) regularSlots.push({ r, s })
+  const idx = regularSlots.findIndex(p => p.r === row && p.s === slot)
+  return idx >= 0 && idx < maxRegularSlots
+}
+
 export default function WorldMap2({
-  mapState, playerUnits, deadUnits,
+  mapState, playerUnits, deadUnits, army2Units, army2DeadUnits,
+  activeArmy, onSwitchArmy, onReviveHero,
   onMove, onAttack, onFinalBattle, onEndTurn, onRest, onBack,
   onHireUnit, onReorderUnits, onMoveUnitSlot,
   onUpgradeFortress, onPurchaseSlot, onReviveUnit, onDismissUnit,
@@ -133,9 +151,19 @@ export default function WorldMap2({
   const [selectedUnitId,  setSelectedUnitId]  = useState<string | null>(null)
   const [hirePopup,       setHirePopup]       = useState<{ row: number; slot: number } | null>(null)
 
+  const activeRegularUnits = activeArmy === 1 ? playerUnits : army2Units
+  const activeDeadUnits    = activeArmy === 1 ? deadUnits   : army2DeadUnits
+  const activeAp           = activeArmy === 1 ? mapState.ap : mapState.army2Ap
+  const activeMaxSlots     = activeArmy === 1 ? mapState.maxArmySlots : mapState.army2MaxArmySlots
+  const activeRested       = activeArmy === 1 ? mapState.restedThisTurn : mapState.army2RestedThisTurn
+  const activeHero         = activeArmy === 1 ? mapState.heroes?.artan : mapState.heroes?.sybilla
+  const activeHeroId: HeroId = activeArmy === 1 ? 'artan' : 'sybilla'
+  const activeHeroRow      = activeArmy === 1 ? 0 : 1
+  const activeHeroSlot     = 0
+
   useEffect(() => {
-    if (fortressTab === 'revive' && deadUnits.length === 0) setFortressTab('army')
-  }, [deadUnits.length])
+    if (fortressTab === 'revive' && activeDeadUnits.length === 0 && !(!activeHero?.isAlive)) setFortressTab('army')
+  }, [activeDeadUnits.length, activeHero?.isAlive])
 
   const {
     ownership, gold, turn, ap, armyNodeId,
@@ -271,7 +299,7 @@ export default function WorldMap2({
   function handleDistrictTap(districtId: string) {
     if (dragRef.current.moved) return
     if (movable.has(districtId)) {
-      if (ap > 0) { onMove(districtId); setPopupDistrictId(null) }
+      if (activeAp > 0) { onMove(districtId); setPopupDistrictId(null) }
       else setPopupDistrictId(districtId)
       return
     }
@@ -290,10 +318,12 @@ export default function WorldMap2({
   }
 
   function handleSlotClick(row: number, slot: number) {
-    if (!isSlotUnlocked(row, slot, maxArmySlots)) return
-    const occupant = playerUnits.find(u => u.row === row && u.slot === slot)
+    // Hero occupies fixed slot — not interactive
+    if (row === activeHeroRow && slot === activeHeroSlot && activeHero) return
+    if (!isSlotUnlockedHero(row, slot, activeMaxSlots, activeHeroRow, activeHeroSlot)) return
+    const occupant = activeRegularUnits.find(u => u.row === row && u.slot === slot)
     if (selectedUnitId) {
-      const selUnit = playerUnits.find(u => u.id === selectedUnitId)
+      const selUnit = activeRegularUnits.find(u => u.id === selectedUnitId)
       if (!selUnit || selUnit.row !== row) { setSelectedUnitId(null); return }
       if (occupant && occupant.id !== selectedUnitId) onReorderUnits(selectedUnitId, occupant.id)
       else if (!occupant) onMoveUnitSlot(selectedUnitId, row, slot)
@@ -315,7 +345,8 @@ export default function WorldMap2({
         <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', fontWeight: 600 }}>{activeRegion?.name}</div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: '#d4a85a', fontWeight: 700 }}>💰 {gold}<span style={{ fontSize: 10, color: 'rgba(212,168,90,0.6)', fontWeight: 400 }}> +{dailyIncome}</span></span>
-          <ApDots ap={ap} />
+          <span style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)' }}>А1</span><ApDots ap={ap} />
+          <span style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)' }}>А2</span><ApDots ap={mapState.army2Ap} />
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>День {turn}</span>
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>{capturedInRegion}/{activeDistricts.length}</span>
           <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount} <span style={{ color: 'rgba(154,90,170,0.7)', fontWeight: 400 }}>⚔{mapState.botUnits}</span></span>
@@ -502,15 +533,15 @@ export default function WorldMap2({
             {attackable.has(popupDistrict.id) ? (
               <button
                 onClick={() => { onAttack(popupDistrict.id); setPopupDistrictId(null) }}
-                disabled={ap <= 0}
+                disabled={activeAp <= 0}
                 style={{
                   width: '100%', padding: '10px 0', borderRadius: 10,
-                  background: ap > 0 ? '#8b2020' : 'rgba(139,32,32,0.3)',
-                  color: ap > 0 ? '#f0e8d8' : 'rgba(240,232,216,0.35)',
-                  border: 'none', fontWeight: 700, fontSize: 13, cursor: ap > 0 ? 'pointer' : 'not-allowed',
+                  background: activeAp > 0 ? '#8b2020' : 'rgba(139,32,32,0.3)',
+                  color: activeAp > 0 ? '#f0e8d8' : 'rgba(240,232,216,0.35)',
+                  border: 'none', fontWeight: 700, fontSize: 13, cursor: activeAp > 0 ? 'pointer' : 'not-allowed',
                 }}
               >
-                {ap > 0 ? '⚔ Атакувати' : 'Немає ходів'}
+                {activeAp > 0 ? `⚔ Атакувати (Армія ${activeArmy})` : 'Немає ходів у активної армії'}
               </button>
             ) : (
               <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', textAlign: 'center' }}>
@@ -598,13 +629,13 @@ export default function WorldMap2({
         >🏰 {FORTRESS_NAMES[fortressLevel]}</button>
         <button
           onClick={onRest}
-          disabled={restedThisTurn || (!atStart && gold < 1)}
+          disabled={activeRested || (!atStart && gold < 1)}
           style={{
             flex: 1, padding: '10px 0', borderRadius: 10,
-            background: restedThisTurn ? 'rgba(240,232,216,0.04)' : 'rgba(240,232,216,0.08)',
+            background: activeRested ? 'rgba(240,232,216,0.04)' : 'rgba(240,232,216,0.08)',
             border: '1px solid rgba(240,232,216,0.1)',
-            color: restedThisTurn ? 'rgba(240,232,216,0.25)' : 'rgba(240,232,216,0.7)',
-            fontSize: 12, cursor: restedThisTurn ? 'not-allowed' : 'pointer',
+            color: activeRested ? 'rgba(240,232,216,0.25)' : 'rgba(240,232,216,0.7)',
+            fontSize: 12, cursor: activeRested ? 'not-allowed' : 'pointer',
           }}
         >{atStart ? '💤 Відпочити' : '💤 Відпочити (1💰)'}</button>
         <button
@@ -642,17 +673,36 @@ export default function WorldMap2({
             </div>
           </div>
 
+          {/* Army switcher */}
+          <div style={{ display: 'flex', padding: '8px 16px', gap: 8, borderBottom: '1px solid rgba(240,232,216,0.08)' }}>
+            {([1, 2] as (1|2)[]).map(army => (
+              <button key={army} onClick={() => { onSwitchArmy(army); setSelectedUnitId(null); setHirePopup(null) }}
+                style={{
+                  flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: activeArmy === army ? 'rgba(212,168,90,0.12)' : 'none',
+                  border: activeArmy === army ? '1px solid rgba(212,168,90,0.4)' : '1px solid rgba(240,232,216,0.1)',
+                  color: activeArmy === army ? '#d4a85a' : 'rgba(240,232,216,0.4)',
+                }}>
+                {army === 1 ? '⚔ Артан' : '✨ Сивілла'}
+                <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.6 }}>
+                  {army === 1 ? `${mapState.ap}AP` : `${mapState.army2Ap}AP`}
+                </span>
+              </button>
+            ))}
+          </div>
+
           {/* Tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(240,232,216,0.1)' }}>
-            {(['army', 'upgrade', 'revive'] as FortressTab[]).map(tab => {
-              const labels: Record<FortressTab, string> = { army: 'Армія', upgrade: 'Поліпшення', revive: 'Воскресити' }
-              const disabled = tab === 'revive' && deadUnits.length === 0
+            {(['army', 'upgrade', 'tavern', 'revive'] as FortressTab[]).map(tab => {
+              const labels: Record<FortressTab, string> = { army: 'Армія', upgrade: 'Поліпшення', tavern: 'Таверна', revive: 'Воскресити' }
+              const heroDeadHere = tab === 'tavern' && activeHero && !activeHero.isAlive
+              const disabled = tab === 'revive' && activeDeadUnits.length === 0
               return (
                 <button key={tab} onClick={() => !disabled && setFortressTab(tab)} style={{
                   flex: 1, padding: '10px 0', background: 'none',
                   border: 'none', borderBottom: fortressTab === tab ? '2px solid #d4a85a' : '2px solid transparent',
-                  color: fortressTab === tab ? '#d4a85a' : disabled ? 'rgba(240,232,216,0.2)' : 'rgba(240,232,216,0.5)',
-                  fontSize: 12, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
+                  color: fortressTab === tab ? '#d4a85a' : disabled ? 'rgba(240,232,216,0.2)' : heroDeadHere ? '#cc7070' : 'rgba(240,232,216,0.5)',
+                  fontSize: 11, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
                 }}>{labels[tab]}</button>
               )
             })}
@@ -668,24 +718,45 @@ export default function WorldMap2({
                     <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.35)', marginBottom: 6 }}>{ROW_LABEL[row]}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
                       {[0, 1, 2, 3].map(slot => {
-                        const unlocked = isSlotUnlocked(row, slot, maxArmySlots)
-                        const unit = playerUnits.find(u => u.row === row && u.slot === slot)
-                        const isSel = unit?.id === selectedUnitId
+                        const isHeroSlot  = row === activeHeroRow && slot === activeHeroSlot
+                        const unlocked    = isSlotUnlockedHero(row, slot, activeMaxSlots, activeHeroRow, activeHeroSlot)
+                        const unit        = activeRegularUnits.find(u => u.row === row && u.slot === slot)
+                        const isSel       = unit?.id === selectedUnitId
+                        const heroAlive   = activeHero?.isAlive ?? false
                         return (
-                          <div key={slot} onClick={() => unlocked && handleSlotClick(row, slot)} style={{
+                          <div key={slot} onClick={() => !isHeroSlot && unlocked && handleSlotClick(row, slot)} style={{
                             height: 72, borderRadius: 10, overflow: 'hidden',
-                            border: isSel ? '2px solid #d4a85a' : '1px solid rgba(240,232,216,0.15)',
-                            background: unlocked ? (unit ? 'transparent' : 'rgba(240,232,216,0.04)') : 'rgba(0,0,0,0.3)',
-                            cursor: unlocked ? 'pointer' : 'not-allowed', position: 'relative',
+                            border: isHeroSlot
+                              ? `2px solid ${heroAlive ? 'rgba(212,168,90,0.6)' : 'rgba(180,50,50,0.4)'}`
+                              : isSel ? '2px solid #d4a85a' : '1px solid rgba(240,232,216,0.15)',
+                            background: unlocked ? (unit || isHeroSlot ? 'transparent' : 'rgba(240,232,216,0.04)') : 'rgba(0,0,0,0.3)',
+                            cursor: isHeroSlot ? 'default' : unlocked ? 'pointer' : 'not-allowed',
+                            position: 'relative',
                           }}>
-                            {unit ? (
+                            {isHeroSlot ? (
+                              heroAlive ? (
+                                <img
+                                  src={`/sacred/heroes/${activeHeroId}.jpg`}
+                                  alt=""
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+                                />
+                              ) : (
+                                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, background: 'rgba(180,50,50,0.08)' }}>
+                                  <span style={{ fontSize: 18, opacity: 0.5 }}>☠</span>
+                                  <span style={{ fontSize: 9, color: '#c07070' }}>Загинув</span>
+                                </div>
+                              )
+                            ) : unit ? (
                               <img src={getPortrait(unit)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
                             ) : unlocked ? (
                               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: 'rgba(240,232,216,0.15)' }}>+</div>
                             ) : (
                               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'rgba(240,232,216,0.15)' }}>🔒</div>
                             )}
-                            {unit && (
+                            {isHeroSlot && heroAlive && (
+                              <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>lv{activeHero?.level}</div>
+                            )}
+                            {!isHeroSlot && unit && (
                               <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>lv{unit.level}</div>
                             )}
                           </div>
@@ -697,7 +768,7 @@ export default function WorldMap2({
 
                 {/* Selected unit actions */}
                 {selectedUnitId && (() => {
-                  const su = playerUnits.find(u => u.id === selectedUnitId)
+                  const su = activeRegularUnits.find(u => u.id === selectedUnitId)
                   if (!su) return null
                   return (
                     <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(212,168,90,0.07)', border: '1px solid rgba(212,168,90,0.25)' }}>
@@ -759,16 +830,57 @@ export default function WorldMap2({
                     Покращити → {FORTRESS_NAMES[(fortressLevel + 1) as 1|2|3|4|5]} ({FORTRESS_UPGRADE_COST[fortressLevel + 1]} 💰)
                   </button>
                 )}
-                {maxArmySlots < 8 && (
-                  <button onClick={onPurchaseSlot} disabled={!SLOT_COSTS[maxArmySlots] || gold < SLOT_COSTS[maxArmySlots]}
-                    style={{
-                      padding: '12px 0', borderRadius: 12,
-                      background: SLOT_COSTS[maxArmySlots] && gold >= SLOT_COSTS[maxArmySlots] ? 'rgba(212,168,90,0.08)' : 'rgba(240,232,216,0.04)',
-                      border: '1px solid rgba(212,168,90,0.2)', color: '#d4a85a',
-                      fontSize: 13, cursor: 'pointer',
-                    }}>
-                    + Слот армії ({SLOT_COSTS[maxArmySlots]} 💰)
-                  </button>
+                <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginTop: 4 }}>
+                  Слоти армії визначаються рівнем героя (lv{activeHero?.level ?? 1} → {activeMaxSlots} слотів)
+                </div>
+              </div>
+            )}
+
+            {/* Tavern tab — hero revival */}
+            {fortressTab === 'tavern' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {activeHero ? (
+                  <div style={{ padding: '12px', borderRadius: 12, background: 'rgba(240,232,216,0.04)', border: `1px solid ${activeHero.isAlive ? 'rgba(212,168,90,0.2)' : 'rgba(180,50,50,0.3)'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <img
+                        src={`/sacred/heroes/${activeHeroId}.jpg`}
+                        alt=""
+                        style={{ width: 52, height: 62, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', opacity: activeHero.isAlive ? 1 : 0.4 }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: activeHero.isAlive ? '#f0e8d8' : 'rgba(240,232,216,0.4)' }}>
+                          {activeHeroId === 'artan' ? 'Артан' : 'Сивілла'}
+                          {!activeHero.isAlive && <span style={{ fontSize: 11, color: '#c07070', marginLeft: 8 }}>☠ Загинув</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 2 }}>
+                          Рівень {activeHero.level} · {activeHero.hp}/{activeHero.maxHp} HP
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginTop: 2 }}>
+                          XP: {activeHero.xp}/{activeHero.xpToNext === Infinity ? '∞' : activeHero.xpToNext}
+                        </div>
+                      </div>
+                    </div>
+                    {!activeHero.isAlive && (
+                      <button
+                        onClick={() => onReviveHero(activeHeroId)}
+                        disabled={gold < HERO_REVIVE_COST}
+                        style={{
+                          width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 10,
+                          background: gold >= HERO_REVIVE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
+                          border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
+                          fontSize: 13, fontWeight: 600, cursor: gold >= HERO_REVIVE_COST ? 'pointer' : 'not-allowed',
+                        }}>
+                        Воскресити ({HERO_REVIVE_COST} 💰)
+                      </button>
+                    )}
+                    {activeHero.isAlive && activeHero.chosenPerks.length > 0 && (
+                      <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>
+                        Перки: {activeHero.chosenPerks.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.35)', textAlign: 'center' }}>Герой не найнятий</div>
                 )}
               </div>
             )}
@@ -776,7 +888,7 @@ export default function WorldMap2({
             {/* Revive tab */}
             {fortressTab === 'revive' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {deadUnits.map(u => {
+                {activeDeadUnits.map(u => {
                   const cost = getReviveCost(u)
                   return (
                     <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.1)' }}>
