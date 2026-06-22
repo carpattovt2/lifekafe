@@ -605,23 +605,30 @@ export function getUnlockedRegions(conqueredRegions: string[]): Set<string> {
 // ── Army builder ──────────────────────────────────────────────────────────────
 export function buildArmyFromSpecs2(specs: UnitSpec2[], side: Side): GameUnit[] {
   const units: GameUnit[] = []
+  // Catapult takes BOTH row 0 slot 3 AND row 1 slot 3 (occupies a column).
+  // Without catapult: max 4 warriors front + 4 ranged back = 8.
+  // With catapult:    max 3 warriors front + 1 cat (col 3) + 3 ranged back = 7 units.
   const hasCat   = specs.some(s => s.class === 'catapult')
-  const warriors = specs.filter(s => s.class === 'warrior')
-  const cats     = specs.filter(s => s.class === 'catapult')
-  const ranged   = specs.filter(s => s.class === 'archer' || s.class === 'mage')
+  const maxFront = hasCat ? 3 : 4
+  const maxBack  = hasCat ? 3 : 4
+  const warriors = specs.filter(s => s.class === 'warrior').slice(0, maxFront)
+  const cats     = specs.filter(s => s.class === 'catapult').slice(0, 1)
+  const ranged   = specs.filter(s => s.class === 'archer' || s.class === 'mage').slice(0, maxBack)
 
+  // Front row: warriors in slots 0..maxFront-1
   for (let i = 0; i < warriors.length; i++) {
     const s = warriors[i]
     units.push(buildFreeUnit(s.class, s.level, side, 0, i, undefined, undefined, s.warriorPath))
   }
+  // Catapult: row 0 slot 3 (and visually occupies row 1 slot 3 via UnitRow's "Базa" placeholder)
   if (hasCat && cats.length > 0) {
     const s = cats[0]
     units.push(buildFreeUnit(s.class, s.level, side, 0, 3, undefined, s.catapultPath))
   }
-  let slot = 0
-  for (const s of ranged) {
-    if (hasCat && slot === 3) slot++
-    units.push(buildFreeUnit(s.class, s.level, side, 1, slot++, s.magePath, undefined, s.warriorPath))
+  // Back row: ranged in slots 0..maxBack-1 (slot 3 reserved for catapult base if present)
+  for (let i = 0; i < ranged.length; i++) {
+    const s = ranged[i]
+    units.push(buildFreeUnit(s.class, s.level, side, 1, i, s.magePath, undefined, s.warriorPath))
   }
   return units
 }

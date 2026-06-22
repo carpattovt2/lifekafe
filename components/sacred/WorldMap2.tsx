@@ -322,6 +322,9 @@ export default function WorldMap2({
     // Hero occupies fixed slot — not interactive
     if (row === activeHeroRow && slot === activeHeroSlot && activeHero) return
     if (!isSlotUnlockedForArmy(row, slot, activeUnlockedSlots, activeHeroRow, activeHeroSlot)) return
+    // Catapult occupies column 3 (row 0 slot 3 + row 1 slot 3 visually)
+    const hasCatapult = activeRegularUnits.some(u => u.class === 'catapult')
+    if (hasCatapult && slot === 3 && row === 1) return  // back slot 3 reserved for catapult base
     const occupant = activeRegularUnits.find(u => u.row === row && u.slot === slot)
     if (selectedUnitId) {
       const selUnit = activeRegularUnits.find(u => u.id === selectedUnitId)

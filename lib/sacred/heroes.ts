@@ -39,10 +39,10 @@ export const PERK_DEFS: PerkDef[] = [
   // ── Сивілла ────────────────────────────────────────────────────────────────────
   { id: 'mass_heal',      heroId: 'sybilla', availableAtLevel: 2, name: 'Масове лікування',        desc: 'Нова дія: лікує всіх союзників на 10 HP' },
   { id: 'enhanced_heal',  heroId: 'sybilla', availableAtLevel: 2, name: 'Посилене лікування',      desc: 'Благословіння лікує на 25 HP (замість 15)' },
-  { id: 'mass_heal_2',    heroId: 'sybilla', availableAtLevel: 3, prerequisite: 'mass_heal',        name: 'Масове лікування II',     desc: 'Масове лікування → 14 HP кожному союзнику' },
-  { id: 'enhanced_heal_2',heroId: 'sybilla', availableAtLevel: 3, name: 'Посилення лікування II',  desc: 'Благословіння лікує на 35 HP' },
-  { id: 'mass_heal_3',    heroId: 'sybilla', availableAtLevel: 4, prerequisite: 'mass_heal_2',      name: 'Масове лікування III',    desc: 'Масове лікування → 18 HP кожному союзнику' },
-  { id: 'enhanced_heal_3',heroId: 'sybilla', availableAtLevel: 4, name: 'Посилення лікування III', desc: 'Благословіння лікує на 45 HP' },
+  { id: 'mass_heal_2',    heroId: 'sybilla', availableAtLevel: 3, prerequisite: 'mass_heal',       name: 'Масове лікування II',     desc: 'Масове лікування → 14 HP кожному союзнику' },
+  { id: 'enhanced_heal_2',heroId: 'sybilla', availableAtLevel: 3, prerequisite: 'enhanced_heal',   name: 'Посилення лікування II',  desc: 'Благословіння лікує на 35 HP' },
+  { id: 'mass_heal_3',    heroId: 'sybilla', availableAtLevel: 4, prerequisite: 'mass_heal_2',     name: 'Масове лікування III',    desc: 'Масове лікування → 18 HP кожному союзнику' },
+  { id: 'enhanced_heal_3',heroId: 'sybilla', availableAtLevel: 4, prerequisite: 'enhanced_heal_2', name: 'Посилення лікування III', desc: 'Благословіння лікує на 45 HP' },
   { id: 'prophecy',       heroId: 'sybilla', availableAtLevel: 5, name: 'Пророчество',              desc: 'Ульта: лікує всіх союзників на 20 HP та знімає негативні бафи (КД 3 ходи)' },
 ]
 
