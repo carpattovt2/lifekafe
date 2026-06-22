@@ -732,7 +732,9 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
   const alive = unit.hp > 0
   const AvatarSVG = CLASS_SVG[unit.class]
   const actionsForSheet = getActionsForSheet(unit)
-  const sheetPortrait = unit.level
+  const sheetPortrait = unit.isHero && unit.heroId
+    ? `/sacred/heroes/${unit.heroId}.jpg`
+    : unit.level
     ? (unit.class === 'warrior'
         ? ((unit.level >= 3 && unit.warriorPath === 'champion')
             ? `/sacred/warriors/champion/level${unit.level}.jpg`
@@ -744,7 +746,9 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
            : `/sacred/mages/${unit.magePath}/level${unit.level}.jpg`)
        : null)
     : null
-  const levelName = unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
+  const levelName = unit.isHero
+                    ? (unit.heroId === 'artan' ? 'Воїн-герой' : 'Цілителька-герой')
+                  : unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
                     ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
                   : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
                   : unit.class === 'archer'  ? ARCHER_LEVELS[unit.level ?? 1]?.name
@@ -752,9 +756,14 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                     ? MAGE_PATHS[unit.magePath][unit.level]?.name
                     : unit.class === 'mage' ? MAGE_BASE.name
                     : undefined
-  const maxLevel = unit.class === 'warrior' ? (unit.warriorPath === 'champion' ? 5 : 4) : unit.class === 'archer' ? 3 : unit.class === 'mage' ? 5 : 0
+  const maxLevel = unit.isHero ? 5
+                 : unit.class === 'warrior' ? (unit.warriorPath === 'champion' ? 5 : 4)
+                 : unit.class === 'archer' ? 3
+                 : unit.class === 'mage' ? 5
+                 : 0
   const nextLvl = (unit.level ?? 1) + 1
-  const nextLevelName = unit.class === 'warrior' && nextLvl >= 3 && unit.warriorPath
+  const nextLevelName = unit.isHero ? `Lv.${nextLvl}`
+                      : unit.class === 'warrior' && nextLvl >= 3 && unit.warriorPath
                         ? WARRIOR_PATHS[unit.warriorPath][nextLvl]?.name
                       : unit.class === 'warrior' ? WARRIOR_LEVELS[nextLvl]?.name
                       : unit.class === 'archer'  ? ARCHER_LEVELS[nextLvl]?.name
