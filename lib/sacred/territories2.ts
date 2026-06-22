@@ -65,7 +65,7 @@ export function buildBotHeroUnit(state: BotHeroState, side: Side): GameUnit {
     class: 'warrior' as const,
     name: state.name,
     isHero: true,
-    heroId: 'artan',  // visual fallback; we'll override portrait via separate path later
+    heroId: 'baron',  // routed in getPortraitSrc/UnitCard to artan.jpg with dark filter
     hp: state.hp,
     maxHp: state.maxHp,
     minDmg: d.minDmg,
@@ -707,9 +707,9 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     if (o === 'bot') botGold += Math.floor((DISTRICT_MAP.get(id)?.goldPerDay ?? 0) * 0.7)
   }
 
-  // 2. Heal hero (free, +10 per turn) — bot rests in its territory
+  // 2. Heal hero (+20% per turn — symmetric with player auto-heal)
   if (botHero && botHero.isAlive && botHero.hp < botHero.maxHp) {
-    botHero = { ...botHero, hp: Math.min(botHero.maxHp, botHero.hp + 10) }
+    botHero = { ...botHero, hp: Math.min(botHero.maxHp, botHero.hp + Math.ceil(botHero.maxHp * 0.2)) }
   }
   // Revive hero if dead and bot has gold
   if (botHero && !botHero.isAlive && botGold >= 8) {
@@ -725,8 +725,9 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     botGold -= 5
   }
 
-  // 4. Hire one unit (every 2 turns — bot is slower)
-  if (state.turn % 2 === 0 && botArmy.length < 7) {
+  // 4. Hire unit — replenishment when army is small (every turn if < 4 units, every 2 turns otherwise)
+  const hireFrequency = botArmy.length < 4 ? 1 : 2
+  if (state.turn % hireFrequency === 0 && botArmy.length < 7) {
     const nextHire = HIRE_PRIORITY[botArmy.length]
     if (nextHire && botGold >= nextHire.cost) {
       botArmy = [...botArmy, { class: nextHire.class, level: 1 }]
@@ -836,8 +837,44 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     }
   }
 
-  // No attack possible — move hero to a closer position to a target
-  // (simple heuristic: move toward enemy/player adjacent districts)
+  // 9. No attack possible — move hero toward the frontline (BFS to nearest non-bot district in allowed regions)
+  if (botHero && botHero.isAlive) {
+    // BFS: find distance from each bot district to nearest non-bot district in allowed regions
+    const distToFrontier = new Map<string, number>()
+    const queue: { id: string; d: number }[] = []
+    for (const [id, o] of Object.entries(ownership)) {
+      const dst = DISTRICT_MAP.get(id)
+      if (!dst) continue
+      if (o !== 'bot' && allowedBotRegions.has(dst.regionId)) {
+        distToFrontier.set(id, 0)
+        queue.push({ id, d: 0 })
+      }
+    }
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      const dst = DISTRICT_MAP.get(cur.id)
+      if (!dst) continue
+      for (const adj of dst.adjacentTo) {
+        if (distToFrontier.has(adj)) continue
+        if (ownership[adj] !== 'bot') continue  // only walk through bot territory after frontier expanded
+        distToFrontier.set(adj, cur.d + 1)
+        queue.push({ id: adj, d: cur.d + 1 })
+      }
+    }
+    // Move hero to adjacent bot district with smaller distance-to-frontier
+    const myDist = distToFrontier.get(botHeroNodeId) ?? Infinity
+    if (myDist > 0) {
+      let bestNext: string | null = null
+      let bestDist = myDist
+      for (const adj of heroDistrict.adjacentTo) {
+        if (ownership[adj] !== 'bot') continue
+        const d = distToFrontier.get(adj)
+        if (d != null && d < bestDist) { bestDist = d; bestNext = adj }
+      }
+      if (bestNext) botHeroNodeId = bestNext
+    }
+  }
+
   return {
     state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
     botMessage: null,

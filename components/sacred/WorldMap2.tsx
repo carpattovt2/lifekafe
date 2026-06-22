@@ -660,17 +660,6 @@ export default function WorldMap2({
           }}
         >🏰 {FORTRESS_NAMES[fortressLevel]}</button>
         <button
-          onClick={onRest}
-          disabled={activeRested || (!atStart && gold < 1)}
-          style={{
-            flex: 1, padding: '10px 0', borderRadius: 10,
-            background: activeRested ? 'rgba(240,232,216,0.04)' : 'rgba(240,232,216,0.08)',
-            border: '1px solid rgba(240,232,216,0.1)',
-            color: activeRested ? 'rgba(240,232,216,0.25)' : 'rgba(240,232,216,0.7)',
-            fontSize: 12, cursor: activeRested ? 'not-allowed' : 'pointer',
-          }}
-        >{atStart ? '💤 Відпочити' : '💤 Відпочити (1💰)'}</button>
-        <button
           onClick={onEndTurn}
           style={{
             flex: 1, padding: '10px 0', borderRadius: 10,

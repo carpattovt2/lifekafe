@@ -74,7 +74,7 @@ export interface GameUnit {
 
   // Hero fields
   isHero?: boolean
-  heroId?: 'artan' | 'sybilla'
+  heroId?: 'artan' | 'sybilla' | 'baron'
   nobleStrikePerk?: boolean  // Артан: noble_strike action available
   flankStrikePerk?: boolean  // Артан: flank_strike action available
   armorPiercePerk?: boolean  // Артан: ignore 50% enemy base defense

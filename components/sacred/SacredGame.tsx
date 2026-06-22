@@ -153,6 +153,8 @@ const CLASS_SVG: Record<string, AvatarComponent> = {
 }
 
 function getPortraitSrc(unit: GameUnit): string | null {
+  // Bot hero ('baron') uses Артан's portrait but with dark filter applied at render-time
+  if (unit.isHero && unit.heroId === 'baron') return `/sacred/heroes/artan.jpg`
   if (unit.isHero && unit.heroId) return `/sacred/heroes/${unit.heroId}.jpg`
   const lvl = unit.level ?? 1
   if (unit.class === 'warrior')
@@ -368,7 +370,9 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
                         ? MAGE_PATHS[unit.magePath][unit.level]?.name
                         : unit.class === 'mage' ? MAGE_BASE.name
                         : undefined
-  const portraitSrc = unit.isHero && unit.heroId
+  const portraitSrc = unit.isHero && unit.heroId === 'baron'
+    ? `/sacred/heroes/artan.jpg`
+    : unit.isHero && unit.heroId
     ? `/sacred/heroes/${unit.heroId}.jpg`
     : unit.level
     ? (unit.class === 'warrior'
@@ -452,7 +456,11 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
             {/* Full-bleed portrait */}
             <img src={portraitSrc} alt="" className={alive || isDying ? portraitAnimClass : undefined} style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-              filter: (!alive && !isDying) ? 'grayscale(1)' : undefined,
+              filter: (!alive && !isDying)
+                ? 'grayscale(1)'
+                : unit.isHero && unit.heroId === 'baron'
+                  ? 'sepia(1) hue-rotate(330deg) saturate(2.5) brightness(0.7) contrast(1.1)'
+                  : undefined,
             }} />
             {/* Cast eye glow + particles */}
             {castEffect && alive && (
@@ -732,7 +740,9 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
   const alive = unit.hp > 0
   const AvatarSVG = CLASS_SVG[unit.class]
   const actionsForSheet = getActionsForSheet(unit)
-  const sheetPortrait = unit.isHero && unit.heroId
+  const sheetPortrait = unit.isHero && unit.heroId === 'baron'
+    ? `/sacred/heroes/artan.jpg`
+    : unit.isHero && unit.heroId
     ? `/sacred/heroes/${unit.heroId}.jpg`
     : unit.level
     ? (unit.class === 'warrior'
@@ -747,7 +757,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
        : null)
     : null
   const levelName = unit.isHero
-                    ? (unit.heroId === 'artan' ? 'Воїн-герой' : 'Цілителька-герой')
+                    ? (unit.heroId === 'sybilla' ? 'Цілителька-герой' : unit.heroId === 'baron' ? 'Темний воїн-герой' : 'Воїн-герой')
                   : unit.class === 'warrior' && (unit.level ?? 1) >= 3 && unit.warriorPath
                     ? WARRIOR_PATHS[unit.warriorPath][unit.level ?? 1]?.name
                   : unit.class === 'warrior' ? WARRIOR_LEVELS[unit.level ?? 1]?.name
@@ -801,7 +811,12 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
               overflow: 'hidden',
             }}>
               {sheetPortrait
-                ? <img src={sheetPortrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ? <img src={sheetPortrait} alt="" style={{
+                    width: '100%', height: '100%', objectFit: 'cover',
+                    filter: unit.isHero && unit.heroId === 'baron'
+                      ? 'sepia(1) hue-rotate(330deg) saturate(2.5) brightness(0.7) contrast(1.1)'
+                      : undefined,
+                  }} />
                 : <AvatarSVG color={color} size={26} />
               }
             </div>
@@ -1915,7 +1930,7 @@ export default function SacredGame() {
     let updatedHeroes = { ...prevHeroes }
     const perkChoiceQueue: HeroId[] = []
     const slotUnlocks: Array<1|2> = []
-    for (const heroUnit of units.filter(u => u.isHero && u.side === 'player')) {
+    for (const heroUnit of units.filter(u => u.isHero && u.side === 'player' && (u.heroId === 'artan' || u.heroId === 'sybilla'))) {
       const heroId = heroUnit.heroId as HeroId
       const heroState = prevHeroes[heroId]
       if (!heroState) continue
@@ -2142,6 +2157,22 @@ export default function SacredGame() {
 
   function handleMap2EndTurn() {
     const income = getDailyIncome(map2State.ownership)
+    // Auto-heal: every living unit and hero recovers 20% of max HP per turn (full heal in 5 days)
+    const healUnit = (u: GameUnit): GameUnit => u.hp > 0
+      ? { ...u, hp: Math.min(u.maxHp, u.hp + Math.ceil(u.maxHp * 0.2)) }
+      : u
+    setWorld2PlayerUnits(prev => prev ? prev.map(healUnit) : prev)
+    setWorld2Army2Units(prev => prev ? prev.map(healUnit) : prev)
+
+    const healedHeroes = {
+      artan:   map2State.heroes.artan?.isAlive
+        ? { ...map2State.heroes.artan, hp: Math.min(map2State.heroes.artan.maxHp, map2State.heroes.artan.hp + Math.ceil(map2State.heroes.artan.maxHp * 0.2)) }
+        : map2State.heroes.artan,
+      sybilla: map2State.heroes.sybilla?.isAlive
+        ? { ...map2State.heroes.sybilla, hp: Math.min(map2State.heroes.sybilla.maxHp, map2State.heroes.sybilla.hp + Math.ceil(map2State.heroes.sybilla.maxHp * 0.2)) }
+        : map2State.heroes.sybilla,
+    }
+
     const afterPlayer = {
       ...map2State,
       turn:                map2State.turn + 1,
@@ -2150,6 +2181,7 @@ export default function SacredGame() {
       restedThisTurn:      false,
       army2RestedThisTurn: false,
       gold:                map2State.gold + income,
+      heroes:              healedHeroes,
     }
     const { state: afterBot, botMessage: msg } = doBotTurn(afterPlayer)
     setMap2State(afterBot)

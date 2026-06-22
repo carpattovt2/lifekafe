@@ -1455,10 +1455,19 @@ export function executeAction(
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
+// Smart target priority: prefer enemy healer (Сивілла), then other heroes, then lowest HP
+function aiTargetScore(u: GameUnit): number {
+  const heroBonus = u.heroId === 'sybilla' ? 28 : u.isHero ? 14 : 0
+  return u.hp - heroBonus
+}
+function aiSmartSort(units: GameUnit[]): GameUnit[] {
+  return [...units].sort((a, b) => aiTargetScore(a) - aiTargetScore(b))
+}
+
 function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; targetId: string | null; secondTargetId?: string | null } {
   const playerUnits = state.units.filter(u => u.hp > 0 && u.side === 'player')
   const aiAllies    = state.units.filter(u => u.hp > 0 && u.side === 'ai' && u.id !== actor.id)
-  const weakest     = [...playerUnits].sort((a, b) => a.hp - b.hp)[0]
+  const weakest     = aiSmartSort(playerUnits)[0]
   const strongest   = [...playerUnits].sort((a, b) => b.hp - a.hp)[0]
 
   if (actor.class === 'warrior') {
@@ -1470,11 +1479,11 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
       const onCooldown = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === 'shkvall')
       if (lvl >= 5 && !onCooldown && Math.random() < 0.65) {
         const strikeTargets = getValidTargets(actor, 'shkvall', state.units)
-        const t = state.units.filter(u => strikeTargets.includes(u.id) && u.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+        const t = aiSmartSort(state.units.filter(u => strikeTargets.includes(u.id) && u.hp > 0))[0]
         if (t) return { action: 'shkvall', targetId: t.id }
       }
       const strikeTgts = getValidTargets(actor, 'strike', state.units)
-      const t = state.units.filter(u => strikeTgts.includes(u.id) && u.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+      const t = aiSmartSort(state.units.filter(u => strikeTgts.includes(u.id) && u.hp > 0))[0]
       return { action: 'strike', targetId: t?.id ?? null }
     }
 
@@ -1486,7 +1495,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
       if (needsHelp && Math.random() < 0.40) return { action: 'consecration', targetId: needsHelp.id }
       if (!sacredOnCooldown) {
         const sacredIds = getValidTargets(actor, 'sacred_strike', state.units)
-        const sacredTarget = state.units.filter(u => sacredIds.includes(u.id) && u.hp > 0).sort((a, b) => a.hp - b.hp)[0]
+        const sacredTarget = aiSmartSort(state.units.filter(u => sacredIds.includes(u.id) && u.hp > 0))[0]
         if (sacredTarget) return { action: 'sacred_strike', targetId: sacredTarget.id }
       }
     }
@@ -1499,7 +1508,7 @@ function aiDecide(actor: GameUnit, state: BattleState): { action: ActionKey; tar
     if (actor.hp < actor.maxHp * 0.35 && Math.random() < 0.50) return { action: 'shield', targetId: null }
     const validIds = getValidTargets(actor, 'strike', state.units)
     const validUnits = state.units.filter(u => validIds.includes(u.id) && u.hp > 0)
-    const target = validUnits.sort((a, b) => a.hp - b.hp)[0]
+    const target = aiSmartSort(validUnits)[0]
     return { action: 'strike', targetId: target?.id ?? null }
   }
 
