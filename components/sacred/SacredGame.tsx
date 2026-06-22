@@ -23,7 +23,7 @@ import {
   REGIONS_2, DISTRICTS_2,
   createInitialTerritoryMap2State, getDistrictById, getRegionById,
   buildArmyFromSpecs2, getDailyIncome, isRegionComplete, getUnlockedRegions,
-  doBotTurn,
+  doBotTurn, buildBotHeroUnit, BOT_CAPITAL_ID,
   HIRE_COSTS as HIRE_COSTS_2, FORTRESS_UPGRADE_COST as FORTRESS_UPGRADE_COST_2,
   SLOT_COSTS as SLOT_COSTS_2, getReviveCost as getReviveCost2,
 } from '@/lib/sacred/territories2'
@@ -1671,7 +1671,7 @@ type RootScreen =
   | 'landing' | 'map-select'
   | 'army-builder' | 'placement' | 'battle' | 'free-battle'
   | 'world-map'  | 'world-battle'  | 'campaign-victory'
-  | 'world-map-2' | 'world-battle-2' | 'region-final-battle-2' | 'region-choice-2' | 'campaign-victory-2'
+  | 'world-map-2' | 'world-battle-2' | 'region-final-battle-2' | 'region-choice-2' | 'campaign-victory-2' | 'bot-victory-2'
   | 'level-up' | 'perk-choice' | 'slot-choice'
 
 export default function SacredGame() {
@@ -1815,9 +1815,21 @@ export default function SacredGame() {
       const army2Data    = JSON.parse(localStorage.getItem(LS_CAMPAIGN2_ARMY2)     ?? '[]')
       const army2DeadData= JSON.parse(localStorage.getItem(LS_CAMPAIGN2_ARMY2_DEAD)?? '[]')
       if (!mapData.botConqueredRegions) mapData.botConqueredRegions = []
-      if (mapData.botUnits     == null) mapData.botUnits     = 3
       if (mapData.botGold      == null) mapData.botGold      = 0
       if (mapData.botRestTurns == null) mapData.botRestTurns = 0
+      // Migrate old botUnits:number → botArmy:[]
+      if (!Array.isArray(mapData.botArmy)) {
+        const n = typeof mapData.botUnits === 'number' ? mapData.botUnits : 3
+        const arr = []
+        for (let i = 0; i < n; i++) {
+          arr.push({ class: i < Math.ceil(n * 0.6) ? 'warrior' : i < n - 1 ? 'archer' : 'mage', level: 1 })
+        }
+        mapData.botArmy = arr
+        delete mapData.botUnits
+      }
+      if (mapData.botFortressLevel == null) mapData.botFortressLevel = 1
+      if (!mapData.botHeroNodeId) mapData.botHeroNodeId = BOT_CAPITAL_ID
+      if (mapData.botHero === undefined) mapData.botHero = null
       if (mapData.army2Ap      == null) mapData.army2Ap      = 2
       if (mapData.army2RestedThisTurn == null) mapData.army2RestedThisTurn = false
       if (!mapData.heroes) mapData.heroes = { artan: null, sybilla: null }
@@ -1965,24 +1977,78 @@ export default function SacredGame() {
     }
 
     const fightId = world2FightDistrictId
+    const wasBotDistrict = fightId ? map2State.ownership[fightId] === 'bot' : false
+    let capturedBotCapital = false
+
     if (won && fightId) {
       setMap2State(prev => {
         const newOwnership = { ...prev.ownership, [fightId]: 'player' as const }
         const regionId = district?.regionId ?? ''
         const regionNowComplete = regionId && isRegionComplete(regionId, newOwnership)
-        return {
+
+        let next = {
           ...prev,
           ownership:          newOwnership,
           armyNodeId:         fightId,
           pendingFinalBattle: regionNowComplete ? regionId : prev.pendingFinalBattle,
         }
+
+        // If we just defeated bot army — apply casualties to bot state
+        if (wasBotDistrict) {
+          // Count surviving AI units vs total — figure out bot army casualties ratio
+          const aiSurvCount = units.filter(u => u.side === 'ai' && u.hp > 0 && !u.isHero).length
+          const aiTotalCount = units.filter(u => u.side === 'ai' && !u.isHero).length
+          const aiBotHeroAfter = units.find(u => u.side === 'ai' && u.isHero) ?? null
+
+          let newBotArmy = [...prev.botArmy]
+          if (aiTotalCount > 0) {
+            const survRatio = aiSurvCount / aiTotalCount
+            const keepCount = Math.round(newBotArmy.length * survRatio)
+            // keep strongest units (sort by level desc)
+            newBotArmy = [...newBotArmy].sort((a, b) => b.level - a.level).slice(0, keepCount)
+          } else {
+            newBotArmy = []
+          }
+          next = { ...next, botArmy: newBotArmy }
+
+          // Bot hero state — update if it was in this district
+          if (prev.botHero && prev.botHeroNodeId === fightId) {
+            if (aiBotHeroAfter) {
+              next = {
+                ...next,
+                botHero: {
+                  ...prev.botHero,
+                  hp: Math.max(0, aiBotHeroAfter.hp),
+                  isAlive: aiBotHeroAfter.hp > 0,
+                },
+                botHeroNodeId: aiBotHeroAfter.hp > 0 ? fightId : BOT_CAPITAL_ID,
+              }
+            } else {
+              // hero killed but not present in units array fallback
+              next = { ...next, botHero: { ...prev.botHero, hp: 0, isAlive: false } }
+            }
+          }
+        }
+
+        // Captured bot capital → victory
+        if (fightId === BOT_CAPITAL_ID) capturedBotCapital = true
+
+        return next
       })
     }
 
     world2PreBattleUnits.current = null
     setWorld2FightDistrictId(null)
 
+    const finalNext: RootScreen = capturedBotCapital
+      ? 'bot-victory-2'
+      : (levelUps.length > 0 ? 'level-up' : 'world-map-2')
+
     const proceed = () => {
+      if (capturedBotCapital) {
+        setScreen('bot-victory-2')
+        return
+      }
       if (levelUps.length > 0) {
         setLevelUpUnits(levelUps)
         setAfterLevelUpScreen('world-map-2')
@@ -1994,7 +2060,7 @@ export default function SacredGame() {
     }
 
     if (heroUnit) {
-      applyBattleEndHeroSync(units, won, levelUps.length > 0 ? 'level-up' : 'world-map-2', proceed)
+      applyBattleEndHeroSync(units, won, finalNext, proceed)
     } else {
       proceed()
     }
@@ -2771,11 +2837,26 @@ export default function SacredGame() {
   if (screen === 'world-battle-2') {
     const district = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
     const bUnits = world2ActiveBattleUnits ?? (world2PlayerUnits ?? [])
-    if (district && bUnits.length > 0) return (
+    // If attacking bot-owned district — use real bot army (+ bot hero if at this node)
+    let aiUnits: GameUnit[] = []
+    if (district) {
+      const isBotDistrict = world2FightDistrictId && map2State.ownership[world2FightDistrictId] === 'bot'
+      if (isBotDistrict) {
+        aiUnits = buildArmyFromSpecs2(map2State.botArmy, 'ai')
+        if (map2State.botHero?.isAlive && map2State.botHeroNodeId === world2FightDistrictId) {
+          // Bot hero placed in row 0 slot 3 (back of the back), so it doesn't conflict with regular units slot 0
+          const heroUnit = buildBotHeroUnit(map2State.botHero, 'ai')
+          aiUnits = [{ ...heroUnit, row: 0 as const, slot: 3 }, ...aiUnits]
+        }
+      } else {
+        aiUnits = buildArmyFromSpecs2(district.army, 'ai')
+      }
+    }
+    if (district && bUnits.length > 0 && aiUnits.length > 0) return (
       <Battle
         counts={{ warriors: 0, archers: 0, mages: 0, catapults: 0 }}
         playerUnits={bUnits}
-        prebuiltAiUnits={buildArmyFromSpecs2(district.army, 'ai')}
+        prebuiltAiUnits={aiUnits}
         fortressLevelCap={map2State.fortressLevel}
         onRestart={() => handleMap2DistrictBattleEnd(bUnits, false)}
         onBattleEnd={handleMap2DistrictBattleEnd}
@@ -2830,6 +2911,46 @@ export default function SacredGame() {
           onClick={() => { clearCampaign2Save(); setMap2State(createInitialTerritoryMap2State()); setWorld2PlayerUnits(null); setScreen('landing') }}
           style={{ padding: '14px 36px', background: '#d4a85a', color: '#0f0e09', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
         >← До меню</button>
+      </div>
+    )
+  }
+
+  if (screen === 'bot-victory-2') {
+    return (
+      <div style={{
+        maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+        color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '32px 24px', textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 52, marginBottom: 12 }}>⚔</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: '#d4a85a', marginBottom: 6 }}>Темного Барона повалено!</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 32 }}>
+          Столицю ворога захоплено. Загроза для континенту минула.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%', maxWidth: 320, marginBottom: 32 }}>
+          {[
+            ['Ходів', map2State.turn],
+            ['Золото', `${map2State.gold} 💰`],
+            ['Барон lv', map2State.botHero?.level ?? '—'],
+            ['Бот фортеця', map2State.botFortressLevel],
+          ].map(([label, value]) => (
+            <div key={label as string} style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(212,168,90,0.08)', border: '1px solid rgba(212,168,90,0.2)' }}>
+              <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#d4a85a' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => setScreen('world-map-2')}
+            style={{ padding: '12px 24px', background: 'rgba(212,168,90,0.12)', color: '#d4a85a', border: '1px solid rgba(212,168,90,0.3)', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >Продовжити кампанію</button>
+          <button
+            onClick={() => { clearCampaign2Save(); setMap2State(createInitialTerritoryMap2State()); setWorld2PlayerUnits(null); setScreen('landing') }}
+            style={{ padding: '12px 24px', background: '#d4a85a', color: '#0f0e09', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >← До меню</button>
+        </div>
       </div>
     )
   }

@@ -350,7 +350,7 @@ export default function WorldMap2({
           <span style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)' }}>А2</span><ApDots ap={mapState.army2Ap} />
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>День {turn}</span>
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>{capturedInRegion}/{activeDistricts.length}</span>
-          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount} <span style={{ color: 'rgba(154,90,170,0.7)', fontWeight: 400 }}>⚔{mapState.botUnits}</span></span>
+          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount} <span style={{ color: 'rgba(154,90,170,0.7)', fontWeight: 400 }}>⚔{mapState.botArmy.length}{mapState.botHero?.isAlive ? ` ★${mapState.botHero.level}` : ''}</span></span>
         </div>
       </div>
 
@@ -508,29 +508,59 @@ export default function WorldMap2({
             background: '#1e1a12', border: `1px solid ${ownership[popupDistrict.id] === 'bot' ? 'rgba(138,58,154,0.5)' : 'rgba(212,168,90,0.35)'}`,
             borderRadius: 14, padding: '14px 18px', minWidth: 240, zIndex: 10,
           }}>
-            <div style={{ fontWeight: 700, color: '#f0e8d8', marginBottom: 4 }}>{popupDistrict.name}</div>
+            <div style={{ fontWeight: 700, color: '#f0e8d8', marginBottom: 4 }}>
+              {popupDistrict.name}
+              {popupDistrict.id === 'terr_229' && ownership[popupDistrict.id] === 'bot' && (
+                <span style={{ marginLeft: 8, fontSize: 13 }}>👑</span>
+              )}
+            </div>
             {popupDistrict.isCapital && <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 6 }}>★ Столиця</div>}
-            {/* Unit portraits */}
-            {popupDistrict.army.length > 0 ? (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                {popupDistrict.army.map((spec, i) => (
-                  <div key={i} style={{ position: 'relative', width: 44, height: 52 }}>
-                    <img
-                      src={getSpec2Portrait(spec)}
-                      alt=""
-                      style={{ width: 44, height: 52, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top' }}
-                    />
-                    <div style={{
-                      position: 'absolute', bottom: 2, right: 3,
-                      fontSize: 9, color: '#d4a85a', fontWeight: 700,
-                      background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 3px',
-                    }}>lv{spec.level}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 12 }}>Армія відсутня</div>
+            {popupDistrict.id === 'terr_229' && ownership[popupDistrict.id] === 'bot' && (
+              <div style={{ fontSize: 11, color: '#9a5aaa', marginBottom: 6, fontWeight: 600 }}>👑 Столиця Темного Барона</div>
             )}
+            {/* Unit portraits */}
+            {(() => {
+              const isBot = ownership[popupDistrict.id] === 'bot'
+              const heroHere = isBot && mapState.botHero?.isAlive && mapState.botHeroNodeId === popupDistrict.id
+              const armyToShow = isBot ? mapState.botArmy : popupDistrict.army
+              if (armyToShow.length === 0 && !heroHere) {
+                return <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 12 }}>Армія відсутня</div>
+              }
+              return (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {heroHere && mapState.botHero && (
+                    <div style={{ position: 'relative', width: 44, height: 52 }}>
+                      <div style={{
+                        width: 44, height: 52, borderRadius: 8,
+                        background: 'linear-gradient(135deg, #5a2070, #8a3a9a)',
+                        border: '1px solid rgba(212,168,90,0.6)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 18, color: '#f0e8d8',
+                      }}>☠</div>
+                      <div style={{
+                        position: 'absolute', bottom: 2, right: 3,
+                        fontSize: 9, color: '#d4a85a', fontWeight: 700,
+                        background: 'rgba(0,0,0,0.7)', borderRadius: 4, padding: '1px 3px',
+                      }}>★{mapState.botHero.level}</div>
+                    </div>
+                  )}
+                  {armyToShow.map((spec, i) => (
+                    <div key={i} style={{ position: 'relative', width: 44, height: 52 }}>
+                      <img
+                        src={getSpec2Portrait(spec)}
+                        alt=""
+                        style={{ width: 44, height: 52, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top' }}
+                      />
+                      <div style={{
+                        position: 'absolute', bottom: 2, right: 3,
+                        fontSize: 9, color: '#d4a85a', fontWeight: 700,
+                        background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 3px',
+                      }}>lv{spec.level}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
             {attackable.has(popupDistrict.id) ? (
               <button
                 onClick={() => { onAttack(popupDistrict.id); setPopupDistrictId(null) }}

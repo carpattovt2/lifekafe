@@ -37,6 +37,56 @@ export interface Region2 {
   isBoss?: boolean
 }
 
+export interface BotHeroState {
+  name: string
+  level: number
+  hp: number
+  maxHp: number
+  isAlive: boolean
+}
+
+export const BOT_CAPITAL_ID = 'terr_229'
+
+export const BOT_HERO_LEVELS: Record<number, { hp: number; minDmg: number; maxDmg: number; defense: number; accuracy: number; evasion: number; initiative: number }> = {
+  1: { hp:  80, minDmg: 16, maxDmg: 22, defense: 0.15, accuracy: 0.80, evasion: 0.05, initiative: 55 },
+  2: { hp: 105, minDmg: 19, maxDmg: 26, defense: 0.18, accuracy: 0.82, evasion: 0.05, initiative: 55 },
+  3: { hp: 130, minDmg: 22, maxDmg: 30, defense: 0.20, accuracy: 0.83, evasion: 0.06, initiative: 60 },
+  4: { hp: 155, minDmg: 26, maxDmg: 35, defense: 0.22, accuracy: 0.85, evasion: 0.06, initiative: 60 },
+  5: { hp: 180, minDmg: 30, maxDmg: 40, defense: 0.25, accuracy: 0.87, evasion: 0.07, initiative: 65 },
+}
+
+export function buildBotHeroUnit(state: BotHeroState, side: Side): GameUnit {
+  const d = BOT_HERO_LEVELS[Math.min(state.level, 5)]
+  return {
+    id: 'bot_hero',
+    side,
+    row: 0 as const,
+    slot: 0,
+    class: 'warrior' as const,
+    name: state.name,
+    isHero: true,
+    heroId: 'artan',  // visual fallback; we'll override portrait via separate path later
+    hp: state.hp,
+    maxHp: state.maxHp,
+    minDmg: d.minDmg,
+    maxDmg: d.maxDmg,
+    accuracy: d.accuracy,
+    defense: d.defense,
+    evasion: d.evasion,
+    initiative: d.initiative,
+    morale: 70,
+    critChance: 0.05,
+    critMult: 2.0,
+    counter: 0,
+    buffs: [],
+    hasActed: false,
+    level: state.level,
+    xp: 0,
+    xpToNext: Infinity,
+    fireRes: 0, waterRes: 0, earthRes: 0, airRes: 0,
+  }
+}
+
 export interface TerritoryMap2State {
   ownership:            Record<string, 'player' | 'enemy' | 'bot'>
   conqueredRegions:     string[]
@@ -54,8 +104,12 @@ export interface TerritoryMap2State {
   restedThisTurn:       boolean
   army2RestedThisTurn:  boolean
   heroes:               { artan: HeroState | null; sybilla: HeroState | null }
-  botUnits:             number
+  // ── Bot state ───────────────────────────────────────────────────────────────
+  botArmy:              UnitSpec2[]            // real bot army (units with classes + levels)
   botGold:              number
+  botFortressLevel:     1 | 2 | 3 | 4 | 5
+  botHero:              BotHeroState | null
+  botHeroNodeId:        string                  // district where bot hero currently stands
   botRestTurns:         number
 }
 
@@ -507,19 +561,24 @@ export function isRegionComplete(regionId: string, ownership: Record<string, 'pl
 
 export function getAttackableDistricts(
   ownership:      Record<string, 'player' | 'enemy' | 'bot'>,
-  armyNodeId:     string,
+  _armyNodeId:    string,
   activeRegionId: string,
 ): Set<string> {
-  const district = DISTRICT_MAP.get(armyNodeId)
-  if (!district) return new Set()
-  const playerSet = new Set(
-    Object.entries(ownership).filter(([, o]) => o === 'player').map(([id]) => id)
-  )
-  return new Set(district.adjacentTo.filter(id => {
-    if (playerSet.has(id)) return false
-    const d = DISTRICT_MAP.get(id)
-    return d?.regionId === activeRegionId
-  }))
+  // Variant A: attackable = neighbors of ANY player-owned district within the active region.
+  // (armyNodeId kept for compat but no longer constrains attack origin.)
+  const playerIds = Object.entries(ownership).filter(([, o]) => o === 'player').map(([id]) => id)
+  const playerSet = new Set(playerIds)
+  const result = new Set<string>()
+  for (const playerId of playerIds) {
+    const d = DISTRICT_MAP.get(playerId)
+    if (!d) continue
+    for (const adjId of d.adjacentTo) {
+      if (playerSet.has(adjId)) continue
+      const adj = DISTRICT_MAP.get(adjId)
+      if (adj?.regionId === activeRegionId) result.add(adjId)
+    }
+  }
+  return result
 }
 
 export function getMovableDistricts(
@@ -589,51 +648,121 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     restedThisTurn:      false,
     army2RestedThisTurn: false,
     heroes:              { artan: null, sybilla: null },
-    botUnits:            3,
+    botArmy:             [
+      { class: 'warrior', level: 1 },
+      { class: 'warrior', level: 1 },
+      { class: 'archer',  level: 1 },
+    ],
     botGold:             0,
+    botFortressLevel:    1,
+    botHero:             null,
+    botHeroNodeId:       BOT_CAPITAL_ID,
     botRestTurns:        0,
   }
 }
 
 // ── Bot AI ────────────────────────────────────────────────────────────────────
+// Bot army power score — used to decide if it can attack
+function botArmyPower(army: UnitSpec2[], hero: BotHeroState | null): number {
+  let p = 0
+  for (const u of army) {
+    const base = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : u.class === 'mage' ? 5 : 6
+    p += base + (u.level - 1) * 2
+  }
+  if (hero && hero.isAlive) p += 8 + (hero.level - 1) * 3
+  return p
+}
+
+function districtDefensePower(district: District, isPlayerHeld: boolean): number {
+  let p = 0
+  for (const u of district.army) {
+    const base = u.class === 'warrior' ? 4 : u.class === 'archer' ? 3 : u.class === 'mage' ? 5 : 6
+    p += base + (u.level - 1) * 2
+  }
+  return isPlayerHeld ? Math.max(p, 12) : p  // player districts have minimum 12 defense power
+}
+
+const HIRE_PRIORITY: { class: UnitClass; cost: number }[] = [
+  { class: 'warrior', cost: 3 },
+  { class: 'warrior', cost: 3 },
+  { class: 'archer',  cost: 4 },
+  { class: 'mage',    cost: 5 },
+  { class: 'warrior', cost: 3 },
+  { class: 'archer',  cost: 4 },
+  { class: 'mage',    cost: 5 },
+]
+
 export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2State; botMessage: string | null } {
   const ownership = { ...state.ownership }
   const botConqueredRegions = [...state.botConqueredRegions]
+  let botGold          = state.botGold
+  let botArmy          = [...state.botArmy]
+  let botHero          = state.botHero
+  let botHeroNodeId    = state.botHeroNodeId
+  let botFortressLevel = state.botFortressLevel
+  let botRestTurns     = Math.max(0, state.botRestTurns - 1)
 
-  // Earn gold from owned districts (like player's daily income)
-  let botGold = state.botGold
+  // 1. Earn gold (70% of player rate — bot is slower)
   for (const [id, o] of Object.entries(ownership)) {
-    if (o === 'bot') botGold += (DISTRICT_MAP.get(id)?.goldPerDay ?? 0)
+    if (o === 'bot') botGold += Math.floor((DISTRICT_MAP.get(id)?.goldPerDay ?? 0) * 0.7)
   }
 
-  // Hire one unit per turn while affordable (3 gold each, max 8)
-  let botUnits = state.botUnits
-  if (botGold >= 3 && botUnits < 8) {
-    botUnits++
-    botGold -= 3
+  // 2. Heal hero (free, +10 per turn) — bot rests in its territory
+  if (botHero && botHero.isAlive && botHero.hp < botHero.maxHp) {
+    botHero = { ...botHero, hp: Math.min(botHero.maxHp, botHero.hp + 10) }
+  }
+  // Revive hero if dead and bot has gold
+  if (botHero && !botHero.isAlive && botGold >= 8) {
+    botHero = { ...botHero, hp: Math.round(botHero.maxHp * 0.5), isAlive: true }
+    botGold -= 8
+    botHeroNodeId = BOT_CAPITAL_ID  // revives at capital
   }
 
-  // Decrement rest — bot is recovering after last battle
-  let botRestTurns = Math.max(0, state.botRestTurns - 1)
+  // 3. Hire bot hero if not exists yet (5 gold, like player)
+  if (!botHero && botGold >= 5) {
+    const d = BOT_HERO_LEVELS[1]
+    botHero = { name: 'Темний Барон', level: 1, hp: d.hp, maxHp: d.hp, isAlive: true }
+    botGold -= 5
+  }
+
+  // 4. Hire one unit (every 2 turns — bot is slower)
+  if (state.turn % 2 === 0 && botArmy.length < 7) {
+    const nextHire = HIRE_PRIORITY[botArmy.length]
+    if (nextHire && botGold >= nextHire.cost) {
+      botArmy = [...botArmy, { class: nextHire.class, level: 1 }]
+      botGold -= nextHire.cost
+    }
+  }
+
+  // 5. Upgrade fortress (every 6 turns, 5 gold per level)
+  if (state.turn % 6 === 0 && botFortressLevel < 5 && botGold >= 5) {
+    botFortressLevel = (botFortressLevel + 1) as 1|2|3|4|5
+    botGold -= 5
+  }
+
+  // 6. Level up units occasionally (every 4 turns, level +1 for one random unit, max lvl 4)
+  if (state.turn % 4 === 0 && botArmy.length > 0) {
+    const eligible = botArmy.map((u, i) => ({ u, i })).filter(({ u }) => u.level < 4)
+    if (eligible.length > 0) {
+      const pick = eligible[Math.floor(Math.random() * eligible.length)]
+      botArmy = botArmy.map((u, i) => i === pick.i ? { ...u, level: u.level + 1 } : u)
+    }
+  }
+
+  // 7. Resting after battle — skip attack but keep developing
   if (botRestTurns > 0) {
     return {
-      state: { ...state, ownership, botConqueredRegions, botGold, botUnits, botRestTurns },
+      state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
       botMessage: null,
     }
   }
 
-  // Collect adjacent non-bot districts
-  const botDistricts = Object.entries(ownership).filter(([, o]) => o === 'bot').map(([id]) => id)
-  if (botDistricts.length === 0) return { state: { ...state, botGold, botUnits, botRestTurns }, botMessage: null }
-
-  const reachable = new Set<string>()
-  for (const distId of botDistricts) {
-    const d = DISTRICT_MAP.get(distId)
-    if (!d) continue
-    for (const adjId of d.adjacentTo) {
-      if (ownership[adjId] !== 'bot') reachable.add(adjId)
-    }
+  // 8. Movement + attack from hero's current node
+  const heroDistrict = DISTRICT_MAP.get(botHeroNodeId)
+  if (!heroDistrict) {
+    return { state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns }, botMessage: null }
   }
+  const reachable = heroDistrict.adjacentTo.filter(id => ownership[id] !== 'bot')
 
   // Linear region progression: Тетрарія → Калідонія → Фаленор
   const BOT_REGION_PATH = ['terr_223', 'terr_230', 'terr_237']
@@ -643,8 +772,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     if (!botConqueredRegions.includes(rid)) break
   }
 
-  // Neutral districts first (enemy), player districts as fallback; fewest units first
-  const targets = Array.from(reachable)
+  const targets = reachable
     .filter(id => {
       const d = DISTRICT_MAP.get(id)
       return d && allowedBotRegions.has(d.regionId)
@@ -653,25 +781,47 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
       const ao = ownership[a] === 'enemy', bo = ownership[b] === 'enemy'
       if (ao && !bo) return -1
       if (!ao && bo) return 1
-      return (DISTRICT_MAP.get(a)?.army.length ?? 0) - (DISTRICT_MAP.get(b)?.army.length ?? 0)
+      const da = DISTRICT_MAP.get(a), db = DISTRICT_MAP.get(b)
+      const dap = da ? districtDefensePower(da, ownership[a] === 'player') : 999
+      const dbp = db ? districtDefensePower(db, ownership[b] === 'player') : 999
+      return dap - dbp
     })
 
+  const myPower = botArmyPower(botArmy, botHero)
   for (const targetId of targets) {
     const district = DISTRICT_MAP.get(targetId)
     if (!district) continue
+    const def = districtDefensePower(district, ownership[targetId] === 'player')
+    if (myPower <= def + 2) continue  // bot needs power advantage
 
-    // Defense = number of enemy units; player districts have min garrison of 3
-    const rawDef = district.army.length
-    const defense = ownership[targetId] === 'player' ? Math.max(rawDef, 3) : rawDef
-
-    // Bot needs strictly more units than defenders to attack
-    if (botUnits <= defense) continue
-
-    // Battle won — take casualties, then rest proportional to fight difficulty
-    botUnits = Math.max(1, botUnits - Math.ceil(defense * 0.5))
-    botRestTurns = Math.max(1, defense)  // 1 rest turn per enemy unit
+    // Take casualties (lose ~30% of units)
+    const losses = Math.max(0, Math.floor(botArmy.length * 0.3))
+    if (losses > 0) {
+      // Lose weakest units first
+      const sorted = [...botArmy].sort((a, b) => a.level - b.level)
+      const lost = sorted.slice(0, losses).map(u => u)
+      botArmy = botArmy.filter(u => !lost.includes(u))
+    }
+    // Hero takes damage
+    if (botHero && botHero.isAlive) {
+      const dmg = Math.floor(botHero.maxHp * 0.25)
+      const newHp = botHero.hp - dmg
+      botHero = newHp <= 0
+        ? { ...botHero, hp: 0, isAlive: false }
+        : { ...botHero, hp: newHp }
+    }
 
     ownership[targetId] = 'bot'
+    botHeroNodeId = targetId
+    botRestTurns = 2
+
+    // Level up hero on territorial gain
+    if (botHero && botHero.isAlive && botHero.level < 5 && Math.random() < 0.4) {
+      const nextLvl = botHero.level + 1
+      const d = BOT_HERO_LEVELS[nextLvl]
+      botHero = { ...botHero, level: nextLvl, maxHp: d.hp, hp: Math.min(botHero.hp + (d.hp - botHero.maxHp), d.hp) }
+    }
+
     const regionId = district.regionId
     if (!botConqueredRegions.includes(regionId)) {
       const region = REGION_MAP.get(regionId)
@@ -681,13 +831,15 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     }
 
     return {
-      state: { ...state, ownership, botConqueredRegions, botGold, botUnits, botRestTurns },
+      state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
       botMessage: `Ворог захопив ${district.name}`,
     }
   }
 
+  // No attack possible — move hero to a closer position to a target
+  // (simple heuristic: move toward enemy/player adjacent districts)
   return {
-    state: { ...state, ownership, botConqueredRegions, botGold, botUnits, botRestTurns },
+    state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
     botMessage: null,
   }
 }
