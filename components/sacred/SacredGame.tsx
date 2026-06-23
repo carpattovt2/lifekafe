@@ -2855,9 +2855,22 @@ export default function SacredGame() {
         <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 8 }}>
           Армія {currentArmy} — Оберіть слот для розблокування
         </div>
-        <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 28, opacity: 0.8 }}>
+        <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 12, opacity: 0.8 }}>
           Залишилось виборів: {picksLeft} · Відкрито слотів: {unlockedSlots.length}/7
         </div>
+        {/* Tutorial-style explainer (only visible when tutorial active) */}
+        {(() => {
+          try { if (localStorage.getItem('sacred_tutorial_dismissed')) return null } catch { return null }
+          return (
+            <div style={{
+              fontSize: 11, color: 'rgba(240,232,216,0.55)', marginBottom: 24, lineHeight: 1.4,
+              padding: '8px 12px', borderRadius: 8, background: 'rgba(212,168,90,0.06)', border: '1px solid rgba(212,168,90,0.2)',
+              textAlign: 'left', maxWidth: 320,
+            }}>
+              📜 Обери куди ставити юнітів. Слоти героя (підсвічені) зарезервовані. Більше слотів відкриється при підвищенні рівня героя (+1 за кожен рівень до lv5).
+            </div>
+          )
+        })()}
         <div style={{ width: '100%' }}>
           {[0, 1].map(row => (
             <div key={row} style={{ marginBottom: 16 }}>

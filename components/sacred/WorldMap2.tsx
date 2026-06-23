@@ -154,6 +154,14 @@ export default function WorldMap2({
   const [selectedUnitId,  setSelectedUnitId]  = useState<string | null>(null)
   const [hirePopup,       setHirePopup]       = useState<{ row: number; slot: number } | null>(null)
   const [previewUnit,     setPreviewUnit]     = useState<GameUnit | null>(null)
+  const [tutorialDismissed, setTutorialDismissed] = useState(true)  // start true → set false in useEffect to avoid SSR mismatch
+  useEffect(() => {
+    try { setTutorialDismissed(!!localStorage.getItem('sacred_tutorial_dismissed')) } catch {}
+  }, [])
+  function dismissTutorial() {
+    try { localStorage.setItem('sacred_tutorial_dismissed', '1') } catch {}
+    setTutorialDismissed(true)
+  }
 
   const activeRegularUnits = activeArmy === 1 ? playerUnits : army2Units
   const activeDeadUnits    = activeArmy === 1 ? deadUnits   : army2DeadUnits
@@ -728,19 +736,60 @@ export default function WorldMap2({
         </div>
       )}
 
-      {/* First-time hint: no heroes hired */}
-      {!mapState.heroes?.artan && !mapState.heroes?.sybilla && (
-        <div style={{
-          position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(212,168,90,0.15)', border: '1px solid rgba(212,168,90,0.5)',
-          borderRadius: 10, padding: '8px 14px', zIndex: 15,
-          color: '#d4a85a', fontSize: 12, fontWeight: 600,
-          maxWidth: 'calc(100% - 32px)', textAlign: 'center',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-        }}>
-          → Натисніть «Бастіон» → Таверна → Найняти героя
-        </div>
-      )}
+      {/* Contextual tutorial — auto-progresses based on game state, dismissible */}
+      {!tutorialDismissed && (() => {
+        const hasAnyHero        = !!(mapState.heroes?.artan || mapState.heroes?.sybilla)
+        const hasArtan          = !!mapState.heroes?.artan
+        const hasSybilla        = !!mapState.heroes?.sybilla
+        const activeArmyHasUnit = activeRegularUnits.length > 0
+        const apsExhausted      = ap === 0 && mapState.army2Ap === 0
+        const ownedDistricts    = Object.values(ownership).filter(o => o === 'player').length
+        const turnsCount        = turn
+        // Stop tutorial automatically once player has clearly progressed
+        if (ownedDistricts >= 3 || turnsCount >= 5) return null
+
+        let hint: string | null = null
+        // Hire-units hint is highest priority once a hero exists (cheapest immediate step)
+        if (!hasAnyHero && !fortressOpen)
+          hint = '📜 Вітаю! Захопи всі регіони щоб виграти. Спочатку натисни «🏰 Бастіон» внизу.'
+        else if (!hasAnyHero && fortressOpen && fortressTab !== 'tavern')
+          hint = '📜 Зайди у вкладку «Таверна» щоб найняти героя.'
+        else if (!hasAnyHero && fortressOpen && fortressTab === 'tavern')
+          hint = '📜 Найми героя за 5💰. Без героя армія не може битися.'
+        else if (hasAnyHero && !activeArmyHasUnit && fortressOpen && fortressTab === 'army')
+          hint = '📜 Натисни вільний слот (+) щоб найняти юніта. Воїн коштує 2💰, лучник 3💰, маг 5💰.'
+        else if (hasArtan && hasSybilla && fortressOpen && army2Units.length === 0 && activeArmy === 1)
+          hint = '📜 У тебе дві армії! Перемкни на «✨ Сивілла» вгорі панелі — у неї свої 2 AP, слоти та юніти.'
+        else if (hasAnyHero && activeArmyHasUnit && !fortressOpen && turnsCount === 1 && ownedDistricts === 1)
+          hint = '📜 Натисни ворожий район (помаранчевий) поруч з твоїм щоб атакувати. У тебе 2 AP за хід.'
+        else if (apsExhausted && turnsCount === 1)
+          hint = '📜 AP закінчилися. Натисни «Хід» щоб закінчити день — бот зробить свій хід.'
+
+        if (!hint) return null
+        return (
+          <div style={{
+            position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(80,60,30,0.95)', border: '1px solid rgba(212,168,90,0.6)',
+            borderRadius: 10, padding: '10px 12px 10px 16px', zIndex: 15,
+            color: '#f0d8a0', fontSize: 12, fontWeight: 500,
+            maxWidth: 'calc(100% - 32px)',
+            display: 'flex', flexDirection: 'column', gap: 6,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ lineHeight: 1.35 }}>{hint}</div>
+            <button
+              onClick={dismissTutorial}
+              style={{
+                alignSelf: 'flex-end',
+                background: 'none', border: 'none',
+                color: 'rgba(240,232,216,0.4)', cursor: 'pointer',
+                fontSize: 10, padding: '2px 4px', textDecoration: 'underline',
+              }}>
+              Пропустити навчання
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Footer */}
       <div style={{ padding: '10px 16px', background: '#17150f', borderTop: '1px solid rgba(240,232,216,0.1)', display: 'flex', gap: 8, flexShrink: 0 }}>
