@@ -2764,9 +2764,22 @@ export default function SacredGame() {
       }}>
         <div style={{ fontSize: 13, letterSpacing: 3, color: '#d4a85a', textTransform: 'uppercase', marginBottom: 8, opacity: 0.7 }}>Новий рівень</div>
         <div style={{ fontSize: 24, fontWeight: 800, color: '#f0e8d8', marginBottom: 4 }}>{heroName}</div>
-        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 32 }}>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 16 }}>
           Рівень {heroState?.level ?? 1} — Обери перк:
         </div>
+        {/* Tutorial-style explainer (only visible when tutorial active) */}
+        {(() => {
+          try { if (localStorage.getItem('sacred_tutorial_dismissed')) return null } catch { return null }
+          return (
+            <div style={{
+              fontSize: 11, color: 'rgba(240,232,216,0.55)', marginBottom: 24, lineHeight: 1.4,
+              padding: '8px 12px', borderRadius: 8, background: 'rgba(212,168,90,0.06)', border: '1px solid rgba(212,168,90,0.2)',
+              textAlign: 'left', maxWidth: 380,
+            }}>
+              📜 За кожен рівень — один перк. Пропущені залишаються в пулі — їх можна взяти пізніше. Перки з 🔒 потребують попереднього (наприклад, «Посилення II» доступне лише після «Посиленого лікування»).
+            </div>
+          )
+        })()}
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {availablePerks.map(perkId => {
             const def = PERK_DEFS.find(p => p.id === perkId)
