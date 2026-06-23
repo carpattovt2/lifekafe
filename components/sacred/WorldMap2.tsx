@@ -618,25 +618,51 @@ export default function WorldMap2({
                     )
                   })}
                 </div>
-                {previewUnit && (
+                {/* Tutorial tip — clickable portraits */}
+                {!tutorialDismissed && !previewUnit && armyToShow.length > 0 && (
                   <div style={{
-                    marginBottom: 12, padding: '8px 10px', borderRadius: 8,
-                    background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.15)',
-                    fontSize: 11, color: '#f0e8d8',
+                    marginBottom: 10, padding: '6px 10px', borderRadius: 6,
+                    background: 'rgba(212,168,90,0.08)', border: '1px solid rgba(212,168,90,0.25)',
+                    fontSize: 10, color: 'rgba(240,216,160,0.85)', lineHeight: 1.35,
                   }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>
-                      {previewUnit.name} <span style={{ fontWeight: 400, color: 'rgba(240,232,216,0.5)' }}>· lv{previewUnit.level}</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px', fontSize: 10, color: 'rgba(240,232,216,0.7)' }}>
-                      <span>❤ HP: {previewUnit.hp}/{previewUnit.maxHp}</span>
-                      <span>⚔ Урон: {previewUnit.minDmg}–{previewUnit.maxDmg}</span>
-                      <span>🎯 Точн: {Math.round(previewUnit.accuracy * 100)}%</span>
-                      <span>🛡 Захист: {Math.round(previewUnit.defense * 100)}%</span>
-                      <span>⚡ Ініц: {previewUnit.initiative}</span>
-                      <span>👁 Ухил: {Math.round(previewUnit.evasion * 100)}%</span>
-                    </div>
+                    📜 Натисни портрет ворога щоб побачити його статистику (HP, урон, точність).
                   </div>
                 )}
+                {previewUnit && (() => {
+                  const resists = [
+                    ['🔥', previewUnit.fireRes ?? 0],
+                    ['❄', previewUnit.waterRes ?? 0],
+                    ['🌿', previewUnit.earthRes ?? 0],
+                    ['💨', previewUnit.airRes ?? 0],
+                  ].filter(([, v]) => (v as number) > 0) as [string, number][]
+                  return (
+                    <div style={{
+                      marginBottom: 12, padding: '8px 10px', borderRadius: 8,
+                      background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.15)',
+                      fontSize: 11, color: '#f0e8d8',
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>
+                        {previewUnit.name} <span style={{ fontWeight: 400, color: 'rgba(240,232,216,0.5)' }}>· lv{previewUnit.level}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px', fontSize: 10, color: 'rgba(240,232,216,0.7)' }}>
+                        <span>❤ HP: {previewUnit.hp}/{previewUnit.maxHp}</span>
+                        <span>⚔ Урон: {previewUnit.minDmg}–{previewUnit.maxDmg}</span>
+                        <span>🎯 Точн: {Math.round(previewUnit.accuracy * 100)}%</span>
+                        <span>🛡 Захист: {Math.round(previewUnit.defense * 100)}%</span>
+                        <span>⚡ Ініц: {previewUnit.initiative}</span>
+                        <span>👁 Ухил: {Math.round(previewUnit.evasion * 100)}%</span>
+                      </div>
+                      {resists.length > 0 && (
+                        <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px solid rgba(240,232,216,0.1)', display: 'flex', gap: 8, fontSize: 10, color: 'rgba(240,232,216,0.7)' }}>
+                          <span style={{ color: 'rgba(240,232,216,0.4)' }}>Опір:</span>
+                          {resists.map(([icon, v]) => (
+                            <span key={icon}>{icon} {Math.round(v * 100)}%</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
                 </>
               )
             })()}
