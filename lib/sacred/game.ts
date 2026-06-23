@@ -1405,13 +1405,27 @@ export function executeAction(
     }
   }
 
-  // ── XP: per kill (+50) and per hit (+10) ──────────────────────────────────
+  // ── XP: per kill (+25) and per landed action (+5) ──────────────────────────
+  // Damage actions: counted via hitLanded (existing). Support actions (heal,
+  // buff, debuff) award the same +5 XP whenever they successfully execute —
+  // otherwise healers and freezers would never level up.
   let pendingCatapultLevelUp: string | undefined
   const kills = units.filter(u => {
     const prev = prevUnitMap.get(u.id)
     return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
   }).length
-  const xpGain = kills * 25 + (hitLanded ? 5 : 0)
+  const DAMAGE_ACTIONS: ActionKey[] = [
+    'strike', 'shot', 'poison_shot', 'double_shot', 'magic_bolt',
+    'fireball', 'fire_orb', 'armageddon', 'freeze', 'blizzard',
+    'rock_throw', 'earthquake', 'gust', 'hurricane',
+    'sacred_strike', 'shkvall', 'barrage', 'grapeshot',
+    'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley',
+  ]
+  const isSupportAction = !DAMAGE_ACTIONS.includes(action)
+  // For support actions, any non-broken execution counts (heal/buff/debuff/cleanse).
+  // For damage actions, only landed hits count.
+  const actionLanded = hitLanded || isSupportAction
+  const xpGain = kills * 25 + (actionLanded ? 5 : 0)
   if (actor.isHero) {
     // Heroes accumulate XP but never level up mid-battle (post-battle only)
     if (xpGain > 0) {

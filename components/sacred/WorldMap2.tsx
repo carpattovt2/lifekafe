@@ -10,6 +10,7 @@ import {
 } from '@/lib/sacred/territories2'
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import type { GameUnit, UnitClass } from '@/lib/sacred/types'
+import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS } from '@/lib/sacred/types'
 import type { UnitSpec2 } from '@/lib/sacred/territories2'
 import { HERO_REVIVE_COST, HERO_HIRE_COST } from '@/lib/sacred/heroes'
 import type { HeroId } from '@/lib/sacred/heroes'
@@ -820,18 +821,121 @@ export default function WorldMap2({
                   </div>
                 ))}
 
-                {/* Selected unit actions */}
+                {/* Selected unit details */}
                 {selectedUnitId && (() => {
                   const su = activeRegularUnits.find(u => u.id === selectedUnitId)
                   if (!su) return null
+                  const lvl = su.level ?? 1
+                  // Resolve human-friendly rank name based on class + path
+                  const rankName: string =
+                    su.class === 'warrior' && lvl >= 3 && su.warriorPath
+                      ? (WARRIOR_PATHS[su.warriorPath][lvl]?.name ?? '')
+                    : su.class === 'warrior' ? (WARRIOR_LEVELS[lvl]?.name ?? '')
+                    : su.class === 'archer'  ? (ARCHER_LEVELS[lvl]?.name ?? '')
+                    : su.class === 'mage' && lvl > 1 && su.magePath ? (MAGE_PATHS[su.magePath][lvl]?.name ?? '')
+                    : su.class === 'mage' ? (MAGE_BASE.name ?? '')
+                    : su.class === 'catapult' && lvl > 1 && su.catapultPath ? (CATAPULT_PATHS[su.catapultPath][lvl]?.name ?? '')
+                    : su.class === 'catapult' ? 'Катапульта'
+                    : ''
+                  const maxLevel = su.class === 'warrior' ? (su.warriorPath === 'champion' ? 5 : 4)
+                                : su.class === 'archer' ? 3
+                                : su.class === 'mage' ? 5
+                                : su.class === 'catapult' ? 3
+                                : 0
+                  const nextLvl = lvl + 1
+                  const nextRank: string =
+                    su.class === 'warrior' && nextLvl >= 3 && su.warriorPath
+                      ? (WARRIOR_PATHS[su.warriorPath][nextLvl]?.name ?? '')
+                    : su.class === 'warrior' ? (WARRIOR_LEVELS[nextLvl]?.name ?? '')
+                    : su.class === 'archer'  ? (ARCHER_LEVELS[nextLvl]?.name ?? '')
+                    : su.class === 'mage' && su.magePath ? (MAGE_PATHS[su.magePath][nextLvl]?.name ?? '')
+                    : su.class === 'mage' ? 'Шлях ?'
+                    : su.class === 'catapult' && su.catapultPath ? (CATAPULT_PATHS[su.catapultPath][nextLvl]?.name ?? '')
+                    : su.class === 'catapult' ? 'Шлях ?'
+                    : ''
+                  const stats: [string, string][] = [
+                    ['⚔ Урон',       `${su.minDmg}–${su.maxDmg}`],
+                    ['🎯 Точність',   `${Math.round(su.accuracy * 100)}%`],
+                    ['🛡 Захист',     `${Math.round(su.defense * 100)}%`],
+                    ['⚡ Ініціатива', `${su.initiative}`],
+                    ['👁 Ухилення',  `${Math.round(su.evasion * 100)}%`],
+                    ['💥 Крит',       `${Math.round(su.critChance * 100)}% ×${su.critMult}`],
+                  ]
+                  const resists: [string, number][] = [
+                    ['🔥', su.fireRes ?? 0], ['❄', su.waterRes ?? 0],
+                    ['🌿', su.earthRes ?? 0], ['💨', su.airRes ?? 0],
+                  ].filter(([, v]) => (v as number) > 0) as [string, number][]
                   return (
-                    <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(212,168,90,0.07)', border: '1px solid rgba(212,168,90,0.25)' }}>
-                      <div style={{ fontSize: 11, color: '#d4a85a', fontWeight: 700, marginBottom: 4 }}>
-                        {CLASS_UA[su.class]} lv{su.level}
+                    <div style={{ marginTop: 14, padding: '14px', borderRadius: 12, background: 'rgba(212,168,90,0.07)', border: '1px solid rgba(212,168,90,0.25)' }}>
+                      {/* Header: portrait + name + rank */}
+                      <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center' }}>
+                        <img src={getPortrait(su)} alt="" style={{ width: 52, height: 62, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#f0e8d8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {su.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#d4a85a', marginTop: 2 }}>
+                            Lv.{lvl} · {rankName}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 4 }}>
+                            HP {su.hp}/{su.maxHp}
+                          </div>
+                          <div style={{ width: '100%', height: 4, background: 'rgba(240,232,216,0.1)', borderRadius: 2, marginTop: 3 }}>
+                            <div style={{
+                              width: `${Math.max(0, su.hp / su.maxHp) * 100}%`, height: '100%', borderRadius: 2,
+                              background: su.hp / su.maxHp > 0.5 ? '#7aaa82' : su.hp / su.maxHp > 0.25 ? '#c4a040' : '#c07070',
+                            }} />
+                          </div>
+                        </div>
                       </div>
+
+                      {/* XP bar */}
+                      {maxLevel > 0 && lvl < maxLevel && (
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(240,232,216,0.45)', marginBottom: 3 }}>
+                            <span>XP → {nextRank || '—'}</span>
+                            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{su.xp ?? 0} / {su.xpToNext ?? '?'}</span>
+                          </div>
+                          <div style={{ width: '100%', height: 4, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
+                            <div style={{
+                              width: `${Math.min(100, ((su.xp ?? 0) / Math.max(1, su.xpToNext ?? 1)) * 100)}%`,
+                              height: '100%', background: '#b07850', borderRadius: 2,
+                            }} />
+                          </div>
+                        </div>
+                      )}
+                      {maxLevel > 0 && lvl >= maxLevel && (
+                        <div style={{ marginBottom: 12, fontSize: 11, color: '#b07850', fontWeight: 600 }}>
+                          ⭐ Максимальний рівень
+                        </div>
+                      )}
+
+                      {/* Stats grid 2 cols */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+                        {stats.map(([label, val]) => (
+                          <div key={label} style={{ padding: '6px 8px', borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.08)' }}>
+                            <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.4)' }}>{label}</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#f0e8d8' }}>{val}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Magic resistances */}
+                      {resists.length > 0 && (
+                        <div style={{ marginBottom: 10, padding: '6px 8px', borderRadius: 8, background: 'rgba(240,232,216,0.04)', border: '1px solid rgba(240,232,216,0.08)' }}>
+                          <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.4)', marginBottom: 4 }}>Опір</div>
+                          <div style={{ display: 'flex', gap: 10, fontSize: 11, color: '#f0e8d8' }}>
+                            {resists.map(([icon, v]) => (
+                              <span key={icon}>{icon} {Math.round(v * 100)}%</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginBottom: 10 }}>
                         Натисніть інший слот у тому ж ряді щоб поміняти місцями
                       </div>
+
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
                           onClick={() => { onDismissUnit(selectedUnitId); setSelectedUnitId(null) }}
@@ -840,7 +944,7 @@ export default function WorldMap2({
                         <button
                           onClick={() => setSelectedUnitId(null)}
                           style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'none', border: '1px solid rgba(240,232,216,0.15)', color: 'rgba(240,232,216,0.5)', fontSize: 12, cursor: 'pointer' }}
-                        >Скасувати</button>
+                        >Закрити</button>
                       </div>
                     </div>
                   )
