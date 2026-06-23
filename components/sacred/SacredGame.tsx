@@ -2215,7 +2215,7 @@ export default function SacredGame() {
     setMap2State(afterBot)
     if (msg) {
       setBotMessage(msg)
-      setTimeout(() => setBotMessage(null), 4000)
+      // No auto-dismiss — player must close manually so they don't miss bot actions
     }
   }
 
@@ -2749,6 +2749,11 @@ export default function SacredGame() {
   if (screen === 'perk-choice' && world2PendingPerkHeroId) {
     const heroState = map2State.heroes[world2PendingPerkHeroId]
     const availablePerks = heroState ? getAvailablePerks(heroState) : []
+    const availableSet = new Set(availablePerks)
+    // Locked perks: in pendingPerkPool but blocked by prerequisite
+    const lockedPerks = heroState
+      ? heroState.pendingPerkPool.filter(id => !availableSet.has(id))
+      : []
     const heroName = world2PendingPerkHeroId === 'artan' ? 'Артан' : 'Сивілла'
     return (
       <div style={{
@@ -2782,6 +2787,34 @@ export default function SacredGame() {
             <div style={{ textAlign: 'center', color: 'rgba(240,232,216,0.4)', fontSize: 13 }}>
               Немає доступних перків (потрібні передумови)
             </div>
+          )}
+          {lockedPerks.length > 0 && (
+            <>
+              <div style={{ fontSize: 10, letterSpacing: 1, color: 'rgba(240,232,216,0.3)', textTransform: 'uppercase', marginTop: 16, marginBottom: 4 }}>
+                Заблоковано
+              </div>
+              {lockedPerks.map(perkId => {
+                const def = PERK_DEFS.find(p => p.id === perkId)
+                if (!def) return null
+                const prereqDef = def.prerequisite ? PERK_DEFS.find(p => p.id === def.prerequisite) : null
+                return (
+                  <div key={perkId}
+                    style={{
+                      padding: '12px 16px', borderRadius: 12, textAlign: 'left',
+                      background: 'rgba(240,232,216,0.03)', border: '1px solid rgba(240,232,216,0.1)',
+                      color: 'rgba(240,232,216,0.4)', width: '100%',
+                    }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(240,232,216,0.45)', marginBottom: 2 }}>
+                      🔒 {def.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.3)', marginBottom: 4 }}>{def.desc}</div>
+                    {prereqDef && (
+                      <div style={{ fontSize: 10, color: '#a86060' }}>Потрібно: {prereqDef.name}</div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
           )}
         </div>
         {availablePerks.length === 0 && (
@@ -2823,7 +2856,7 @@ export default function SacredGame() {
           Армія {currentArmy} — Оберіть слот для розблокування
         </div>
         <div style={{ fontSize: 11, color: '#d4a85a', marginBottom: 28, opacity: 0.8 }}>
-          Залишилось виборів: {picksLeft}
+          Залишилось виборів: {picksLeft} · Відкрито слотів: {unlockedSlots.length}/7
         </div>
         <div style={{ width: '100%' }}>
           {[0, 1].map(row => (

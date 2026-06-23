@@ -11,6 +11,8 @@ import {
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import type { GameUnit, UnitClass } from '@/lib/sacred/types'
 import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS } from '@/lib/sacred/types'
+import { buildFreeUnit } from '@/lib/sacred/game'
+import { buildBotHeroUnit } from '@/lib/sacred/territories2'
 import type { UnitSpec2 } from '@/lib/sacred/territories2'
 import { HERO_REVIVE_COST, HERO_REVIVE_COST_FULL, HERO_HIRE_COST, HERO_AUTO_REVIVE_TURNS } from '@/lib/sacred/heroes'
 import type { HeroId } from '@/lib/sacred/heroes'
@@ -151,6 +153,7 @@ export default function WorldMap2({
   const [fortressTab,     setFortressTab]     = useState<FortressTab>('army')
   const [selectedUnitId,  setSelectedUnitId]  = useState<string | null>(null)
   const [hirePopup,       setHirePopup]       = useState<{ row: number; slot: number } | null>(null)
+  const [previewUnit,     setPreviewUnit]     = useState<GameUnit | null>(null)
 
   const activeRegularUnits = activeArmy === 1 ? playerUnits : army2Units
   const activeDeadUnits    = activeArmy === 1 ? deadUnits   : army2DeadUnits
@@ -166,6 +169,9 @@ export default function WorldMap2({
   useEffect(() => {
     if (fortressTab === 'revive' && activeDeadUnits.length === 0 && !(!activeHero?.isAlive)) setFortressTab('army')
   }, [activeDeadUnits.length, activeHero?.isAlive])
+
+  // Clear unit preview when popup district changes
+  useEffect(() => { setPreviewUnit(null) }, [popupDistrictId])
 
   const {
     ownership, gold, turn, ap, armyNodeId, army2NodeId,
@@ -360,7 +366,15 @@ export default function WorldMap2({
           <span style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)' }}>А2</span><ApDots ap={mapState.army2Ap} />
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)' }}>День {turn}</span>
           <span style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>{capturedInRegion}/{activeDistricts.length}</span>
-          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>👁 {botCount} <span style={{ color: 'rgba(154,90,170,0.7)', fontWeight: 400 }}>⚔{mapState.botArmy.length}{mapState.botHero?.isAlive ? ` ★${mapState.botHero.level}` : ''}</span></span>
+          <span style={{ fontSize: 11, color: '#9a5aaa', fontWeight: 600 }}>
+            👁 {botCount}
+            <span style={{ color: 'rgba(154,90,170,0.7)', fontWeight: 400, marginLeft: 4 }}>
+              ⚔{mapState.botArmy.length}
+              {mapState.botHero?.isAlive && ` ★${mapState.botHero.level}`}
+              {` 🏰${mapState.botFortressLevel}`}
+              {(mapState.botArmyHpPct ?? 1) < 0.99 && ` ❤${Math.round((mapState.botArmyHpPct ?? 1) * 100)}%`}
+            </span>
+          </span>
         </div>
       </div>
 
@@ -546,13 +560,16 @@ export default function WorldMap2({
                 return <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 12 }}>Армія відсутня</div>
               }
               return (
+                <>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                   {heroHere && mapState.botHero && (
-                    <div style={{ position: 'relative', width: 44, height: 52 }}>
+                    <div
+                      onClick={() => setPreviewUnit(prev => prev?.id === 'bot_hero' ? null : buildBotHeroUnit(mapState.botHero!, 'ai'))}
+                      style={{ position: 'relative', width: 44, height: 52, cursor: 'pointer' }}>
                       <div style={{
                         width: 44, height: 52, borderRadius: 8,
                         background: 'linear-gradient(135deg, #5a2070, #8a3a9a)',
-                        border: '1px solid rgba(212,168,90,0.6)',
+                        border: `1px solid ${previewUnit?.id === 'bot_hero' ? '#f0e8d8' : 'rgba(212,168,90,0.6)'}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 18, color: '#f0e8d8',
                       }}>☠</div>
@@ -563,21 +580,56 @@ export default function WorldMap2({
                       }}>★{mapState.botHero.level}</div>
                     </div>
                   )}
-                  {armyToShow.map((spec, i) => (
-                    <div key={i} style={{ position: 'relative', width: 44, height: 52 }}>
-                      <img
-                        src={getSpec2Portrait(spec)}
-                        alt=""
-                        style={{ width: 44, height: 52, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top' }}
-                      />
-                      <div style={{
-                        position: 'absolute', bottom: 2, right: 3,
-                        fontSize: 9, color: '#d4a85a', fontWeight: 700,
-                        background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 3px',
-                      }}>lv{spec.level}</div>
-                    </div>
-                  ))}
+                  {armyToShow.map((spec, i) => {
+                    const previewId = `preview_${i}_${spec.class}_${spec.level}`
+                    const isSelected = previewUnit?.id === previewId
+                    return (
+                      <div key={i}
+                        onClick={() => {
+                          if (isSelected) { setPreviewUnit(null); return }
+                          const unit = buildFreeUnit(spec.class, spec.level, 'ai', spec.class === 'mage' ? 1 : 0 as 0|1, 0, spec.magePath, spec.catapultPath, spec.warriorPath)
+                          setPreviewUnit({ ...unit, id: previewId })
+                        }}
+                        style={{ position: 'relative', width: 44, height: 52, cursor: 'pointer' }}>
+                        <img
+                          src={getSpec2Portrait(spec)}
+                          alt=""
+                          style={{
+                            width: 44, height: 52, borderRadius: 8,
+                            objectFit: 'cover', objectPosition: 'center top',
+                            border: isSelected ? '1px solid #f0e8d8' : undefined,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute', bottom: 2, right: 3,
+                          fontSize: 9, color: '#d4a85a', fontWeight: 700,
+                          background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 3px',
+                        }}>lv{spec.level}</div>
+                      </div>
+                    )
+                  })}
                 </div>
+                {previewUnit && (
+                  <div style={{
+                    marginBottom: 12, padding: '8px 10px', borderRadius: 8,
+                    background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.15)',
+                    fontSize: 11, color: '#f0e8d8',
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>
+                      {previewUnit.name} <span style={{ fontWeight: 400, color: 'rgba(240,232,216,0.5)' }}>· lv{previewUnit.level}</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px', fontSize: 10, color: 'rgba(240,232,216,0.7)' }}>
+                      <span>❤ HP: {previewUnit.hp}/{previewUnit.maxHp}</span>
+                      <span>⚔ Урон: {previewUnit.minDmg}–{previewUnit.maxDmg}</span>
+                      <span>🎯 Точн: {Math.round(previewUnit.accuracy * 100)}%</span>
+                      <span>🛡 Захист: {Math.round(previewUnit.defense * 100)}%</span>
+                      <span>⚡ Ініц: {previewUnit.initiative}</span>
+                      <span>👁 Ухил: {Math.round(previewUnit.evasion * 100)}%</span>
+                    </div>
+                  </div>
+                )}
+                </>
               )
             })()}
             {attackable.has(popupDistrict.id) ? (
@@ -615,19 +667,27 @@ export default function WorldMap2({
           </div>
         )}
 
-        {/* Bot message toast */}
+        {/* Bot message toast — manual dismiss so player doesn't miss bot actions */}
         {botMessage && (
           <div
-            onClick={onClearBotMessage}
             style={{
               position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)',
-              background: 'rgba(80,20,90,0.92)', border: '1px solid rgba(138,58,154,0.6)',
-              borderRadius: 12, padding: '10px 18px', zIndex: 20, textAlign: 'center',
-              color: '#e0b0f0', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
-              cursor: 'pointer',
+              background: 'rgba(80,20,90,0.94)', border: '1px solid rgba(138,58,154,0.6)',
+              borderRadius: 12, padding: '10px 12px 10px 18px', zIndex: 20,
+              display: 'flex', alignItems: 'center', gap: 12,
+              color: '#e0b0f0', fontSize: 13, fontWeight: 600,
+              maxWidth: 'calc(100% - 32px)',
             }}
           >
-            {botMessage}
+            <span style={{ flex: 1 }}>{botMessage}</span>
+            <button
+              onClick={onClearBotMessage}
+              style={{
+                background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(224,176,240,0.3)',
+                color: '#e0b0f0', borderRadius: 6, width: 24, height: 24,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', fontSize: 14, padding: 0, flexShrink: 0,
+              }}>✕</button>
           </div>
         )}
 
@@ -665,6 +725,20 @@ export default function WorldMap2({
               style={{ padding: '8px 14px', background: 'rgba(240,232,216,0.08)', border: '1px solid rgba(240,232,216,0.15)', borderRadius: 10, color: 'rgba(240,232,216,0.6)', fontSize: 12, cursor: 'pointer' }}
             >Підготуватись</button>
           </div>
+        </div>
+      )}
+
+      {/* First-time hint: no heroes hired */}
+      {!mapState.heroes?.artan && !mapState.heroes?.sybilla && (
+        <div style={{
+          position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(212,168,90,0.15)', border: '1px solid rgba(212,168,90,0.5)',
+          borderRadius: 10, padding: '8px 14px', zIndex: 15,
+          color: '#d4a85a', fontSize: 12, fontWeight: 600,
+          maxWidth: 'calc(100% - 32px)', textAlign: 'center',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+        }}>
+          → Натисніть «Бастіон» → Таверна → Найняти героя
         </div>
       )}
 
