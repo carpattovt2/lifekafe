@@ -1846,6 +1846,7 @@ export default function SacredGame() {
       if (!mapData.botHeroNodeId) mapData.botHeroNodeId = BOT_CAPITAL_ID
       if (mapData.botHero === undefined) mapData.botHero = null
       if (mapData.army2Ap      == null) mapData.army2Ap      = 2
+      if (!mapData.army2NodeId) mapData.army2NodeId = mapData.armyNodeId ?? 'terr_221'
       if (mapData.army2RestedThisTurn == null) mapData.army2RestedThisTurn = false
       if (!mapData.heroes) mapData.heroes = { artan: null, sybilla: null }
       // Convert old maxArmySlots number format to new unlocked-slots array format
@@ -1885,7 +1886,7 @@ export default function SacredGame() {
   function handleMap2Move(districtId: string) {
     setMap2State(prev => {
       if (world2ActiveArmy === 1) return { ...prev, armyNodeId: districtId, ap: prev.ap - 1 }
-      return { ...prev, armyNodeId: districtId, army2Ap: prev.army2Ap - 1 }
+      return { ...prev, army2NodeId: districtId, army2Ap: prev.army2Ap - 1 }
     })
   }
 
@@ -2001,10 +2002,13 @@ export default function SacredGame() {
         const regionId = district?.regionId ?? ''
         const regionNowComplete = regionId && isRegionComplete(regionId, newOwnership)
 
+        // Only the army that fought moves to the captured district
         let next = {
           ...prev,
           ownership:          newOwnership,
-          armyNodeId:         fightId,
+          ...(world2ActiveArmy === 1
+            ? { armyNodeId: fightId }
+            : { army2NodeId: fightId }),
           pendingFinalBattle: regionNowComplete ? regionId : prev.pendingFinalBattle,
         }
 
@@ -2120,10 +2124,15 @@ export default function SacredGame() {
         }
         return
       }
+      // Linear path covering all 7 regions through valid adjacencies:
+      // Ерідія → Сілонія → Фаленор → Паліндор → Калідонія → Тетрарія → Болсовер (boss)
       const NEXT_REGION: Record<string, string> = {
-        'terr_218': 'terr_225',
-        'terr_225': 'terr_206',
-        'terr_206': 'terr_242',
+        'terr_218': 'terr_225',  // Ерідія    → Сілонія    (adj)
+        'terr_225': 'terr_237',  // Сілонія   → Фаленор    (adj)
+        'terr_237': 'terr_206',  // Фаленор   → Паліндор   (adj)
+        'terr_206': 'terr_230',  // Паліндор  → Калідонія  (adj)
+        'terr_230': 'terr_223',  // Калідонія → Тетрарія   (adj)
+        'terr_223': 'terr_242',  // Тетрарія  → Болсовер   (adj, фінальний бос)
       }
       const nextRegionId = NEXT_REGION[regionId as string] ?? null
       const nextIsBoss   = nextRegionId ? (getRegionById(nextRegionId)?.isBoss ?? false) : false

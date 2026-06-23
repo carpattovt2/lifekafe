@@ -155,6 +155,7 @@ export default function WorldMap2({
   const activeRegularUnits = activeArmy === 1 ? playerUnits : army2Units
   const activeDeadUnits    = activeArmy === 1 ? deadUnits   : army2DeadUnits
   const activeAp           = activeArmy === 1 ? mapState.ap : mapState.army2Ap
+  const activeNodeId       = activeArmy === 1 ? mapState.armyNodeId : mapState.army2NodeId
   const activeUnlockedSlots = activeArmy === 1 ? mapState.army1UnlockedSlots : mapState.army2UnlockedSlots
   const activeRested       = activeArmy === 1 ? mapState.restedThisTurn : mapState.army2RestedThisTurn
   const activeHero         = activeArmy === 1 ? mapState.heroes?.artan : mapState.heroes?.sybilla
@@ -167,14 +168,14 @@ export default function WorldMap2({
   }, [activeDeadUnits.length, activeHero?.isAlive])
 
   const {
-    ownership, gold, turn, ap, armyNodeId,
+    ownership, gold, turn, ap, armyNodeId, army2NodeId,
     fortressLevel, restedThisTurn,
     activeRegionId, conqueredRegions, pendingFinalBattle,
   } = mapState
 
-  const attackable     = getAttackableDistricts(ownership, armyNodeId, activeRegionId)
-  const movable        = getMovableDistricts(ownership, armyNodeId)
-  const atStart        = armyNodeId === 'terr_221'
+  const attackable     = getAttackableDistricts(ownership, activeNodeId, activeRegionId)
+  const movable        = getMovableDistricts(ownership, activeNodeId)
+  const atStart        = activeNodeId === 'terr_221'
   const dailyIncome    = getDailyIncome(ownership)
   const ownedCount     = Object.values(ownership).filter(o => o === 'player').length
   const botCount       = Object.values(ownership).filter(o => o === 'bot').length
@@ -347,7 +348,12 @@ export default function WorldMap2({
       {/* Header */}
       <div style={{ padding: '8px 16px', background: '#17150f', borderBottom: '1px solid rgba(240,232,216,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, gap: 8 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'rgba(240,232,216,0.5)', cursor: 'pointer', fontSize: 20, padding: '0 8px 0 0' }}>←</button>
-        <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', fontWeight: 600 }}>{activeRegion?.name}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+          <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.5)', fontWeight: 600 }}>{activeRegion?.name}</div>
+          <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.35)' }}>
+            {conqueredRegions.length}/6 регіонів · 🏆 Болсовер
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: '#d4a85a', fontWeight: 700 }}>💰 {gold}<span style={{ fontSize: 10, color: 'rgba(212,168,90,0.6)', fontWeight: 400 }}> +{dailyIncome}</span></span>
           <span style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)' }}>А1</span><ApDots ap={ap} />
@@ -395,7 +401,7 @@ export default function WorldMap2({
               const pts        = d.polygon.map(([x, y]) => `${x},${y}`).join(' ')
               const isPlayer   = ownership[d.id] === 'player'
               const isBot      = ownership[d.id] === 'bot'
-              const isArmy     = d.id === armyNodeId
+              const isArmy     = d.id === armyNodeId || d.id === army2NodeId
               const isAttack   = attackable.has(d.id)
               const isMove     = movable.has(d.id)
               const isActive   = d.regionId === activeRegionId
@@ -490,18 +496,27 @@ export default function WorldMap2({
               )
             })}
 
-            {/* Army marker */}
-            {(() => {
-              const d = DISTRICTS_2.find(d => d.id === armyNodeId)
+            {/* Army markers (two armies — one each) */}
+            {(['army1', 'army2'] as const).map(which => {
+              const nodeId = which === 'army1' ? armyNodeId : army2NodeId
+              const d = DISTRICTS_2.find(d => d.id === nodeId)
               if (!d) return null
               const [cx, cy] = polyCentroid(d.polygon)
+              const sameSlot = armyNodeId === army2NodeId
+              // If both armies on same district — stack them with horizontal offset
+              const offsetX = sameSlot ? (which === 'army1' ? -12 : 12) : 0
+              const isActive = (which === 'army1' && activeArmy === 1) || (which === 'army2' && activeArmy === 2)
+              const fill = which === 'army1' ? '#d4a85a' : '#a880c4'
+              const icon = which === 'army1' ? '⚔' : '✨'
               return (
-                <g style={{ pointerEvents: 'none' }}>
-                  <circle cx={cx} cy={cy - 18} r={10} fill="#d4a85a" opacity={0.95} />
-                  <text x={cx} y={cy - 14} textAnchor="middle" fontSize="12" fill="#0f0e09">⚔</text>
+                <g key={which} style={{ pointerEvents: 'none' }}>
+                  <circle cx={cx + offsetX} cy={cy - 18} r={isActive ? 11 : 9} fill={fill}
+                    opacity={isActive ? 1 : 0.7}
+                    stroke={isActive ? '#f0e8d8' : 'none'} strokeWidth={isActive ? 1.5 : 0} />
+                  <text x={cx + offsetX} y={cy - 14} textAnchor="middle" fontSize="12" fill="#0f0e09">{icon}</text>
                 </g>
               )
-            })()}
+            })}
           </svg>
         </div>
 

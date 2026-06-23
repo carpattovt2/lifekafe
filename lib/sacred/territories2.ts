@@ -97,7 +97,8 @@ export interface TerritoryMap2State {
   turn:                 number
   ap:                   number
   army2Ap:              number
-  armyNodeId:           string
+  armyNodeId:           string                  // army 1 (Артан) current position
+  army2NodeId:          string                  // army 2 (Сивілла) current position
   army1UnlockedSlots:   { row: 0|1; slot: number }[]  // army 1 (Артан) player-chosen unlocked slots
   army2UnlockedSlots:   { row: 0|1; slot: number }[]  // army 2 (Сивілла) player-chosen unlocked slots
   fortressLevel:        1 | 2 | 3 | 4 | 5
@@ -649,6 +650,7 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
     ap:                  2,
     army2Ap:             2,
     armyNodeId:          'terr_221',
+    army2NodeId:         'terr_221',
     army1UnlockedSlots:  [],
     army2UnlockedSlots:  [],
     fortressLevel:       1,
@@ -689,13 +691,14 @@ function districtDefensePower(district: District, isPlayerHeld: boolean): number
   return isPlayerHeld ? Math.max(p, 12) : p  // player districts have minimum 12 defense power
 }
 
+// Bot pays the same hire prices as the player (HIRE_COSTS): warrior 2, archer 3, mage 5
 const HIRE_PRIORITY: { class: UnitClass; cost: number }[] = [
-  { class: 'warrior', cost: 3 },
-  { class: 'warrior', cost: 3 },
-  { class: 'archer',  cost: 4 },
+  { class: 'warrior', cost: 2 },
+  { class: 'warrior', cost: 2 },
+  { class: 'archer',  cost: 3 },
   { class: 'mage',    cost: 5 },
-  { class: 'warrior', cost: 3 },
-  { class: 'archer',  cost: 4 },
+  { class: 'warrior', cost: 2 },
+  { class: 'archer',  cost: 3 },
   { class: 'mage',    cost: 5 },
 ]
 
@@ -748,9 +751,10 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     botGold -= 5
   }
 
-  // 6. Level up units occasionally (every 4 turns, level +1 for one random unit, max lvl 4)
+  // 6. Level up units occasionally — bot fortress level caps how high units can go
+  //    (mirrors player's fortressLevelCap which caps player unit advancement in battles)
   if (state.turn % 4 === 0 && botArmy.length > 0) {
-    const eligible = botArmy.map((u, i) => ({ u, i })).filter(({ u }) => u.level < 4)
+    const eligible = botArmy.map((u, i) => ({ u, i })).filter(({ u }) => u.level < botFortressLevel)
     if (eligible.length > 0) {
       const pick = eligible[Math.floor(Math.random() * eligible.length)]
       botArmy = botArmy.map((u, i) => i === pick.i ? { ...u, level: u.level + 1 } : u)
