@@ -661,7 +661,13 @@ function BattleLog({ entries }: { entries: LogEntry[] }) {
 }
 
 // ── Action button ──────────────────────────────────────────────────────────────
-const COOLDOWN_ACTIONS = new Set<ActionKey>(['hurricane', 'armageddon', 'earthquake', 'fortress_aura', 'blizzard', 'fire_orb', 'shkvall', 'double_shot', 'twin_bolt', 'sacred_strike'])
+// Actions that put themselves on cooldown after use — UI must disable them while cooldown active.
+// Keep in sync with `makeBuff('cooldown', ...)` calls in game.ts.
+const COOLDOWN_ACTIONS = new Set<ActionKey>([
+  'hurricane', 'armageddon', 'earthquake', 'fortress_aura', 'blizzard',
+  'fire_orb', 'shkvall', 'double_shot', 'twin_bolt', 'sacred_strike',
+  'tailwind', 'noble_strike', 'flank_strike', 'prophecy',
+])
 
 function ActionBtn({ actionKey, selected, onSelect, disabled = false }: {
   actionKey: ActionKey; selected: boolean; onSelect: () => void; disabled?: boolean
@@ -1627,12 +1633,9 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
                   if (COOLDOWN_ACTIONS.has(a) && actor) {
                     disabled = actor.buffs.some(b => b.type === 'cooldown' && b.actionKey === a)
                   }
-                  if (a === 'tailwind' && actor) {
-                    disabled = state.units.some(u => u.side === actor.side && u.buffs.some(b => b.type === 'accuracy_up'))
-                  }
-                  if (a === 'tailwind' && actor) {
-                    disabled = state.units.some(u => u.side === actor.side && u.buffs.some(b => b.type === 'accuracy_up'))
-                  }
+                  // Tailwind is restricted only by its own cooldown (handled above via COOLDOWN_ACTIONS).
+                  // Earlier code also blocked tailwind whenever ANY ally had accuracy_up — but that
+                  // false-disables it after battle_cry / flank_strike / aim, even when tailwind is ready.
                   return (
                     <ActionBtn key={a} actionKey={a} selected={state.selectedAction === a}
                       onSelect={() => handleSelectAction(a)} disabled={disabled} />

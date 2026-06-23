@@ -1924,8 +1924,15 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
     }
 
-    case 'ADVANCE_QUEUE':
-      return advanceQueue(state)
+    case 'ADVANCE_QUEUE': {
+      // Skip turn must still tick the actor's buffs/cooldowns, otherwise cooldowns
+      // never decrement when player chooses "Пропустити" — they'd be effectively frozen.
+      const actor = state.units.find(u => u.id === state.queue[state.queueIdx])
+      if (!actor || actor.hp === 0) return advanceQueue(state)
+      const ticked = tickBuffs(actor)
+      const newState = { ...state, units: state.units.map(u => u.id === actor.id ? ticked : u) }
+      return advanceQueue(newState)
+    }
 
     default:
       return state
