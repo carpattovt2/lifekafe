@@ -29,7 +29,7 @@ import {
 } from '@/lib/sacred/territories2'
 import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import {
-  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, HERO_REVIVE_COST, HERO_HIRE_COST, createHeroState,
+  buildHeroUnit, applyXpToHero, choosePerk, getAvailablePerks, PERK_DEFS, HERO_REVIVE_COST, HERO_REVIVE_COST_FULL, HERO_HIRE_COST, HERO_AUTO_REVIVE_TURNS, createHeroState,
 } from '@/lib/sacred/heroes'
 import type { HeroId, PerkId, HeroState } from '@/lib/sacred/heroes'
 
@@ -459,7 +459,7 @@ function UnitCard({ unit, isActive, isTargetable, onSelect, onInfo, floats, cast
               filter: (!alive && !isDying)
                 ? 'grayscale(1)'
                 : unit.isHero && unit.heroId === 'baron'
-                  ? 'sepia(1) hue-rotate(330deg) saturate(2.5) brightness(0.7) contrast(1.1)'
+                  ? 'invert(0.85) sepia(1) hue-rotate(310deg) saturate(3) brightness(0.55) contrast(1.4)'
                   : undefined,
             }} />
             {/* Cast eye glow + particles */}
@@ -814,7 +814,7 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                 ? <img src={sheetPortrait} alt="" style={{
                     width: '100%', height: '100%', objectFit: 'cover',
                     filter: unit.isHero && unit.heroId === 'baron'
-                      ? 'sepia(1) hue-rotate(330deg) saturate(2.5) brightness(0.7) contrast(1.1)'
+                      ? 'invert(0.85) sepia(1) hue-rotate(310deg) saturate(3) brightness(0.55) contrast(1.4)'
                       : undefined,
                   }} />
                 : <AvatarSVG color={color} size={26} />
@@ -1843,6 +1843,7 @@ export default function SacredGame() {
         delete mapData.botUnits
       }
       if (mapData.botFortressLevel == null) mapData.botFortressLevel = 1
+      if (mapData.botArmyHpPct == null)    mapData.botArmyHpPct    = 1
       if (!mapData.botHeroNodeId) mapData.botHeroNodeId = BOT_CAPITAL_ID
       if (mapData.botHero === undefined) mapData.botHero = null
       if (mapData.army2Ap      == null) mapData.army2Ap      = 2
@@ -1937,10 +1938,12 @@ export default function SacredGame() {
       if (!heroState) continue
       const xpGained = Math.max(0, (heroUnit.xp ?? 0) - heroState.xp)
       const { state: leveledState, levelsGained } = applyXpToHero(heroState, xpGained)
+      const justDied = heroState.isAlive && heroUnit.hp <= 0
       const finalState: HeroState = {
         ...leveledState,
         hp: Math.max(0, heroUnit.hp),
         isAlive: heroUnit.hp > 0,
+        deathTurn: justDied ? map2State.turn : (heroUnit.hp > 0 ? null : leveledState.deathTurn),
       }
       updatedHeroes = { ...updatedHeroes, [heroId]: finalState }
       if (levelsGained > 0) {
@@ -2012,8 +2015,10 @@ export default function SacredGame() {
           pendingFinalBattle: regionNowComplete ? regionId : prev.pendingFinalBattle,
         }
 
-        // If we just defeated bot army — apply casualties to bot state
-        if (wasBotDistrict) {
+        // If we just defeated bot army at the hero node — apply casualties + HP tracking to bot state
+        // (battles at non-hero bot districts use small garrison and don't touch botArmy)
+        const wasHeroNode = wasBotDistrict && prev.botHeroNodeId === fightId
+        if (wasHeroNode) {
           // Count surviving AI units vs total — figure out bot army casualties ratio
           const aiSurvCount = units.filter(u => u.side === 'ai' && u.hp > 0 && !u.isHero).length
           const aiTotalCount = units.filter(u => u.side === 'ai' && !u.isHero).length
@@ -2028,7 +2033,15 @@ export default function SacredGame() {
           } else {
             newBotArmy = []
           }
-          next = { ...next, botArmy: newBotArmy }
+
+          // Track survivors' avg HP fraction → next battle bot starts wounded
+          const aiSurvivors = units.filter(u => u.side === 'ai' && u.hp > 0 && !u.isHero)
+          let newHpPct = 1
+          if (aiSurvivors.length > 0) {
+            const avgPct = aiSurvivors.reduce((s, u) => s + (u.hp / u.maxHp), 0) / aiSurvivors.length
+            newHpPct = Math.max(0.3, avgPct)  // floor at 30% so bot isn't completely crippled
+          }
+          next = { ...next, botArmy: newBotArmy, botArmyHpPct: newHpPct }
 
           // Bot hero state — update if it was in this district
           if (prev.botHero && prev.botHeroNodeId === fightId) {
@@ -2173,13 +2186,19 @@ export default function SacredGame() {
     setWorld2PlayerUnits(prev => prev ? prev.map(healUnit) : prev)
     setWorld2Army2Units(prev => prev ? prev.map(healUnit) : prev)
 
+    // Heal alive heroes by 20%; auto-revive dead heroes after HERO_AUTO_REVIVE_TURNS (free, 50% HP)
+    const nextTurn = map2State.turn + 1
+    const autoReviveOrHeal = (h: HeroState | null): HeroState | null => {
+      if (!h) return h
+      if (h.isAlive) return { ...h, hp: Math.min(h.maxHp, h.hp + Math.ceil(h.maxHp * 0.2)) }
+      if (h.deathTurn != null && (nextTurn - h.deathTurn) >= HERO_AUTO_REVIVE_TURNS) {
+        return { ...h, isAlive: true, hp: Math.round(h.maxHp * 0.5), deathTurn: null }
+      }
+      return h
+    }
     const healedHeroes = {
-      artan:   map2State.heroes.artan?.isAlive
-        ? { ...map2State.heroes.artan, hp: Math.min(map2State.heroes.artan.maxHp, map2State.heroes.artan.hp + Math.ceil(map2State.heroes.artan.maxHp * 0.2)) }
-        : map2State.heroes.artan,
-      sybilla: map2State.heroes.sybilla?.isAlive
-        ? { ...map2State.heroes.sybilla, hp: Math.min(map2State.heroes.sybilla.maxHp, map2State.heroes.sybilla.hp + Math.ceil(map2State.heroes.sybilla.maxHp * 0.2)) }
-        : map2State.heroes.sybilla,
+      artan:   autoReviveOrHeal(map2State.heroes.artan),
+      sybilla: autoReviveOrHeal(map2State.heroes.sybilla),
     }
 
     const afterPlayer = {
@@ -2308,23 +2327,29 @@ export default function SacredGame() {
   }
 
   function handleMap2DismissUnit(id: string) {
+    // Refund 50% of hire cost (rounded down)
+    const findIn = world2ActiveArmy === 1 ? world2PlayerUnits : world2Army2Units
+    const unit = findIn?.find(u => u.id === id)
+    const refund = unit ? Math.floor((HIRE_COSTS_2[unit.class] ?? 0) * 0.5) : 0
     if (world2ActiveArmy === 1) {
       setWorld2PlayerUnits(prev => prev ? prev.filter(u => u.id !== id) : prev)
     } else {
       setWorld2Army2Units(prev => prev ? prev.filter(u => u.id !== id) : prev)
     }
+    if (refund > 0) setMap2State(prev => ({ ...prev, gold: prev.gold + refund }))
   }
 
-  function handleMap2ReviveHero(heroId: HeroId) {
+  function handleMap2ReviveHero(heroId: HeroId, full: boolean = false) {
     const heroState = map2State.heroes[heroId]
     if (!heroState || heroState.isAlive) return
-    if (map2State.gold < HERO_REVIVE_COST) return
+    const cost = full ? HERO_REVIVE_COST_FULL : HERO_REVIVE_COST
+    if (map2State.gold < cost) return
     setMap2State(prev => ({
       ...prev,
-      gold: prev.gold - HERO_REVIVE_COST,
+      gold: prev.gold - cost,
       heroes: {
         ...prev.heroes,
-        [heroId]: { ...heroState, hp: Math.round(heroState.maxHp * 0.5), isAlive: true },
+        [heroId]: { ...heroState, hp: full ? heroState.maxHp : Math.round(heroState.maxHp * 0.5), isAlive: true },
       },
     }))
   }
@@ -2883,11 +2908,25 @@ export default function SacredGame() {
     if (district) {
       const isBotDistrict = world2FightDistrictId && map2State.ownership[world2FightDistrictId] === 'bot'
       if (isBotDistrict) {
-        aiUnits = buildArmyFromSpecs2(map2State.botArmy, 'ai')
-        if (map2State.botHero?.isAlive && map2State.botHeroNodeId === world2FightDistrictId) {
-          // Bot hero placed in row 0 slot 3 (back of the back), so it doesn't conflict with regular units slot 0
-          const heroUnit = buildBotHeroUnit(map2State.botHero, 'ai')
-          aiUnits = [{ ...heroUnit, row: 0 as const, slot: 3 }, ...aiUnits]
+        const isHeroNode = map2State.botHeroNodeId === world2FightDistrictId
+        if (isHeroNode) {
+          // Hero's district: full bot army (+ hero) — main confrontation, with HP scaled by botArmyHpPct
+          const hpPct = map2State.botArmyHpPct ?? 1
+          aiUnits = buildArmyFromSpecs2(map2State.botArmy, 'ai').map(u => {
+            const scaledHp = Math.max(1, Math.round(u.maxHp * hpPct))
+            return { ...u, hp: scaledHp }
+          })
+          if (map2State.botHero?.isAlive) {
+            const heroUnit = buildBotHeroUnit(map2State.botHero, 'ai')
+            aiUnits = [{ ...heroUnit, row: 0 as const, slot: 3 }, ...aiUnits]
+          }
+        } else {
+          // Non-hero bot district: small garrison (2 lv1 warriors + 1 lv1 archer)
+          aiUnits = buildArmyFromSpecs2([
+            { class: 'warrior', level: 1 },
+            { class: 'warrior', level: 1 },
+            { class: 'archer',  level: 1 },
+          ], 'ai')
         }
       } else {
         aiUnits = buildArmyFromSpecs2(district.army, 'ai')

@@ -482,7 +482,9 @@ function resolveAttack(
 
   // armorPiercePerk: hero ignores 50% of base defense
   const baseDefense = atk.armorPiercePerk ? def.defense * 0.5 : def.defense
-  const defTotal = Math.max(0, baseDefense + getBuffValue(def, 'defense_up') + getBuffValue(def, 'fortress_buff') + frontLineBonus(def, units))
+  // Healer aura: while Сивілла is alive on the defender's side, allies get +5% defense
+  const healerAura = units.some(u => u.isHero && u.heroId === 'sybilla' && u.side === def.side && u.hp > 0 && u.id !== def.id) ? 0.05 : 0
+  const defTotal = Math.max(0, baseDefense + healerAura + getBuffValue(def, 'defense_up') + getBuffValue(def, 'fortress_buff') + frontLineBonus(def, units))
   dmg *= (1 - defTotal)
   dmg *= (1 + getBuffValue(def, 'armor_break'))  // armor break amplifies damage
   // Elemental resistance

@@ -12,7 +12,7 @@ import type { TerritoryMap2State } from '@/lib/sacred/territories2'
 import type { GameUnit, UnitClass } from '@/lib/sacred/types'
 import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS } from '@/lib/sacred/types'
 import type { UnitSpec2 } from '@/lib/sacred/territories2'
-import { HERO_REVIVE_COST, HERO_HIRE_COST } from '@/lib/sacred/heroes'
+import { HERO_REVIVE_COST, HERO_REVIVE_COST_FULL, HERO_HIRE_COST, HERO_AUTO_REVIVE_TURNS } from '@/lib/sacred/heroes'
 import type { HeroId } from '@/lib/sacred/heroes'
 
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
@@ -102,7 +102,7 @@ interface Props {
   army2DeadUnits:       GameUnit[]
   activeArmy:           1 | 2
   onSwitchArmy:         (army: 1 | 2) => void
-  onReviveHero:         (heroId: HeroId) => void
+  onReviveHero:         (heroId: HeroId, full?: boolean) => void
   onHireHero:           (heroId: HeroId) => void
   onMove:               (districtId: string) => void
   onAttack:             (districtId: string) => void
@@ -1071,17 +1071,37 @@ export default function WorldMap2({
                         </button>
                       )}
                       {dead && (
-                        <button
-                          onClick={() => onReviveHero(hid)}
-                          disabled={gold < HERO_REVIVE_COST}
-                          style={{
-                            width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 10,
-                            background: gold >= HERO_REVIVE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
-                            border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
-                            fontSize: 13, fontWeight: 600, cursor: gold >= HERO_REVIVE_COST ? 'pointer' : 'not-allowed',
-                          }}>
-                          Воскресити ({HERO_REVIVE_COST} 💰)
-                        </button>
+                        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {hero && hero.deathTurn != null && (
+                            <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.5)', textAlign: 'center' }}>
+                              Авто-воскресіння через {Math.max(0, HERO_AUTO_REVIVE_TURNS - (mapState.turn - hero.deathTurn))} ходів (50% HP)
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              onClick={() => onReviveHero(hid, false)}
+                              disabled={gold < HERO_REVIVE_COST}
+                              style={{
+                                flex: 1, padding: '9px 0', borderRadius: 10,
+                                background: gold >= HERO_REVIVE_COST ? 'rgba(212,168,90,0.12)' : 'rgba(240,232,216,0.04)',
+                                border: '1px solid rgba(212,168,90,0.3)', color: '#d4a85a',
+                                fontSize: 12, fontWeight: 600, cursor: gold >= HERO_REVIVE_COST ? 'pointer' : 'not-allowed',
+                              }}>
+                              50% HP ({HERO_REVIVE_COST}💰)
+                            </button>
+                            <button
+                              onClick={() => onReviveHero(hid, true)}
+                              disabled={gold < HERO_REVIVE_COST_FULL}
+                              style={{
+                                flex: 1, padding: '9px 0', borderRadius: 10,
+                                background: gold >= HERO_REVIVE_COST_FULL ? 'rgba(212,168,90,0.18)' : 'rgba(240,232,216,0.04)',
+                                border: '1px solid rgba(212,168,90,0.4)', color: '#d4a85a',
+                                fontSize: 12, fontWeight: 700, cursor: gold >= HERO_REVIVE_COST_FULL ? 'pointer' : 'not-allowed',
+                              }}>
+                              100% HP ({HERO_REVIVE_COST_FULL}💰)
+                            </button>
+                          </div>
+                        </div>
                       )}
                       {alive && hero!.chosenPerks.length > 0 && (
                         <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(240,232,216,0.35)' }}>

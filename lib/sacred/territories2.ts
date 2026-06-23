@@ -107,6 +107,7 @@ export interface TerritoryMap2State {
   heroes:               { artan: HeroState | null; sybilla: HeroState | null }
   // ── Bot state ───────────────────────────────────────────────────────────────
   botArmy:              UnitSpec2[]            // real bot army (units with classes + levels)
+  botArmyHpPct:         number                  // 0..1 — current HP fraction of bot army (auto-heals +0.2/turn)
   botGold:              number
   botFortressLevel:     1 | 2 | 3 | 4 | 5
   botHero:              BotHeroState | null
@@ -662,6 +663,7 @@ export function createInitialTerritoryMap2State(): TerritoryMap2State {
       { class: 'warrior', level: 1 },
       { class: 'archer',  level: 1 },
     ],
+    botArmyHpPct:        1,
     botGold:             0,
     botFortressLevel:    1,
     botHero:             null,
@@ -711,6 +713,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
   let botHeroNodeId    = state.botHeroNodeId
   let botFortressLevel = state.botFortressLevel
   let botRestTurns     = Math.max(0, state.botRestTurns - 1)
+  let botArmyHpPct     = Math.min(1, (state.botArmyHpPct ?? 1) + 0.2)  // auto-heal +20%/turn (matches player)
 
   // 1. Earn gold (70% of player rate — bot is slower)
   for (const [id, o] of Object.entries(ownership)) {
@@ -764,7 +767,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
   // 7. Resting after battle — skip attack but keep developing
   if (botRestTurns > 0) {
     return {
-      state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
+      state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botArmyHpPct, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
       botMessage: null,
     }
   }
@@ -772,7 +775,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
   // 8. Movement + attack from hero's current node
   const heroDistrict = DISTRICT_MAP.get(botHeroNodeId)
   if (!heroDistrict) {
-    return { state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns }, botMessage: null }
+    return { state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botArmyHpPct, botHero, botHeroNodeId, botFortressLevel, botRestTurns }, botMessage: null }
   }
   const reachable = heroDistrict.adjacentTo.filter(id => ownership[id] !== 'bot')
 
@@ -843,7 +846,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
     }
 
     return {
-      state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
+      state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botArmyHpPct, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
       botMessage: `Ворог захопив ${district.name}`,
     }
   }
@@ -887,7 +890,7 @@ export function doBotTurn(state: TerritoryMap2State): { state: TerritoryMap2Stat
   }
 
   return {
-    state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
+    state: { ...state, ownership, botConqueredRegions, botGold, botArmy, botArmyHpPct, botHero, botHeroNodeId, botFortressLevel, botRestTurns },
     botMessage: null,
   }
 }

@@ -56,6 +56,7 @@ export interface HeroState {
   isAlive: boolean
   chosenPerks: PerkId[]
   pendingPerkPool: PerkId[]
+  deathTurn?: number | null  // turn at which hero died — used for auto-revive after 5 turns
 }
 
 const ARTAN_LEVELS: Record<number, { hp: number; minDmg: number; maxDmg: number; xpToNext: number }> = {
@@ -240,5 +241,7 @@ export function buildHeroUnit(state: HeroState, side: Side): GameUnit {
   }
 }
 
-export const HERO_REVIVE_COST = 15
+export const HERO_REVIVE_COST = 15       // 50% HP
+export const HERO_REVIVE_COST_FULL = 25  // 100% HP
 export const HERO_HIRE_COST = 5
+export const HERO_AUTO_REVIVE_TURNS = 5  // auto-revive after N turns at 50% HP, free
