@@ -2248,12 +2248,19 @@ export default function SacredGame() {
   function handleMap2HireUnit(unitClass: UnitClass, row: number, slot: number) {
     const cost = HIRE_COSTS_2[unitClass]
     if (map2State.gold < cost) return
+    const currentUnits = world2ActiveArmy === 1 ? world2PlayerUnits : world2Army2Units
+    if (!currentUnits) return
+    // Catapult guard: occupies BOTH row 0 slot 3 and row 1 slot 3 (column 3) — only allow
+    // if hired at front slot 3 and back slot 3 is empty and no catapult already exists.
+    if (unitClass === 'catapult') {
+      if (row !== 0 || slot !== 3) return
+      if (currentUnits.some(u => u.class === 'catapult')) return
+      if (currentUnits.some(u => u.row === 1 && u.slot === 3)) return
+    }
     if (world2ActiveArmy === 1) {
-      if (!world2PlayerUnits) return
-      setWorld2PlayerUnits(addUnitAtSlot(world2PlayerUnits, unitClass, row, slot))
+      setWorld2PlayerUnits(addUnitAtSlot(currentUnits, unitClass, row, slot))
     } else {
-      if (!world2Army2Units) return
-      setWorld2Army2Units(addUnitAtSlot(world2Army2Units, unitClass, row, slot))
+      setWorld2Army2Units(addUnitAtSlot(currentUnits, unitClass, row, slot))
     }
     setMap2State(prev => ({ ...prev, gold: prev.gold - cost }))
   }

@@ -1115,26 +1115,56 @@ export default function WorldMap2({
                 })()}
 
                 {/* Hire popup */}
-                {hirePopup && (
-                  <div style={{ marginTop: 12 }}>
-                    <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 8 }}>Найняти юніта</div>
-                    {HIRE_INFO.map(h => (
-                      <button key={h.cls} onClick={() => { onHireUnit(h.cls, hirePopup.row, hirePopup.slot); setHirePopup(null) }}
-                        disabled={gold < h.cost}
-                        style={{
-                          width: '100%', marginBottom: 6, padding: '10px 12px', borderRadius: 10,
-                          background: gold >= h.cost ? 'rgba(212,168,90,0.08)' : 'rgba(240,232,216,0.03)',
-                          border: '1px solid rgba(212,168,90,0.2)',
-                          color: gold >= h.cost ? '#f0e8d8' : 'rgba(240,232,216,0.3)',
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                          cursor: gold >= h.cost ? 'pointer' : 'not-allowed', fontSize: 12,
-                        }}>
-                        <span>{h.label}</span><span style={{ color: '#d4a85a' }}>{h.cost} 💰</span>
-                      </button>
-                    ))}
-                    <button onClick={() => setHirePopup(null)} style={{ width: '100%', padding: '8px 0', background: 'none', border: 'none', color: 'rgba(240,232,216,0.35)', cursor: 'pointer', fontSize: 12 }}>Скасувати</button>
-                  </div>
-                )}
+                {hirePopup && (() => {
+                  // Catapult occupies column 3 (row 0 slot 3 front + row 1 slot 3 back as "Базa").
+                  // Can only be hired when clicked at front slot 3 AND back slot 3 is unlocked + empty
+                  // AND no catapult already exists in the army.
+                  const back3Unlocked = isSlotUnlockedForArmy(1, 3, activeUnlockedSlots, activeHeroRow, activeHeroSlot)
+                  const back3Occupied = activeRegularUnits.some(u => u.row === 1 && u.slot === 3)
+                  const hasCatapult   = activeRegularUnits.some(u => u.class === 'catapult')
+                  const clickedFront3 = hirePopup.row === 0 && hirePopup.slot === 3
+                  let catapultBlockReason = ''
+                  if (hasCatapult)                       catapultBlockReason = 'У армії вже є катапульта'
+                  else if (!clickedFront3)               catapultBlockReason = 'Тільки в передньому ряді, slot 3'
+                  else if (!back3Unlocked)               catapultBlockReason = 'Потрібен відкритий слот у задньому ряді (slot 3)'
+                  else if (back3Occupied)                catapultBlockReason = 'Задній слот 3 зайнятий — катапульта займає 2 клітини'
+                  return (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.4)', marginBottom: 8 }}>Найняти юніта</div>
+                      {HIRE_INFO.map(h => {
+                        const isCat       = h.cls === 'catapult'
+                        const blockedByCat = isCat && !!catapultBlockReason
+                        const blocked      = gold < h.cost || blockedByCat
+                        return (
+                          <button key={h.cls}
+                            onClick={() => { if (!blocked) { onHireUnit(h.cls, hirePopup.row, hirePopup.slot); setHirePopup(null) } }}
+                            disabled={blocked}
+                            title={blockedByCat ? catapultBlockReason : undefined}
+                            style={{
+                              width: '100%', marginBottom: 6, padding: '10px 12px', borderRadius: 10,
+                              background: !blocked ? 'rgba(212,168,90,0.08)' : 'rgba(240,232,216,0.03)',
+                              border: '1px solid rgba(212,168,90,0.2)',
+                              color: !blocked ? '#f0e8d8' : 'rgba(240,232,216,0.3)',
+                              display: 'flex', flexDirection: 'column', alignItems: 'stretch',
+                              cursor: !blocked ? 'pointer' : 'not-allowed', fontSize: 12,
+                              textAlign: 'left',
+                            }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>{h.label}</span>
+                              <span style={{ color: !blocked ? '#d4a85a' : 'rgba(212,168,90,0.4)' }}>{h.cost} 💰</span>
+                            </div>
+                            {blockedByCat && (
+                              <div style={{ fontSize: 9, color: '#c08070', marginTop: 3 }}>
+                                🔒 {catapultBlockReason}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                      <button onClick={() => setHirePopup(null)} style={{ width: '100%', padding: '8px 0', background: 'none', border: 'none', color: 'rgba(240,232,216,0.35)', cursor: 'pointer', fontSize: 12 }}>Скасувати</button>
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
