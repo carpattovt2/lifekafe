@@ -75,6 +75,7 @@ export interface GameUnit {
   // Hero fields
   isHero?: boolean
   heroId?: 'artan' | 'sybilla' | 'baron'
+  bonusLevels?: number        // levels gained past max — each adds +5% of base maxHp at max level
   nobleStrikePerk?: boolean  // Артан: noble_strike action available
   flankStrikePerk?: boolean  // Артан: flank_strike action available
   armorPiercePerk?: boolean  // Артан: ignore 50% enemy base defense
@@ -175,6 +176,7 @@ export interface BattleState {
   pendingCatapultLevelUp?: string  // unitId of catapult awaiting path choice
   pendingFirstTarget?: string      // first target for twin_bolt two-step selection
   fortressLevelCap?: number        // max unit level allowed to level up (campaign battles)
+  playerXpPool: number             // accumulated XP from player actions/survival; distributed to survivors at battle end
   lastActionKey?: ActionKey
   lastActorId?: string
 }

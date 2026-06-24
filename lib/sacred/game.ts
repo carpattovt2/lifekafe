@@ -234,6 +234,123 @@ function grantCatapultXp(
   return { unit: { ...unit, xp: newXp }, pendingChoice: false }
 }
 
+// ── Post-battle XP application (cascading, path-aware, bonus levels past max) ──
+// Used when distributing the shared player XP pool to surviving units after a battle.
+// Cascades through multiple level-ups until: XP exhausted, fortress cap hit, or path
+// selection required (returns pendingPath so caller can show selection screen).
+// Past max class level, accumulates "bonus levels": each adds +5% of the unit's
+// maxHp at its max level (additive from base, not compound).
+
+type ClassWithPath = 'warrior' | 'mage' | 'catapult'
+
+function classMaxLevel(u: GameUnit): number {
+  if (u.class === 'warrior')  return u.warriorPath === 'champion' ? 5 : 4
+  if (u.class === 'archer')   return 3
+  if (u.class === 'mage')     return 5
+  if (u.class === 'catapult') return 3
+  return 1
+}
+function bonusXpThreshold(u: GameUnit): number {
+  if (u.class === 'warrior')  return 500
+  if (u.class === 'archer')   return 350
+  if (u.class === 'mage')     return 500
+  if (u.class === 'catapult') return 370
+  return 500
+}
+function baseMaxHpAtClassCap(u: GameUnit): number {
+  if (u.class === 'warrior' && u.warriorPath) {
+    const max = classMaxLevel(u)
+    return WARRIOR_PATHS[u.warriorPath][max]?.hp ?? u.maxHp
+  }
+  if (u.class === 'archer')   return ARCHER_LEVELS[3]?.hp ?? u.maxHp
+  if (u.class === 'mage'     && u.magePath)      return MAGE_PATHS[u.magePath][5]?.hp ?? u.maxHp
+  if (u.class === 'catapult' && u.catapultPath)  return CATAPULT_PATHS[u.catapultPath][3]?.hp ?? u.maxHp
+  return u.maxHp
+}
+
+export function applyXpToUnit(
+  unit: GameUnit, xpAmount: number, fortressCap?: number,
+): { unit: GameUnit; pendingPath?: ClassWithPath; bonusGained: number } {
+  if (xpAmount <= 0) return { unit, bonusGained: 0 }
+  let current = unit
+  let remaining = xpAmount
+  let bonusGained = 0
+  const max = (u: GameUnit) => classMaxLevel(u)
+
+  while (remaining > 0) {
+    const curLevel = current.level ?? 1
+    const limit = max(current)
+
+    // Past class cap → bonus levels (+5% of base maxHp at cap per bonus)
+    if (curLevel >= limit) {
+      const threshold = bonusXpThreshold(current)
+      const baseAtCap = baseMaxHpAtClassCap(current)
+      let xpAccum = (current.xp ?? 0) + remaining
+      let bonus = current.bonusLevels ?? 0
+      while (xpAccum >= threshold) {
+        xpAccum -= threshold
+        bonus++
+        bonusGained++
+      }
+      const newMaxHp = baseAtCap + Math.round(baseAtCap * 0.05 * bonus)
+      const hpDelta = newMaxHp - current.maxHp
+      current = {
+        ...current,
+        xp: xpAccum,
+        xpToNext: threshold,
+        bonusLevels: bonus,
+        maxHp: newMaxHp,
+        hp: Math.min((current.hp ?? newMaxHp) + Math.max(0, hpDelta), newMaxHp),
+      }
+      break
+    }
+
+    // Fortress cap blocks level-ups (XP just sits)
+    if (fortressCap !== undefined && curLevel >= fortressCap) {
+      current = { ...current, xp: (current.xp ?? 0) + remaining }
+      break
+    }
+
+    // Would we level up?
+    const newXp = (current.xp ?? 0) + remaining
+    const xpToNext = current.xpToNext ?? Infinity
+    if (newXp < xpToNext) {
+      current = { ...current, xp: newXp }
+      break
+    }
+
+    // Path-choice block: stop with accumulated XP, return pendingPath
+    const nextLevel = curLevel + 1
+    if (current.class === 'warrior'  && nextLevel === 3 && !current.warriorPath)
+      return { unit: { ...current, xp: newXp }, pendingPath: 'warrior',  bonusGained }
+    if (current.class === 'mage'     && nextLevel === 2 && !current.magePath)
+      return { unit: { ...current, xp: newXp }, pendingPath: 'mage',     bonusGained }
+    if (current.class === 'catapult' && nextLevel === 2 && !current.catapultPath)
+      return { unit: { ...current, xp: newXp }, pendingPath: 'catapult', bonusGained }
+
+    // Apply level-up
+    remaining = newXp - xpToNext
+    current = { ...current, xp: newXp }  // applyXxxLevel reads xp implicitly via current
+    if (current.class === 'warrior') {
+      // lv1→lv2 path-agnostic (WARRIOR_LEVELS); lv3+ uses warriorPath
+      const pathForLevel: WarriorPath = current.warriorPath ?? 'paladin'  // safe: only lv1→2 here without path
+      current = applyWarriorPath(current, pathForLevel, nextLevel)
+    } else if (current.class === 'archer') {
+      current = applyArcherLevel(current, nextLevel)
+    } else if (current.class === 'mage') {
+      if (!current.magePath) break  // shouldn't reach here (caught above)
+      current = applyMagePath(current, current.magePath, nextLevel)
+    } else if (current.class === 'catapult') {
+      if (!current.catapultPath) break
+      current = applyCatapultPath(current, current.catapultPath, nextLevel)
+    } else {
+      break
+    }
+  }
+
+  return { unit: current, bonusGained }
+}
+
 // ── Army builders ──────────────────────────────────────────────────────────────
 export function buildCustomArmy(counts: ArmyCounts, side: Side): GameUnit[] {
   const units: GameUnit[] = []
@@ -544,7 +661,7 @@ export function getValidTargets(actor: GameUnit, action: ActionKey, units: GameU
 export function executeAction(
   state: BattleState, actor: GameUnit, action: ActionKey, targetId: string | null,
   secondTargetId?: string | null,
-): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingWarriorLevelUp?: string; pendingMageLevelUp?: string; pendingCatapultLevelUp?: string } {
+): { units: GameUnit[]; newLogs: LogEntry[]; newEvents: BattleEvent[]; pendingWarriorLevelUp?: string; pendingMageLevelUp?: string; pendingCatapultLevelUp?: string; xpPoolGain: number } {
   let units = state.units.map(u => ({ ...u }))
   const newLogs: LogEntry[] = []
   const newEvents: BattleEvent[] = []
@@ -1407,67 +1524,30 @@ export function executeAction(
     }
   }
 
-  // ── XP: per kill (+25) and per landed action (+5) ──────────────────────────
-  // Damage actions: counted via hitLanded (existing). Support actions (heal,
-  // buff, debuff) award the same +5 XP whenever they successfully execute —
-  // otherwise healers and freezers would never level up.
-  let pendingCatapultLevelUp: string | undefined
-  const kills = units.filter(u => {
-    const prev = prevUnitMap.get(u.id)
-    return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
-  }).length
-  const DAMAGE_ACTIONS: ActionKey[] = [
-    'strike', 'shot', 'poison_shot', 'double_shot', 'magic_bolt',
-    'fireball', 'fire_orb', 'armageddon', 'freeze', 'blizzard',
-    'rock_throw', 'earthquake', 'gust', 'hurricane',
-    'sacred_strike', 'shkvall', 'barrage', 'grapeshot',
-    'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley',
-  ]
-  const isSupportAction = !DAMAGE_ACTIONS.includes(action)
-  // For support actions, any non-broken execution counts (heal/buff/debuff/cleanse).
-  // For damage actions, only landed hits count.
-  const actionLanded = hitLanded || isSupportAction
-  const xpGain = kills * 25 + (actionLanded ? 5 : 0)
-  if (actor.isHero) {
-    // Heroes accumulate XP but never level up mid-battle (post-battle only)
-    if (xpGain > 0) {
-      const fresh = getUnit(actor.id)
-      update({ ...fresh, xp: (fresh.xp ?? 0) + xpGain })
-    }
-  } else if (actor.class === 'warrior' || actor.class === 'archer' || actor.class === 'mage' || actor.class === 'catapult') {
-    if (xpGain > 0) {
-      const fresh = getUnit(actor.id)
-      const cap = state.fortressLevelCap
-      if (actor.class === 'warrior') {
-        const { unit: updatedWarrior, pendingChoice } = grantWarriorXp(fresh, xpGain, newLogs, newEvents, cap)
-        update(updatedWarrior)
-        if (pendingChoice) {
-          newLogs.push(log(`⭐ ${fresh.name} готовий до вибору шляху!`, 'buff'))
-          newEvents.push(ev(fresh.id, '⭐ Вибір шляху!', 'buff'))
-          pendingWarriorLevelUp = fresh.id
-        }
-      } else if (actor.class === 'archer') update(grantArcherXp(fresh, xpGain, newLogs, newEvents, cap))
-      else if (actor.class === 'mage') {
-        const { unit: updatedMage, pendingChoice } = grantMageXp(fresh, xpGain, newLogs, newEvents, cap)
-        update(updatedMage)
-        if (pendingChoice) {
-          newLogs.push(log(`⭐ ${fresh.name} готовий до вибору шляху!`, 'buff'))
-          newEvents.push(ev(fresh.id, '⭐ Вибір шляху!', 'buff'))
-          pendingMageLevelUp = fresh.id
-        }
-      } else {
-        const { unit: updatedCat, pendingChoice } = grantCatapultXp(fresh, xpGain, newLogs, newEvents, cap)
-        update(updatedCat)
-        if (pendingChoice) {
-          newLogs.push(log(`⭐ ${fresh.name} готова до еволюції!`, 'buff'))
-          newEvents.push(ev(fresh.id, '⭐ Еволюція!', 'buff'))
-          pendingCatapultLevelUp = fresh.id
-        }
-      }
-    }
+  // ── XP: contribute to shared pool (distributed to survivors post-battle) ────
+  // Damage actions: counted via hitLanded. Support actions (heal/buff/debuff)
+  // always count when they execute — so healers and freezers also contribute.
+  // Per-actor mid-battle level-ups are gone; path choices happen post-battle.
+  const pendingCatapultLevelUp: string | undefined = undefined
+  let xpPoolGain = 0
+  if (actor.side === 'player') {
+    const kills = units.filter(u => {
+      const prev = prevUnitMap.get(u.id)
+      return prev && prev.hp > 0 && u.hp === 0 && u.side !== actor.side
+    }).length
+    const DAMAGE_ACTIONS: ActionKey[] = [
+      'strike', 'shot', 'poison_shot', 'double_shot', 'magic_bolt',
+      'fireball', 'fire_orb', 'armageddon', 'freeze', 'blizzard',
+      'rock_throw', 'earthquake', 'gust', 'hurricane',
+      'sacred_strike', 'shkvall', 'barrage', 'grapeshot',
+      'ballista_shot', 'twin_bolt', 'trebuchet_volley', 'plague_volley',
+    ]
+    const isSupportAction = !DAMAGE_ACTIONS.includes(action)
+    const actionLanded = hitLanded || isSupportAction
+    xpPoolGain = kills * 25 + (actionLanded ? 5 : 0)
   }
 
-  return { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp }
+  return { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp, xpPoolGain }
 }
 
 // ── AI decision ────────────────────────────────────────────────────────────────
@@ -1780,6 +1860,7 @@ export function createInitialState(counts?: ArmyCounts, prebuiltPlayerUnits?: Ga
     winner: null,
     log: [{ id: ++_logId, text: '⚔ Бій починається!', type: 'info' }],
     round: 1, events: [], ...TURN_RESET,
+    playerXpPool: 0,
     ...(fortressLevelCap !== undefined ? { fortressLevelCap } : {}),
   }
 }
@@ -1797,11 +1878,8 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       if (!ACTIONS[a].needsTarget) {
         const ticked = tickBuffs(actor)
         const s0 = { ...state, units: state.units.map(u => u.id === actor.id ? ticked : u) }
-        const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s0, ticked, a, null)
-        const next = advanceQueue({ ...s0, units, log: [...s0.log, ...newLogs], ...TURN_RESET, events: newEvents, lastActionKey: a, lastActorId: actor.id })
-        if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
-        if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
-        return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
+        const { units, newLogs, newEvents, xpPoolGain } = executeAction(s0, ticked, a, null)
+        return advanceQueue({ ...s0, units, log: [...s0.log, ...newLogs], ...TURN_RESET, events: newEvents, lastActionKey: a, lastActorId: actor.id, playerXpPool: s0.playerXpPool + xpPoolGain })
       }
       return { ...state, selectedAction: a, needsTarget: true, events: [], pendingFirstTarget: undefined }
     }
@@ -1817,11 +1895,8 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       const s1 = { ...state, units: state.units.map(u => u.id === actor.id ? ticked1 : u) }
       const mainTarget = s1.pendingFirstTarget ?? action.targetId
       const second     = s1.pendingFirstTarget ? action.targetId : undefined
-      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s1, ticked1, s1.selectedAction!, mainTarget, second)
-      const next = advanceQueue({ ...s1, units, log: [...s1.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined, lastActionKey: s1.selectedAction!, lastActorId: actor.id })
-      if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
-      if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
-      return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
+      const { units, newLogs, newEvents, xpPoolGain } = executeAction(s1, ticked1, s1.selectedAction!, mainTarget, second)
+      return advanceQueue({ ...s1, units, log: [...s1.log, ...newLogs], ...TURN_RESET, events: newEvents, pendingFirstTarget: undefined, lastActionKey: s1.selectedAction!, lastActorId: actor.id, playerXpPool: s1.playerXpPool + xpPoolGain })
     }
 
     case 'CHOOSE_WARRIOR_PATH': {
@@ -1917,11 +1992,9 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       if (!act || (ACTIONS[act].needsTarget && !targetId)) return advanceQueue(state)
       const ticked2 = tickBuffs(actor)
       const s2 = { ...state, units: state.units.map(u => u.id === actorId ? ticked2 : u) }
-      const { units, newLogs, newEvents, pendingWarriorLevelUp, pendingMageLevelUp, pendingCatapultLevelUp } = executeAction(s2, ticked2, act, targetId, secondTargetId)
-      const next = advanceQueue({ ...s2, units, log: [...s2.log, ...newLogs], ...TURN_RESET, events: newEvents, lastActionKey: act, lastActorId: actorId })
-      if (pendingWarriorLevelUp) return { ...next, pendingWarriorLevelUp }
-      if (pendingCatapultLevelUp) return { ...next, pendingCatapultLevelUp }
-      return pendingMageLevelUp ? { ...next, pendingMageLevelUp } : next
+      const { units, newLogs, newEvents } = executeAction(s2, ticked2, act, targetId, secondTargetId)
+      // AI actions never contribute to player XP pool (xpPoolGain is always 0 for ai side)
+      return advanceQueue({ ...s2, units, log: [...s2.log, ...newLogs], ...TURN_RESET, events: newEvents, lastActionKey: act, lastActorId: actorId })
     }
 
     case 'ADVANCE_QUEUE': {
@@ -1955,36 +2028,13 @@ function advanceQueue(state: BattleState): BattleState {
 
   if (idx >= queue.length) {
     round++
-    // Award round-survival XP to all living units
-    const roundLogs: LogEntry[] = []
-    const roundEvents: BattleEvent[] = []
-    const roundCap = state.fortressLevelCap
-    for (const u of units.filter(x => !x.isHero && (x.class === 'warrior' || x.class === 'archer' || x.class === 'mage' || x.class === 'catapult') && x.hp > 0)) {
-      if (u.class === 'warrior') {
-        const { unit: updated } = grantWarriorXp(u, 8, roundLogs, roundEvents, roundCap)
-        units = units.map(x => x.id === updated.id ? updated : x)
-      } else if (u.class === 'archer') {
-        const updated = grantArcherXp(u, 8, roundLogs, roundEvents, roundCap)
-        units = units.map(x => x.id === updated.id ? updated : x)
-      } else if (u.class === 'mage') {
-        const { unit: updated } = grantMageXp(u, 8, roundLogs, roundEvents, roundCap)
-        units = units.map(x => x.id === updated.id ? updated : x)
-      } else if (u.class === 'catapult') {
-        const { unit: updated } = grantCatapultXp(u, 8, roundLogs, roundEvents, roundCap)
-        units = units.map(x => x.id === updated.id ? updated : x)
-      }
-    }
-    // Heroes get round survival XP (accumulated, leveled post-battle)
-    for (const u of units.filter(x => x.isHero && x.hp > 0)) {
-      units = units.map(x => x.id === u.id ? { ...x, xp: (x.xp ?? 0) + 8 } : x)
-    }
+    // Round-survival XP → added to shared player pool (8 per alive player unit, heroes included)
+    const alivePlayerCount = units.filter(u => u.side === 'player' && u.hp > 0).length
+    const roundXp = alivePlayerCount * 8
     state = {
-      ...state, units,
-      log: [...state.log,
-        { id: ++_logId, text: `── Раунд ${round} ──`, type: 'info' },
-        ...roundLogs,
-      ],
-      events: roundEvents.length ? roundEvents : state.events,
+      ...state, units, playerXpPool: state.playerXpPool + roundXp,
+      log: [...state.log, { id: ++_logId, text: `── Раунд ${round} ──`, type: 'info' }],
+      events: state.events,
     }
     queue = buildQueue(units)
     idx = 0

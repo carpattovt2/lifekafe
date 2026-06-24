@@ -57,6 +57,7 @@ export interface HeroState {
   chosenPerks: PerkId[]
   pendingPerkPool: PerkId[]
   deathTurn?: number | null  // turn at which hero died — used for auto-revive after 5 turns
+  bonusLevels?: number       // levels gained past lv5 — each adds +5% of base maxHp at lv5
 }
 
 const ARTAN_LEVELS: Record<number, { hp: number; minDmg: number; maxDmg: number; xpToNext: number }> = {
@@ -97,19 +98,24 @@ export function getAvailablePerks(state: HeroState): PerkId[] {
   })
 }
 
-export function applyXpToHero(state: HeroState, xpGain: number): { state: HeroState; levelsGained: number } {
-  if (xpGain <= 0 || state.level >= 5) return { state, levelsGained: 0 }
+// XP needed for each bonus level past lv5 = same as the lv4→lv5 threshold (500 for both heroes).
+const HERO_BONUS_XP_THRESHOLD = 500
+
+export function applyXpToHero(state: HeroState, xpGain: number): { state: HeroState; levelsGained: number; bonusGained: number } {
+  if (xpGain <= 0) return { state, levelsGained: 0, bonusGained: 0 }
   let current = state
   let levelsGained = 0
+  let bonusGained = 0
   let remaining = xpGain
 
+  // Cascade level-ups (no cap — distribution is from pooled battle XP)
   while (remaining > 0 && current.level < 5) {
     const newXp = current.xp + remaining
     if (newXp < current.xpToNext) {
       current = { ...current, xp: newXp }
       remaining = 0
     } else {
-      remaining = 0  // cap at one level per battle application
+      remaining = newXp - current.xpToNext  // carry overflow into next level
       const newLevel = current.level + 1
       const hasVitality = current.chosenPerks.includes('vitality')
       const baseHp = current.heroId === 'artan' ? ARTAN_LEVELS[newLevel].hp : SYBILLA_LEVELS[newLevel].hp
@@ -129,7 +135,32 @@ export function applyXpToHero(state: HeroState, xpGain: number): { state: HeroSt
       levelsGained++
     }
   }
-  return { state: current, levelsGained }
+
+  // Bonus levels past lv5: +5% of base lv5 maxHp per level, threshold = HERO_BONUS_XP_THRESHOLD each
+  if (remaining > 0 && current.level >= 5) {
+    const baseHp5 = current.heroId === 'artan' ? ARTAN_LEVELS[5].hp : SYBILLA_LEVELS[5].hp
+    const hasVitality = current.chosenPerks.includes('vitality')
+    const baseMaxHpAt5 = baseHp5 + (hasVitality ? 50 : 0)
+    let xp = current.xp + remaining
+    let bonusLevels = current.bonusLevels ?? 0
+    while (xp >= HERO_BONUS_XP_THRESHOLD) {
+      xp -= HERO_BONUS_XP_THRESHOLD
+      bonusLevels++
+      bonusGained++
+    }
+    const newMaxHp = baseMaxHpAt5 + Math.round(baseMaxHpAt5 * 0.05 * bonusLevels)
+    const hpDelta = newMaxHp - current.maxHp
+    current = {
+      ...current,
+      xp,
+      xpToNext: HERO_BONUS_XP_THRESHOLD,  // show bonus-level progress bar
+      maxHp: newMaxHp,
+      hp: Math.min(current.hp + Math.max(0, hpDelta), newMaxHp),
+      bonusLevels,
+    }
+  }
+
+  return { state: current, levelsGained, bonusGained }
 }
 
 export function choosePerk(state: HeroState, perkId: PerkId): HeroState {

@@ -4,7 +4,7 @@ import { useReducer, useEffect, useRef, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createInitialState, battleReducer, getMainActions, getMainActionsForHero, getValidTargets, ACTIONS,
-  addUnitAtSlot, buildCustomArmy,
+  addUnitAtSlot, buildCustomArmy, applyXpToUnit,
 } from '@/lib/sacred/game'
 import type { GameUnit, ActionKey, Side, Row, LogEntry, ArmyCounts, BattleEvent, BattleAction, MagePath, UnitClass, CatapultPath, WarriorPath } from '@/lib/sacred/types'
 import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CATAPULT_PATHS } from '@/lib/sacred/types'
@@ -1309,7 +1309,7 @@ const ROW_SLOTS: Record<number, number> = { 0: 4, 1: 4 }
 
 function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, fortressLevelCap }: {
   counts: ArmyCounts; playerUnits?: GameUnit[]; prebuiltAiUnits?: GameUnit[]; onRestart: () => void
-  onBattleEnd?: (units: GameUnit[], won: boolean) => void
+  onBattleEnd?: (units: GameUnit[], won: boolean, xpPool?: number) => void
   fortressLevelCap?: number
 }) {
   const [state, dispatch] = useReducer(
@@ -1578,7 +1578,7 @@ function Battle({ counts, playerUnits, prebuiltAiUnits, onRestart, onBattleEnd, 
               </div>
               {onBattleEnd ? (
                 <button
-                  onClick={() => onBattleEnd(state.units, state.winner === 'player')}
+                  onClick={() => onBattleEnd(state.units, state.winner === 'player', state.playerXpPool)}
                   style={{ padding: '10px 28px', background: state.winner === 'player' ? '#7aaa82' : '#c07070', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                   ← На карту
                 </button>
@@ -1927,7 +1927,34 @@ export default function SacredGame() {
     setScreen('region-final-battle-2')
   }
 
-  function syncHeroAfterBattle(units: GameUnit[], prevHeroes: TerritoryMap2State['heroes']): {
+  // Distribute pooled XP to a unit. Cascades level-ups via applyXpToUnit.
+  // If path choice is required mid-cascade and the unit has no path yet,
+  // auto-pick a sensible default (paladin / random mage / ballista) and continue.
+  // The accumulated xp at the path boundary is re-fed as carry-over.
+  // TODO: replace auto-pick with a proper post-battle path-choice screen.
+  function distributePoolToUnit(unit: GameUnit, share: number, fortressCap?: number): GameUnit {
+    let cur = unit
+    let remaining = share
+    let safety = 10
+    while (remaining > 0 && safety-- > 0) {
+      const result = applyXpToUnit(cur, remaining, fortressCap)
+      cur = result.unit
+      if (!result.pendingPath) break
+      // Auto-pick default path
+      if (result.pendingPath === 'warrior') cur = { ...cur, warriorPath: 'paladin' }
+      else if (result.pendingPath === 'mage') {
+        const paths: MagePath[] = ['fire', 'water', 'earth', 'air']
+        cur = { ...cur, magePath: paths[Math.floor(Math.random() * paths.length)] }
+      } else if (result.pendingPath === 'catapult') cur = { ...cur, catapultPath: 'ballista' }
+      // Carry over the accumulated xp through the boundary
+      const carry = cur.xp ?? 0
+      cur = { ...cur, xp: 0 }
+      remaining = carry
+    }
+    return cur
+  }
+
+  function syncHeroAfterBattle(units: GameUnit[], prevHeroes: TerritoryMap2State['heroes'], xpShare: number): {
     updatedHeroes: TerritoryMap2State['heroes']
     perkChoiceQueue: HeroId[]
     slotUnlocks: Array<1|2>
@@ -1939,8 +1966,10 @@ export default function SacredGame() {
       const heroId = heroUnit.heroId as HeroId
       const heroState = prevHeroes[heroId]
       if (!heroState) continue
-      const xpGained = Math.max(0, (heroUnit.xp ?? 0) - heroState.xp)
-      const { state: leveledState, levelsGained } = applyXpToHero(heroState, xpGained)
+      // Hero only gets a share if they survived the battle
+      const heroSurvived = heroUnit.hp > 0
+      const effectiveShare = heroSurvived ? xpShare : 0
+      const { state: leveledState, levelsGained } = applyXpToHero(heroState, effectiveShare)
       const justDied = heroState.isAlive && heroUnit.hp <= 0
       const finalState: HeroState = {
         ...leveledState,
@@ -1958,8 +1987,8 @@ export default function SacredGame() {
     return { updatedHeroes, perkChoiceQueue, slotUnlocks }
   }
 
-  function applyBattleEndHeroSync(units: GameUnit[], won: boolean, nextScreen: RootScreen, callback: () => void) {
-    const { updatedHeroes, perkChoiceQueue, slotUnlocks } = syncHeroAfterBattle(units, map2State.heroes)
+  function applyBattleEndHeroSync(units: GameUnit[], won: boolean, nextScreen: RootScreen, callback: () => void, xpShare: number = 0) {
+    const { updatedHeroes, perkChoiceQueue, slotUnlocks } = syncHeroAfterBattle(units, map2State.heroes, xpShare)
     setMap2State(prev => ({ ...prev, heroes: updatedHeroes }))
     if (won && perkChoiceQueue.length > 0) {
       setWorld2PendingSlotUnlocks(slotUnlocks)
@@ -1976,10 +2005,19 @@ export default function SacredGame() {
     }
   }
 
-  function handleMap2DistrictBattleEnd(units: GameUnit[], won: boolean) {
+  function handleMap2DistrictBattleEnd(units: GameUnit[], won: boolean, xpPool: number = 0) {
     const heroUnit    = units.find(u => u.isHero && u.side === 'player')
-    const regularSurv = units.filter(u => u.hp > 0  && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
-    const regularFall = units.filter(u => u.hp <= 0 && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+    const regularSurvRaw = units.filter(u => u.hp > 0  && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+    const regularFall    = units.filter(u => u.hp <= 0 && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+
+    // Equal XP share for every survivor (regular + alive hero); pool only awarded on win
+    const heroSurvived = !!heroUnit && heroUnit.hp > 0
+    const survivorCount = regularSurvRaw.length + (heroSurvived ? 1 : 0)
+    const xpShare = (won && survivorCount > 0) ? Math.floor(xpPool / survivorCount) : 0
+    const fortressCap = map2State.fortressLevel
+
+    // Apply XP share to each surviving regular unit (cascading + auto-pick path)
+    const regularSurv = regularSurvRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap) : u)
 
     if (world2ActiveArmy === 1) {
       setWorld2PlayerUnits(regularSurv)
@@ -2095,16 +2133,23 @@ export default function SacredGame() {
     }
 
     if (heroUnit) {
-      applyBattleEndHeroSync(units, won, finalNext, proceed)
+      applyBattleEndHeroSync(units, won, finalNext, proceed, xpShare)
     } else {
       proceed()
     }
   }
 
-  function handleMap2FinalBattleEnd(units: GameUnit[], won: boolean) {
-    const heroUnit    = units.find(u => u.isHero && u.side === 'player')
-    const regularSurv = units.filter(u => u.hp > 0  && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
-    const regularFall = units.filter(u => u.hp <= 0 && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+  function handleMap2FinalBattleEnd(units: GameUnit[], won: boolean, xpPool: number = 0) {
+    const heroUnit       = units.find(u => u.isHero && u.side === 'player')
+    const regularSurvRaw = units.filter(u => u.hp > 0  && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+    const regularFall    = units.filter(u => u.hp <= 0 && u.side === 'player' && !u.isHero).map(u => ({ ...u, buffs: [] }))
+
+    // Equal XP share for every survivor (regular + alive hero); pool only on win
+    const heroSurvived = !!heroUnit && heroUnit.hp > 0
+    const survivorCount = regularSurvRaw.length + (heroSurvived ? 1 : 0)
+    const xpShare = (won && survivorCount > 0) ? Math.floor(xpPool / survivorCount) : 0
+    const fortressCap = map2State.fortressLevel
+    const regularSurv = regularSurvRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap) : u)
 
     if (world2ActiveArmy === 1) {
       setWorld2PlayerUnits(regularSurv)
@@ -2169,7 +2214,7 @@ export default function SacredGame() {
     }
 
     if (heroUnit) {
-      applyBattleEndHeroSync(units, won, 'world-map-2', proceed)
+      applyBattleEndHeroSync(units, won, 'world-map-2', proceed, xpShare)
     } else {
       proceed()
     }
@@ -2432,9 +2477,13 @@ export default function SacredGame() {
     setScreen('world-battle')
   }
 
-  function handleTerritoryBattleEnd(units: GameUnit[], won: boolean) {
-    const survived = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
-    const fallen   = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+  function handleTerritoryBattleEnd(units: GameUnit[], won: boolean, xpPool: number = 0) {
+    const survivedRaw = units.filter(u => u.hp > 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+    const fallen      = units.filter(u => u.hp <= 0 && u.side === 'player').map(u => ({ ...u, buffs: [] }))
+    // Map 1 has no heroes — pool split equally among regular survivors
+    const xpShare = (won && survivedRaw.length > 0) ? Math.floor(xpPool / survivedRaw.length) : 0
+    const fortressCap = territoryState.fortressLevel
+    const survived = survivedRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap) : u)
     setWorldPlayerUnits(survived)
     setWorldDeadUnits(prev => [...prev, ...fallen])
 
