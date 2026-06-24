@@ -152,6 +152,12 @@ const CLASS_SVG: Record<string, AvatarComponent> = {
   warrior: WarriorSVG, archer: ArcherSVG, mage: MageSVG, catapult: CatapultSVG,
 }
 
+// Format level with bonus levels (past max): "5" → "5+3"
+function fmtLevelWithBonus(level: number | undefined, bonusLevels: number | undefined): string {
+  const lv = level ?? 1
+  return (bonusLevels && bonusLevels > 0) ? `${lv}+${bonusLevels}` : `${lv}`
+}
+
 function getPortraitSrc(unit: GameUnit): string | null {
   // Bot hero ('baron') uses Артан's portrait but with dark filter applied at render-time
   if (unit.isHero && unit.heroId === 'baron') return `/sacred/heroes/artan.jpg`
@@ -831,7 +837,10 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
                 {unit.name}
                 {unit.level && levelName && (
                   <span style={{ fontSize: 11, fontWeight: 600, color: '#b07850' }}>
-                    Lv.{unit.level} {levelName}
+                    Lv.{fmtLevelWithBonus(unit.level, unit.bonusLevels)} {levelName}
+                    {unit.bonusLevels && unit.bonusLevels > 0
+                      ? <span style={{ color: '#d4a85a', marginLeft: 4 }}>(+{unit.bonusLevels * 5}% HP)</span>
+                      : null}
                   </span>
                 )}
               </div>
@@ -878,8 +887,28 @@ function UnitInfoSheet({ unit, onClose }: { unit: GameUnit; onClose: () => void 
             </div>
           )}
           {maxLevel > 0 && (unit.level ?? 1) >= maxLevel && (
-            <div style={{ marginBottom: 14, fontSize: 11, color: '#b07850', fontWeight: 600 }}>
-              ⭐ Максимальний рівень
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#b07850', marginBottom: 4, fontWeight: 600 }}>
+                <span>⭐ Макс. рівень{unit.bonusLevels ? ` · бонус ${unit.bonusLevels}` : ''}</span>
+                {unit.xpToNext && unit.xpToNext !== Infinity && (
+                  <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 400 }}>
+                    {unit.xp ?? 0} / {unit.xpToNext}
+                  </span>
+                )}
+              </div>
+              {unit.xpToNext && unit.xpToNext !== Infinity && (
+                <div style={{ width: '100%', height: 4, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
+                  <div style={{
+                    width: `${Math.min(100, ((unit.xp ?? 0) / (unit.xpToNext ?? 1)) * 100)}%`,
+                    height: '100%', background: '#d4a85a', borderRadius: 2, transition: 'width 0.3s',
+                  }} />
+                </div>
+              )}
+              {unit.bonusLevels && unit.bonusLevels > 0 && (
+                <div style={{ fontSize: 10, color: '#d4a85a', marginTop: 4 }}>
+                  +{unit.bonusLevels * 5}% HP від базового максимуму
+                </div>
+              )}
             </div>
           )}
 

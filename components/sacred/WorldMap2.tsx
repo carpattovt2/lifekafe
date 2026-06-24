@@ -973,10 +973,14 @@ export default function WorldMap2({
                               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'rgba(240,232,216,0.15)' }}>🔒</div>
                             )}
                             {heroAlive && (
-                              <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>lv{activeHero?.level}</div>
+                              <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>
+                                lv{activeHero?.bonusLevels ? `${activeHero.level}+${activeHero.bonusLevels}` : activeHero?.level}
+                              </div>
                             )}
                             {!isHeroSlot && unit && (
-                              <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>lv{unit.level}</div>
+                              <div style={{ position: 'absolute', bottom: 2, right: 4, fontSize: 10, color: '#d4a85a', fontWeight: 700 }}>
+                                lv{unit.bonusLevels ? `${unit.level}+${unit.bonusLevels}` : unit.level}
+                              </div>
                             )}
                           </div>
                         )
@@ -1039,7 +1043,8 @@ export default function WorldMap2({
                             {su.name}
                           </div>
                           <div style={{ fontSize: 11, color: '#d4a85a', marginTop: 2 }}>
-                            Lv.{lvl} · {rankName}
+                            Lv.{su.bonusLevels ? `${lvl}+${su.bonusLevels}` : lvl} · {rankName}
+                            {su.bonusLevels && su.bonusLevels > 0 ? <span style={{ color: '#f0d8a0', marginLeft: 4 }}>(+{su.bonusLevels * 5}% HP)</span> : null}
                           </div>
                           <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 4 }}>
                             HP {su.hp}/{su.maxHp}
@@ -1069,8 +1074,23 @@ export default function WorldMap2({
                         </div>
                       )}
                       {maxLevel > 0 && lvl >= maxLevel && (
-                        <div style={{ marginBottom: 12, fontSize: 11, color: '#b07850', fontWeight: 600 }}>
-                          ⭐ Максимальний рівень
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#b07850', marginBottom: 3, fontWeight: 600 }}>
+                            <span>⭐ Макс.{su.bonusLevels ? ` · бонус ${su.bonusLevels}` : ''}</span>
+                            {su.xpToNext && su.xpToNext !== Infinity && (
+                              <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 400 }}>
+                                {su.xp ?? 0} / {su.xpToNext}
+                              </span>
+                            )}
+                          </div>
+                          {su.xpToNext && su.xpToNext !== Infinity && (
+                            <div style={{ width: '100%', height: 4, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
+                              <div style={{
+                                width: `${Math.min(100, ((su.xp ?? 0) / Math.max(1, su.xpToNext ?? 1)) * 100)}%`,
+                                height: '100%', background: '#d4a85a', borderRadius: 2,
+                              }} />
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1227,10 +1247,14 @@ export default function WorldMap2({
                           {hero && (
                             <>
                               <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 4 }}>
-                                Рівень {hero.level} · {hero.hp}/{hero.maxHp} HP
+                                Рівень {hero.bonusLevels ? `${hero.level}+${hero.bonusLevels}` : hero.level} · {hero.hp}/{hero.maxHp} HP
+                                {hero.bonusLevels && hero.bonusLevels > 0
+                                  ? <span style={{ color: '#d4a85a', marginLeft: 4 }}>(+{hero.bonusLevels * 5}%)</span>
+                                  : null}
                               </div>
                               <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.35)', marginTop: 1 }}>
                                 XP: {hero.xp}/{hero.xpToNext === Infinity ? '∞' : hero.xpToNext}
+                                {hero.level >= 5 && <span style={{ color: '#d4a85a', marginLeft: 4 }}>(бонус-рівень)</span>}
                               </div>
                             </>
                           )}
