@@ -14,7 +14,7 @@ import { WARRIOR_LEVELS, WARRIOR_PATHS, ARCHER_LEVELS, MAGE_BASE, MAGE_PATHS, CA
 import { buildFreeUnit } from '@/lib/sacred/game'
 import { buildBotHeroUnit } from '@/lib/sacred/territories2'
 import type { UnitSpec2 } from '@/lib/sacred/territories2'
-import { HERO_REVIVE_COST, HERO_REVIVE_COST_FULL, HERO_HIRE_COST, HERO_AUTO_REVIVE_TURNS } from '@/lib/sacred/heroes'
+import { HERO_REVIVE_COST, HERO_REVIVE_COST_FULL, HERO_HIRE_COST, HERO_AUTO_REVIVE_TURNS, PERK_DEFS as PERK_DEFS_LOCAL } from '@/lib/sacred/heroes'
 import type { HeroId } from '@/lib/sacred/heroes'
 
 const HIRE_INFO: { cls: UnitClass; label: string; cost: number; desc: string }[] = [
@@ -154,6 +154,7 @@ export default function WorldMap2({
   const [selectedUnitId,  setSelectedUnitId]  = useState<string | null>(null)
   const [hirePopup,       setHirePopup]       = useState<{ row: number; slot: number } | null>(null)
   const [previewUnit,     setPreviewUnit]     = useState<GameUnit | null>(null)
+  const [selectedHero,    setSelectedHero]    = useState(false)
   const [tutorialDismissed, setTutorialDismissed] = useState(true)  // start true → set false in useEffect to avoid SSR mismatch
   useEffect(() => {
     try { setTutorialDismissed(!!localStorage.getItem('sacred_tutorial_dismissed')) } catch {}
@@ -180,6 +181,9 @@ export default function WorldMap2({
 
   // Clear unit preview when popup district changes
   useEffect(() => { setPreviewUnit(null) }, [popupDistrictId])
+
+  // Reset hero/unit selection when switching armies or closing fortress
+  useEffect(() => { setSelectedHero(false); setSelectedUnitId(null) }, [activeArmy, fortressOpen])
 
   const {
     ownership, gold, turn, ap, armyNodeId, army2NodeId,
@@ -335,8 +339,12 @@ export default function WorldMap2({
 
   function handleSlotClick(row: number, slot: number) {
     if (!activeHero) return  // no hero hired — army is inactive
-    // Hero occupies fixed slot — not interactive
-    if (row === activeHeroRow && slot === activeHeroSlot && activeHero) return
+    // Hero slot: toggle hero details panel (instead of being inert)
+    if (row === activeHeroRow && slot === activeHeroSlot && activeHero) {
+      setSelectedHero(s => !s)
+      setSelectedUnitId(null)
+      return
+    }
     if (!isSlotUnlockedForArmy(row, slot, activeUnlockedSlots, activeHeroRow, activeHeroSlot)) return
     // Catapult occupies column 3 (row 0 slot 3 + row 1 slot 3 visually)
     const hasCatapult = activeRegularUnits.some(u => u.class === 'catapult')
@@ -982,6 +990,19 @@ export default function WorldMap2({
                                 lv{unit.bonusLevels ? `${unit.level}+${unit.bonusLevels}` : unit.level}
                               </div>
                             )}
+                            {/* HP bar (overlay at bottom of slot) — helps player notice wounded units before battle */}
+                            {(() => {
+                              const hpUnit = isHeroSlot ? activeHero : unit
+                              if (!hpUnit || hpUnit.hp == null || hpUnit.maxHp == null) return null
+                              if (isHeroSlot && !activeHero?.isAlive) return null
+                              const pct = Math.max(0, Math.min(1, hpUnit.hp / hpUnit.maxHp))
+                              const hpColor = pct > 0.5 ? '#7aaa82' : pct > 0.25 ? '#c4a040' : '#c07070'
+                              return (
+                                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, background: 'rgba(0,0,0,0.55)' }}>
+                                  <div style={{ width: `${pct * 100}%`, height: '100%', background: hpColor, transition: 'width 0.3s' }} />
+                                </div>
+                              )
+                            })()}
                           </div>
                         )
                       })}
@@ -1130,6 +1151,75 @@ export default function WorldMap2({
                           style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'none', border: '1px solid rgba(240,232,216,0.15)', color: 'rgba(240,232,216,0.5)', fontSize: 12, cursor: 'pointer' }}
                         >Закрити</button>
                       </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Hero details panel (mirrors regular-unit panel, no dismiss button) */}
+                {selectedHero && activeHero && (() => {
+                  const hero = activeHero
+                  const hpPct = Math.max(0, Math.min(1, hero.hp / hero.maxHp))
+                  const hpColor = hpPct > 0.5 ? '#7aaa82' : hpPct > 0.25 ? '#c4a040' : '#c07070'
+                  const heroName = activeHeroId === 'artan' ? 'Артан' : 'Сивілла'
+                  const heroRole = activeHeroId === 'artan' ? 'Воїн-герой · Армія 1' : 'Цілителька-герой · Армія 2'
+                  return (
+                    <div style={{ marginTop: 14, padding: '14px', borderRadius: 12, background: 'rgba(212,168,90,0.07)', border: '1px solid rgba(212,168,90,0.25)' }}>
+                      <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center' }}>
+                        <img src={`/sacred/heroes/${activeHeroId}.jpg`} alt="" style={{ width: 52, height: 62, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#f0e8d8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {heroName}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#d4a85a', marginTop: 2 }}>
+                            Lv.{hero.bonusLevels ? `${hero.level}+${hero.bonusLevels}` : hero.level} · {heroRole}
+                            {hero.bonusLevels && hero.bonusLevels > 0 ? <span style={{ color: '#f0d8a0', marginLeft: 4 }}>(+{hero.bonusLevels * 5}% HP)</span> : null}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'rgba(240,232,216,0.45)', marginTop: 4 }}>HP {hero.hp}/{hero.maxHp}</div>
+                          <div style={{ width: '100%', height: 4, background: 'rgba(240,232,216,0.1)', borderRadius: 2, marginTop: 3 }}>
+                            <div style={{ width: `${hpPct * 100}%`, height: '100%', borderRadius: 2, background: hpColor }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* XP bar */}
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: hero.level >= 5 ? '#b07850' : 'rgba(240,232,216,0.45)', marginBottom: 3, fontWeight: hero.level >= 5 ? 600 : 400 }}>
+                          <span>{hero.level >= 5 ? `⭐ Макс. · бонус ${hero.bonusLevels ?? 0}` : `XP → Lv.${hero.level + 1}`}</span>
+                          {hero.xpToNext !== Infinity && <span style={{ fontVariantNumeric: 'tabular-nums' }}>{hero.xp} / {hero.xpToNext}</span>}
+                        </div>
+                        {hero.xpToNext !== Infinity && (
+                          <div style={{ width: '100%', height: 4, background: 'rgba(176,120,80,0.15)', borderRadius: 2 }}>
+                            <div style={{
+                              width: `${Math.min(100, (hero.xp / Math.max(1, hero.xpToNext)) * 100)}%`,
+                              height: '100%', background: hero.level >= 5 ? '#d4a85a' : '#b07850', borderRadius: 2,
+                            }} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Chosen perks */}
+                      {hero.chosenPerks.length > 0 && (
+                        <div style={{ marginBottom: 10, fontSize: 11, color: 'rgba(240,232,216,0.55)' }}>
+                          <div style={{ fontSize: 9, color: 'rgba(240,232,216,0.4)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 1 }}>Перки</div>
+                          <div style={{ lineHeight: 1.4 }}>
+                            {hero.chosenPerks.map(p => {
+                              const pd = PERK_DEFS_LOCAL.find(d => d.id === p)
+                              return pd?.name ?? p
+                            }).join(' · ')}
+                          </div>
+                        </div>
+                      )}
+
+                      {!hero.isAlive && hero.deathTurn != null && (
+                        <div style={{ fontSize: 11, color: '#cc7070', marginBottom: 10 }}>
+                          ☠ Загинув. Авто-воскресіння через {Math.max(0, 5 - (mapState.turn - hero.deathTurn))} ходів
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => setSelectedHero(false)}
+                        style={{ width: '100%', padding: '8px 0', borderRadius: 8, background: 'none', border: '1px solid rgba(240,232,216,0.15)', color: 'rgba(240,232,216,0.5)', fontSize: 12, cursor: 'pointer' }}
+                      >Закрити</button>
                     </div>
                   )
                 })()}

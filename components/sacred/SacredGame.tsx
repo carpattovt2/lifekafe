@@ -1719,7 +1719,149 @@ type RootScreen =
   | 'army-builder' | 'placement' | 'battle' | 'free-battle'
   | 'world-map'  | 'world-battle'  | 'campaign-victory'
   | 'world-map-2' | 'world-battle-2' | 'region-final-battle-2' | 'region-choice-2' | 'campaign-victory-2' | 'bot-victory-2'
-  | 'level-up' | 'perk-choice' | 'slot-choice'
+  | 'pre-battle-2' | 'pre-region-battle-2'
+  | 'level-up' | 'perk-choice' | 'slot-choice' | 'path-choice-unit'
+
+// ── Pre-battle tactical screen ─────────────────────────────────────────────────
+function PreBattleScreen({ title, playerUnits, enemyUnits, canConfirm, onConfirm, onCancel, activeArmy, onSwap, onMoveSlot }: {
+  title: string
+  playerUnits: GameUnit[]
+  enemyUnits: GameUnit[]
+  canConfirm: boolean
+  onConfirm: () => void
+  onCancel: () => void
+  activeArmy: 1 | 2
+  onSwap: (id1: string, id2: string) => void
+  onMoveSlot: (id: string, row: number, slot: number) => void
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [preview, setPreview] = useState<GameUnit | null>(null)
+
+  function renderSlot(units: GameUnit[], row: number, slot: number, side: 'player' | 'ai') {
+    const unit = units.find(u => u.row === row && u.slot === slot)
+    const isSel = unit && selectedId === unit.id
+    const isHpLow = unit && unit.hp / unit.maxHp < 0.5
+    return (
+      <div
+        key={`${side}-${row}-${slot}`}
+        onClick={() => {
+          if (!unit) {
+            // Empty slot on player side: if we have a selected unit, move it here
+            if (side === 'player' && selectedId) {
+              onMoveSlot(selectedId, row, slot)
+              setSelectedId(null)
+            }
+            return
+          }
+          if (side === 'ai') { setPreview(p => p?.id === unit.id ? null : unit); return }
+          // Player side: select for swap, or swap with selected
+          if (selectedId && selectedId !== unit.id) {
+            onSwap(selectedId, unit.id)
+            setSelectedId(null)
+          } else if (selectedId === unit.id) {
+            setSelectedId(null)
+            setPreview(p => p?.id === unit.id ? null : unit)
+          } else {
+            setSelectedId(unit.id)
+            setPreview(unit)
+          }
+        }}
+        style={{
+          height: 60, borderRadius: 8, overflow: 'hidden', position: 'relative',
+          border: isSel ? '2px solid #d4a85a' : unit ? `1px solid ${side === 'ai' ? 'rgba(192,112,112,0.4)' : 'rgba(240,232,216,0.18)'}` : '1px dashed rgba(240,232,216,0.1)',
+          background: unit ? 'transparent' : 'rgba(240,232,216,0.03)',
+          cursor: 'pointer',
+        }}>
+        {unit && (
+          <>
+            <img src={getPortraitSrc(unit) ?? ''} alt="" style={{
+              width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top',
+              filter: unit.isHero && unit.heroId === 'baron'
+                ? 'invert(0.85) sepia(1) hue-rotate(310deg) saturate(3) brightness(0.55) contrast(1.4)'
+                : undefined,
+            }} />
+            <div style={{ position: 'absolute', bottom: 2, right: 3, fontSize: 9, fontWeight: 700, color: '#d4a85a', background: 'rgba(0,0,0,0.6)', borderRadius: 3, padding: '0 3px' }}>
+              lv{unit.bonusLevels ? `${unit.level}+${unit.bonusLevels}` : unit.level}
+            </div>
+            {/* HP bar */}
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, background: 'rgba(0,0,0,0.6)' }}>
+              <div style={{
+                width: `${Math.max(0, Math.min(1, unit.hp / unit.maxHp)) * 100}%`, height: '100%',
+                background: unit.hp / unit.maxHp > 0.5 ? '#7aaa82' : unit.hp / unit.maxHp > 0.25 ? '#c4a040' : '#c07070',
+              }} />
+            </div>
+            {isHpLow && side === 'player' && (
+              <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, color: '#c07070', background: 'rgba(0,0,0,0.65)', borderRadius: 3, padding: '0 3px', fontWeight: 700 }}>
+                ⚠
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  function renderRow(units: GameUnit[], row: number, side: 'player' | 'ai') {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 4 }}>
+        {[0, 1, 2, 3].map(slot => renderSlot(units, row, slot, side))}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+      color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+      display: 'flex', flexDirection: 'column', padding: '20px 16px',
+    }}>
+      <div style={{ fontSize: 12, letterSpacing: 2, color: '#d4a85a', textTransform: 'uppercase', marginBottom: 4, opacity: 0.7, textAlign: 'center' }}>Тактика</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: '#f0e8d8', marginBottom: 16, textAlign: 'center' }}>{title}</div>
+
+      {/* Enemy */}
+      <div style={{ fontSize: 11, color: '#c07070', marginBottom: 5, fontWeight: 600 }}>ВОРОГ ({enemyUnits.length})</div>
+      <div style={{ padding: 8, borderRadius: 10, background: 'rgba(192,112,112,0.07)', border: '1px solid rgba(192,112,112,0.25)', marginBottom: 14 }}>
+        {renderRow(enemyUnits, 0, 'ai')}
+        {renderRow(enemyUnits, 1, 'ai')}
+      </div>
+
+      {/* Player */}
+      <div style={{ fontSize: 11, color: '#7aaa82', marginBottom: 5, fontWeight: 600 }}>
+        ТИ ({playerUnits.length}) · Армія {activeArmy} {selectedId ? '· Натисни іншого щоб поміняти' : '· Натисни щоб обрати'}
+      </div>
+      <div style={{ padding: 8, borderRadius: 10, background: 'rgba(122,170,130,0.07)', border: '1px solid rgba(122,170,130,0.3)', marginBottom: 14 }}>
+        {renderRow(playerUnits, 0, 'player')}
+        {renderRow(playerUnits, 1, 'player')}
+      </div>
+
+      {/* Preview panel */}
+      {preview && (
+        <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(240,232,216,0.05)', border: '1px solid rgba(240,232,216,0.15)', fontSize: 11, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>
+            {preview.name} <span style={{ fontWeight: 400, color: 'rgba(240,232,216,0.5)' }}>· lv{preview.bonusLevels ? `${preview.level}+${preview.bonusLevels}` : preview.level}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px', fontSize: 10, color: 'rgba(240,232,216,0.7)' }}>
+            <span>❤ HP: {preview.hp}/{preview.maxHp}</span>
+            <span>⚔ Урон: {preview.minDmg}–{preview.maxDmg}</span>
+            <span>🎯 Точн: {Math.round(preview.accuracy * 100)}%</span>
+            <span>🛡 Захист: {Math.round(preview.defense * 100)}%</span>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 'auto', display: 'flex', gap: 8 }}>
+        <button onClick={onCancel}
+          style={{ flex: 1, padding: '12px 0', borderRadius: 10, background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.18)', color: 'rgba(240,232,216,0.65)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          Скасувати
+        </button>
+        <button onClick={onConfirm} disabled={!canConfirm}
+          style={{ flex: 2, padding: '12px 0', borderRadius: 10, background: canConfirm ? '#8b2020' : 'rgba(139,32,32,0.3)', border: 'none', color: canConfirm ? '#f0e8d8' : 'rgba(240,232,216,0.35)', fontSize: 14, fontWeight: 700, cursor: canConfirm ? 'pointer' : 'not-allowed' }}>
+          ⚔ В бій
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function SacredGame() {
   const router = useRouter()
@@ -1747,6 +1889,11 @@ export default function SacredGame() {
   const [world2AfterPerkScreen,    setWorld2AfterPerkScreen]    = useState<RootScreen>('world-map-2')
   const [world2PendingSlotUnlocks, setWorld2PendingSlotUnlocks] = useState<Array<1|2>>([])
   const [world2AfterSlotScreen,    setWorld2AfterSlotScreen]    = useState<RootScreen>('world-map-2')
+  // Path-choice queue: post-battle, units that need a path (warrior lv3, mage lv2, catapult lv2)
+  const [world2PendingPathChoices, setWorld2PendingPathChoices] = useState<Array<{ army: 1|2; unitId: string; kind: 'warrior'|'mage'|'catapult' }>>([])
+  const [world2AfterPathScreen,    setWorld2AfterPathScreen]    = useState<RootScreen>('world-map-2')
+  // Resume callback after path-choice queue empties (runs hero sync + final proceed)
+  const world2PostBattleResume = useRef<(() => void) | null>(null)
   const [world2ActiveBattleUnits,setWorld2ActiveBattleUnits] = useState<GameUnit[] | null>(null)
   const [world2FightDistrictId,  setWorld2FightDistrictId]  = useState<string | null>(null)
   const [world2FightRegionId,    setWorld2FightRegionId]    = useState<string | null>(null)
@@ -1937,10 +2084,17 @@ export default function SacredGame() {
   }
 
   function handleMap2Attack(districtId: string) {
+    // Player goes to pre-battle tactical screen first (review + reorder).
+    // AP and battle units are committed in handleMap2ConfirmAttack on confirm.
+    setWorld2FightDistrictId(districtId)
+    setScreen('pre-battle-2')
+  }
+
+  function handleMap2ConfirmAttack() {
+    if (!world2FightDistrictId) return
     const battleUnits = buildActiveArmyUnits()
     world2PreBattleUnits.current = battleUnits
     setWorld2ActiveBattleUnits(battleUnits)
-    setWorld2FightDistrictId(districtId)
     setMap2State(prev => {
       if (world2ActiveArmy === 1) return { ...prev, ap: prev.ap - 1 }
       return { ...prev, army2Ap: prev.army2Ap - 1 }
@@ -1949,38 +2103,40 @@ export default function SacredGame() {
   }
 
   function handleMap2FinalBattle(regionId: string) {
+    setWorld2FightRegionId(regionId)
+    setScreen('pre-region-battle-2')
+  }
+
+  function handleMap2ConfirmFinalBattle() {
+    if (!world2FightRegionId) return
     const battleUnits = buildActiveArmyUnits()
     world2PreBattleUnits.current = battleUnits
     setWorld2ActiveBattleUnits(battleUnits)
-    setWorld2FightRegionId(regionId)
     setScreen('region-final-battle-2')
   }
 
-  // Distribute pooled XP to a unit. Cascades level-ups via applyXpToUnit.
-  // If path choice is required mid-cascade and the unit has no path yet,
-  // auto-pick a sensible default (paladin / random mage / ballista) and continue.
-  // The accumulated xp at the path boundary is re-fed as carry-over.
-  // TODO: replace auto-pick with a proper post-battle path-choice screen.
-  function distributePoolToUnit(unit: GameUnit, share: number, fortressCap?: number): GameUnit {
+  // Distribute pooled XP to a unit. Cascades level-ups via applyXpToUnit. Stops at
+  // path boundary (returns pendingPath); caller must show path-choice UI then
+  // resume via resumeUnitAfterPathChoice.
+  function distributePoolToUnit(unit: GameUnit, share: number, fortressCap?: number):
+    { unit: GameUnit; pendingPath?: 'warrior' | 'mage' | 'catapult' }
+  {
+    const result = applyXpToUnit(unit, share, fortressCap)
+    return { unit: result.unit, pendingPath: result.pendingPath }
+  }
+
+  // After player picks a path on the path-choice screen, set it and re-run cascade
+  // with the accumulated xp at the boundary as carry-over.
+  function resumeUnitAfterPathChoice(unit: GameUnit, kind: 'warrior' | 'mage' | 'catapult', choice: string, fortressCap?: number):
+    { unit: GameUnit; pendingPath?: 'warrior' | 'mage' | 'catapult' }
+  {
     let cur = unit
-    let remaining = share
-    let safety = 10
-    while (remaining > 0 && safety-- > 0) {
-      const result = applyXpToUnit(cur, remaining, fortressCap)
-      cur = result.unit
-      if (!result.pendingPath) break
-      // Auto-pick default path
-      if (result.pendingPath === 'warrior') cur = { ...cur, warriorPath: 'paladin' }
-      else if (result.pendingPath === 'mage') {
-        const paths: MagePath[] = ['fire', 'water', 'earth', 'air']
-        cur = { ...cur, magePath: paths[Math.floor(Math.random() * paths.length)] }
-      } else if (result.pendingPath === 'catapult') cur = { ...cur, catapultPath: 'ballista' }
-      // Carry over the accumulated xp through the boundary
-      const carry = cur.xp ?? 0
-      cur = { ...cur, xp: 0 }
-      remaining = carry
-    }
-    return cur
+    if (kind === 'warrior')       cur = { ...cur, warriorPath: choice as WarriorPath }
+    else if (kind === 'mage')     cur = { ...cur, magePath:    choice as MagePath }
+    else if (kind === 'catapult') cur = { ...cur, catapultPath: choice as CatapultPath }
+    const carry = cur.xp ?? 0
+    cur = { ...cur, xp: 0 }
+    return distributePoolToUnit(cur, carry, fortressCap)
   }
 
   function syncHeroAfterBattle(units: GameUnit[], prevHeroes: TerritoryMap2State['heroes'], xpShare: number): {
@@ -2045,8 +2201,14 @@ export default function SacredGame() {
     const xpShare = (won && survivorCount > 0) ? Math.floor(xpPool / survivorCount) : 0
     const fortressCap = map2State.fortressLevel
 
-    // Apply XP share to each surviving regular unit (cascading + auto-pick path)
-    const regularSurv = regularSurvRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap) : u)
+    // Apply XP share to each surviving regular unit; collect path-choice queue
+    const pathQueue: Array<{ army: 1|2; unitId: string; kind: 'warrior'|'mage'|'catapult' }> = []
+    const regularSurv = regularSurvRaw.map(u => {
+      if (xpShare <= 0) return u
+      const r = distributePoolToUnit(u, xpShare, fortressCap)
+      if (r.pendingPath) pathQueue.push({ army: world2ActiveArmy, unitId: r.unit.id, kind: r.pendingPath })
+      return r.unit
+    })
 
     if (world2ActiveArmy === 1) {
       setWorld2PlayerUnits(regularSurv)
@@ -2161,10 +2323,16 @@ export default function SacredGame() {
       }
     }
 
-    if (heroUnit) {
-      applyBattleEndHeroSync(units, won, finalNext, proceed, xpShare)
+    const continueAfterPaths = () => {
+      if (heroUnit) applyBattleEndHeroSync(units, won, finalNext, proceed, xpShare)
+      else proceed()
+    }
+    if (pathQueue.length > 0) {
+      setWorld2PendingPathChoices(pathQueue)
+      world2PostBattleResume.current = continueAfterPaths
+      setScreen('path-choice-unit')
     } else {
-      proceed()
+      continueAfterPaths()
     }
   }
 
@@ -2178,7 +2346,13 @@ export default function SacredGame() {
     const survivorCount = regularSurvRaw.length + (heroSurvived ? 1 : 0)
     const xpShare = (won && survivorCount > 0) ? Math.floor(xpPool / survivorCount) : 0
     const fortressCap = map2State.fortressLevel
-    const regularSurv = regularSurvRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap) : u)
+    const pathQueueF: Array<{ army: 1|2; unitId: string; kind: 'warrior'|'mage'|'catapult' }> = []
+    const regularSurv = regularSurvRaw.map(u => {
+      if (xpShare <= 0) return u
+      const r = distributePoolToUnit(u, xpShare, fortressCap)
+      if (r.pendingPath) pathQueueF.push({ army: world2ActiveArmy, unitId: r.unit.id, kind: r.pendingPath })
+      return r.unit
+    })
 
     if (world2ActiveArmy === 1) {
       setWorld2PlayerUnits(regularSurv)
@@ -2242,10 +2416,16 @@ export default function SacredGame() {
       }
     }
 
-    if (heroUnit) {
-      applyBattleEndHeroSync(units, won, 'world-map-2', proceed, xpShare)
+    const continueAfterPathsF = () => {
+      if (heroUnit) applyBattleEndHeroSync(units, won, 'world-map-2', proceed, xpShare)
+      else proceed()
+    }
+    if (pathQueueF.length > 0) {
+      setWorld2PendingPathChoices(pathQueueF)
+      world2PostBattleResume.current = continueAfterPathsF
+      setScreen('path-choice-unit')
     } else {
-      proceed()
+      continueAfterPathsF()
     }
   }
 
@@ -2453,6 +2633,37 @@ export default function SacredGame() {
     setScreen('slot-choice')
   }
 
+  function handleMap2ChoosePath(choice: string) {
+    const current = world2PendingPathChoices[0]
+    if (!current) return
+    const setter = current.army === 1 ? setWorld2PlayerUnits : setWorld2Army2Units
+    const fortressCap = map2State.fortressLevel
+    let cascadedPath: 'warrior'|'mage'|'catapult' | undefined
+    setter(prev => {
+      if (!prev) return prev
+      return prev.map(u => {
+        if (u.id !== current.unitId) return u
+        const r = resumeUnitAfterPathChoice(u, current.kind, choice, fortressCap)
+        cascadedPath = r.pendingPath  // capture if another path needed after cascade
+        return r.unit
+      })
+    })
+    // Build the next queue: drop current, possibly append a follow-up entry for cascaded path
+    setWorld2PendingPathChoices(prev => {
+      const rest = prev.slice(1)
+      const next = cascadedPath
+        ? [...rest, { army: current.army, unitId: current.unitId, kind: cascadedPath }]
+        : rest
+      if (next.length === 0) {
+        // Defer resume to next tick so React commits the state above first
+        const resume = world2PostBattleResume.current
+        world2PostBattleResume.current = null
+        setTimeout(() => { if (resume) resume(); else setScreen('world-map-2') }, 0)
+      }
+      return next
+    })
+  }
+
   function handleMap2ChoosePerk(perkId: PerkId) {
     if (!world2PendingPerkHeroId) return
     const heroState = map2State.heroes[world2PendingPerkHeroId]
@@ -2512,7 +2723,8 @@ export default function SacredGame() {
     // Map 1 has no heroes — pool split equally among regular survivors
     const xpShare = (won && survivedRaw.length > 0) ? Math.floor(xpPool / survivedRaw.length) : 0
     const fortressCap = territoryState.fortressLevel
-    const survived = survivedRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap) : u)
+    // Map 1 has no path-choice UI — just take resulting unit. Path-blocked units accumulate xp.
+    const survived = survivedRaw.map(u => xpShare > 0 ? distributePoolToUnit(u, xpShare, fortressCap).unit : u)
     setWorldPlayerUnits(survived)
     setWorldDeadUnits(prev => [...prev, ...fallen])
 
@@ -2834,6 +3046,72 @@ export default function SacredGame() {
     )
   }
 
+  if (screen === 'path-choice-unit') {
+    const current = world2PendingPathChoices[0]
+    if (!current) { setScreen('world-map-2'); return null }
+    const sourceUnits = current.army === 1 ? (world2PlayerUnits ?? []) : (world2Army2Units ?? [])
+    const unit = sourceUnits.find(u => u.id === current.unitId)
+    if (!unit) {
+      // Unit no longer exists — skip
+      setWorld2PendingPathChoices(prev => prev.slice(1))
+      return null
+    }
+    type Opt = { key: string; name: string; portrait: string; desc: string }
+    const opts: Opt[] = current.kind === 'warrior'
+      ? [
+          { key: 'paladin',  name: WARRIOR_PATHS.paladin[3].name,  portrait: '/sacred/warriors/level3.jpg',           desc: 'Захист, аура освячення — танк' },
+          { key: 'champion', name: WARRIOR_PATHS.champion[3].name, portrait: '/sacred/warriors/champion/level3.jpg',  desc: 'Високий dmg, крит — нападник' },
+        ]
+      : current.kind === 'mage'
+        ? [
+            { key: 'fire',  name: MAGE_PATHS.fire[2].name,  portrait: '/sacred/mages/fire/level2.jpg',  desc: 'Вогняні бомби, AoE' },
+            { key: 'water', name: MAGE_PATHS.water[2].name, portrait: '/sacred/mages/water/level2.jpg', desc: 'Заморозка, контроль' },
+            { key: 'earth', name: MAGE_PATHS.earth[2].name, portrait: '/sacred/mages/earth/level2.jpg', desc: 'Камені, бафи захисту' },
+            { key: 'air',   name: MAGE_PATHS.air[2].name,   portrait: '/sacred/mages/air/level2.jpg',   desc: 'Швидкість, точність' },
+          ]
+        : [
+            { key: 'ballista',  name: CATAPULT_PATHS.ballista[2].name,  portrait: '/sacred/catapults/ballista/level2.jpg',  desc: 'Точність, одна ціль' },
+            { key: 'trebuchet', name: CATAPULT_PATHS.trebuchet[2].name, portrait: '/sacred/catapults/trebuchet/level2.jpg', desc: 'Сильний AoE урон' },
+          ]
+    const kindLabel = current.kind === 'warrior' ? 'Воїн' : current.kind === 'mage' ? 'Маг' : 'Катапульта'
+    return (
+      <div style={{
+        maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: '#0f0e09',
+        color: '#f0e8d8', fontFamily: "'Inter', sans-serif",
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '32px 24px',
+      }}>
+        <div style={{ fontSize: 13, letterSpacing: 3, color: '#d4a85a', textTransform: 'uppercase', marginBottom: 8, opacity: 0.7 }}>Вибір шляху</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#f0e8d8', marginBottom: 4 }}>{unit.name}</div>
+        <div style={{ fontSize: 13, color: 'rgba(240,232,216,0.45)', marginBottom: 24 }}>
+          {kindLabel} · Армія {current.army} · Куди розвивати?
+        </div>
+        {world2PendingPathChoices.length > 1 && (
+          <div style={{ fontSize: 10, color: 'rgba(240,232,216,0.4)', marginBottom: 18 }}>
+            Ще виборів: {world2PendingPathChoices.length - 1}
+          </div>
+        )}
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {opts.map(o => (
+            <button key={o.key} onClick={() => handleMap2ChoosePath(o.key)}
+              style={{
+                padding: '12px', borderRadius: 14, textAlign: 'left',
+                background: 'rgba(212,168,90,0.08)', border: '1px solid rgba(212,168,90,0.3)',
+                color: '#f0e8d8', cursor: 'pointer', width: '100%',
+                display: 'flex', gap: 12, alignItems: 'center',
+              }}>
+              <img src={o.portrait} alt="" style={{ width: 48, height: 56, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#d4a85a', marginBottom: 4 }}>{o.name}</div>
+                <div style={{ fontSize: 12, color: 'rgba(240,232,216,0.55)' }}>{o.desc}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (screen === 'perk-choice' && world2PendingPerkHeroId) {
     const heroState = map2State.heroes[world2PendingPerkHeroId]
     const availablePerks = heroState ? getAvailablePerks(heroState) : []
@@ -3046,6 +3324,63 @@ export default function SacredGame() {
       onDismissUnit={handleMap2DismissUnit}
     />
   )
+
+  if (screen === 'pre-battle-2') {
+    const district = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
+    if (!district) { setScreen('world-map-2'); return null }
+    // Build enemy preview using same logic as world-battle-2 ai generation
+    const isBot = map2State.ownership[district.id] === 'bot'
+    const isHeroNode = isBot && map2State.botHeroNodeId === district.id
+    let aiPreview: GameUnit[] = []
+    if (isBot && isHeroNode) {
+      const hpPct = map2State.botArmyHpPct ?? 1
+      aiPreview = buildArmyFromSpecs2(map2State.botArmy, 'ai').map(u => ({ ...u, hp: Math.max(1, Math.round(u.maxHp * hpPct)) }))
+      if (map2State.botHero?.isAlive) {
+        const hero = buildBotHeroUnit(map2State.botHero, 'ai')
+        aiPreview = [{ ...hero, row: 0 as const, slot: 3 }, ...aiPreview]
+      }
+    } else if (isBot) {
+      aiPreview = buildArmyFromSpecs2([
+        { class: 'warrior', level: 1 }, { class: 'warrior', level: 1 }, { class: 'archer', level: 1 },
+      ], 'ai')
+    } else {
+      aiPreview = buildArmyFromSpecs2(district.army, 'ai')
+    }
+    const playerPreview = buildActiveArmyUnits()
+    return (
+      <PreBattleScreen
+        title={`Атака на ${district.name}`}
+        playerUnits={playerPreview}
+        enemyUnits={aiPreview}
+        canConfirm={(world2ActiveArmy === 1 ? map2State.ap : map2State.army2Ap) > 0}
+        onConfirm={handleMap2ConfirmAttack}
+        onCancel={() => { setWorld2FightDistrictId(null); setScreen('world-map-2') }}
+        activeArmy={world2ActiveArmy}
+        onSwap={handleMap2ReorderUnits}
+        onMoveSlot={handleMap2MoveUnitSlot}
+      />
+    )
+  }
+
+  if (screen === 'pre-region-battle-2') {
+    const region = world2FightRegionId ? getRegionById(world2FightRegionId) : null
+    if (!region) { setScreen('world-map-2'); return null }
+    const aiPreview = buildArmyFromSpecs2(region.finalBattleArmy, 'ai')
+    const playerPreview = buildActiveArmyUnits()
+    return (
+      <PreBattleScreen
+        title={`Фінальна битва: ${region.name}`}
+        playerUnits={playerPreview}
+        enemyUnits={aiPreview}
+        canConfirm={true}
+        onConfirm={handleMap2ConfirmFinalBattle}
+        onCancel={() => { setWorld2FightRegionId(null); setScreen('world-map-2') }}
+        activeArmy={world2ActiveArmy}
+        onSwap={handleMap2ReorderUnits}
+        onMoveSlot={handleMap2MoveUnitSlot}
+      />
+    )
+  }
 
   if (screen === 'world-battle-2') {
     const district = world2FightDistrictId ? getDistrictById(world2FightDistrictId) : null
