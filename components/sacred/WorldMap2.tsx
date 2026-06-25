@@ -938,13 +938,17 @@ export default function WorldMap2({
                         const heroAlive    = isHeroSlot && activeHero?.isAlive
                         const heroDead     = isHeroSlot && activeHero && !activeHero.isAlive
                         return (
-                          <div key={slot} onClick={() => !isHeroSlot && unlocked && handleSlotClick(row, slot)} style={{
+                          <div key={slot} onClick={() => {
+                            // Hero slot is clickable when hero is hired (toggles details panel inside handleSlotClick)
+                            if (isHeroSlot) { if (activeHero) handleSlotClick(row, slot); return }
+                            if (unlocked) handleSlotClick(row, slot)
+                          }} style={{
                             height: 72, borderRadius: 10, overflow: 'hidden',
                             border: isHeroSlot
                               ? `2px solid ${heroAlive ? 'rgba(212,168,90,0.6)' : heroDead ? 'rgba(180,50,50,0.4)' : 'rgba(240,232,216,0.18)'}`
                               : isSel ? '2px solid #d4a85a' : '1px solid rgba(240,232,216,0.15)',
                             background: unlocked ? (unit || isHeroSlot ? 'transparent' : 'rgba(240,232,216,0.04)') : 'rgba(0,0,0,0.3)',
-                            cursor: isHeroSlot ? 'default' : unlocked ? 'pointer' : 'not-allowed',
+                            cursor: isHeroSlot ? (activeHero ? 'pointer' : 'default') : unlocked ? 'pointer' : 'not-allowed',
                             position: 'relative',
                           }}>
                             {isHeroSlot ? (
