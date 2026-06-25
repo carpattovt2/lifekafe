@@ -1723,24 +1723,48 @@ type RootScreen =
   | 'level-up' | 'perk-choice' | 'slot-choice' | 'path-choice-unit'
 
 // ── Pre-battle tactical screen ─────────────────────────────────────────────────
-function PreBattleScreen({ title, playerUnits, enemyUnits, canConfirm, onConfirm, onCancel, activeArmy, onSwap, onMoveSlot }: {
+function PreBattleScreen({ title, playerUnits, enemyUnits, canConfirm, onConfirm, onCancel, activeArmy }: {
   title: string
   playerUnits: GameUnit[]
   enemyUnits: GameUnit[]
   canConfirm: boolean
-  onConfirm: () => void
+  onConfirm: (finalRegulars: GameUnit[]) => void
   onCancel: () => void
   activeArmy: 1 | 2
-  onSwap: (id1: string, id2: string) => void
-  onMoveSlot: (id: string, row: number, slot: number) => void
 }) {
+  // Local copy — only persisted to parent on confirm. Cancel discards changes.
+  const [local, setLocal] = useState<GameUnit[]>(playerUnits)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [preview, setPreview] = useState<GameUnit | null>(null)
+
+  // Hero positions are fixed — swapping/moving them would break the data model.
+  function isLocked(unit: GameUnit) { return !!unit.isHero }
+
+  function localSwap(id1: string, id2: string) {
+    setLocal(prev => {
+      const u1 = prev.find(u => u.id === id1)
+      const u2 = prev.find(u => u.id === id2)
+      if (!u1 || !u2 || isLocked(u1) || isLocked(u2) || u1.row !== u2.row) return prev
+      return prev.map(u => {
+        if (u.id === id1) return { ...u, row: u2.row, slot: u2.slot }
+        if (u.id === id2) return { ...u, row: u1.row, slot: u1.slot }
+        return u
+      })
+    })
+  }
+  function localMove(id: string, row: number, slot: number) {
+    setLocal(prev => {
+      const u = prev.find(x => x.id === id)
+      if (!u || isLocked(u) || u.row !== row) return prev  // same-row moves only
+      return prev.map(x => x.id === id ? { ...x, row: row as Row, slot } : x)
+    })
+  }
 
   function renderSlot(units: GameUnit[], row: number, slot: number, side: 'player' | 'ai') {
     const unit = units.find(u => u.row === row && u.slot === slot)
     const isSel = unit && selectedId === unit.id
     const isHpLow = unit && unit.hp / unit.maxHp < 0.5
+    const locked = unit && side === 'player' && isLocked(unit)
     return (
       <div
         key={`${side}-${row}-${slot}`}
@@ -1748,15 +1772,15 @@ function PreBattleScreen({ title, playerUnits, enemyUnits, canConfirm, onConfirm
           if (!unit) {
             // Empty slot on player side: if we have a selected unit, move it here
             if (side === 'player' && selectedId) {
-              onMoveSlot(selectedId, row, slot)
+              localMove(selectedId, row, slot)
               setSelectedId(null)
             }
             return
           }
           if (side === 'ai') { setPreview(p => p?.id === unit.id ? null : unit); return }
-          // Player side: select for swap, or swap with selected
+          if (locked) { setPreview(p => p?.id === unit.id ? null : unit); return }  // hero — show stats only
           if (selectedId && selectedId !== unit.id) {
-            onSwap(selectedId, unit.id)
+            localSwap(selectedId, unit.id)
             setSelectedId(null)
           } else if (selectedId === unit.id) {
             setSelectedId(null)
@@ -1827,11 +1851,11 @@ function PreBattleScreen({ title, playerUnits, enemyUnits, canConfirm, onConfirm
 
       {/* Player */}
       <div style={{ fontSize: 11, color: '#7aaa82', marginBottom: 5, fontWeight: 600 }}>
-        ТИ ({playerUnits.length}) · Армія {activeArmy} {selectedId ? '· Натисни іншого щоб поміняти' : '· Натисни щоб обрати'}
+        ТИ ({local.length}) · Армія {activeArmy} {selectedId ? '· Натисни іншого щоб поміняти' : '· Натисни щоб обрати'}
       </div>
       <div style={{ padding: 8, borderRadius: 10, background: 'rgba(122,170,130,0.07)', border: '1px solid rgba(122,170,130,0.3)', marginBottom: 14 }}>
-        {renderRow(playerUnits, 0, 'player')}
-        {renderRow(playerUnits, 1, 'player')}
+        {renderRow(local, 0, 'player')}
+        {renderRow(local, 1, 'player')}
       </div>
 
       {/* Preview panel */}
@@ -1854,7 +1878,7 @@ function PreBattleScreen({ title, playerUnits, enemyUnits, canConfirm, onConfirm
           style={{ flex: 1, padding: '12px 0', borderRadius: 10, background: 'rgba(240,232,216,0.06)', border: '1px solid rgba(240,232,216,0.18)', color: 'rgba(240,232,216,0.65)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           Скасувати
         </button>
-        <button onClick={onConfirm} disabled={!canConfirm}
+        <button onClick={() => onConfirm(local.filter(u => !u.isHero))} disabled={!canConfirm}
           style={{ flex: 2, padding: '12px 0', borderRadius: 10, background: canConfirm ? '#8b2020' : 'rgba(139,32,32,0.3)', border: 'none', color: canConfirm ? '#f0e8d8' : 'rgba(240,232,216,0.35)', fontSize: 14, fontWeight: 700, cursor: canConfirm ? 'pointer' : 'not-allowed' }}>
           ⚔ В бій
         </button>
@@ -2090,9 +2114,22 @@ export default function SacredGame() {
     setScreen('pre-battle-2')
   }
 
-  function handleMap2ConfirmAttack() {
+  // Build battle units from a specific regulars list (the tactical-screen local copy),
+  // attaching the active army's hero. Used after pre-battle confirm.
+  function buildBattleUnitsFromRegulars(regulars: GameUnit[]): GameUnit[] {
+    const heroes = map2State.heroes
+    const hero = world2ActiveArmy === 1
+      ? (heroes.artan?.isAlive   ? buildHeroUnit(heroes.artan,   'player') : null)
+      : (heroes.sybilla?.isAlive ? buildHeroUnit(heroes.sybilla, 'player') : null)
+    return hero ? [hero, ...regulars] : regulars
+  }
+
+  function handleMap2ConfirmAttack(finalRegulars: GameUnit[]) {
     if (!world2FightDistrictId) return
-    const battleUnits = buildActiveArmyUnits()
+    // Commit reorder to persistent army state (was only local in tactical view)
+    if (world2ActiveArmy === 1) setWorld2PlayerUnits(finalRegulars)
+    else                        setWorld2Army2Units(finalRegulars)
+    const battleUnits = buildBattleUnitsFromRegulars(finalRegulars)
     world2PreBattleUnits.current = battleUnits
     setWorld2ActiveBattleUnits(battleUnits)
     setMap2State(prev => {
@@ -2107,9 +2144,11 @@ export default function SacredGame() {
     setScreen('pre-region-battle-2')
   }
 
-  function handleMap2ConfirmFinalBattle() {
+  function handleMap2ConfirmFinalBattle(finalRegulars: GameUnit[]) {
     if (!world2FightRegionId) return
-    const battleUnits = buildActiveArmyUnits()
+    if (world2ActiveArmy === 1) setWorld2PlayerUnits(finalRegulars)
+    else                        setWorld2Army2Units(finalRegulars)
+    const battleUnits = buildBattleUnitsFromRegulars(finalRegulars)
     world2PreBattleUnits.current = battleUnits
     setWorld2ActiveBattleUnits(battleUnits)
     setScreen('region-final-battle-2')
@@ -3356,8 +3395,6 @@ export default function SacredGame() {
         onConfirm={handleMap2ConfirmAttack}
         onCancel={() => { setWorld2FightDistrictId(null); setScreen('world-map-2') }}
         activeArmy={world2ActiveArmy}
-        onSwap={handleMap2ReorderUnits}
-        onMoveSlot={handleMap2MoveUnitSlot}
       />
     )
   }
@@ -3376,8 +3413,6 @@ export default function SacredGame() {
         onConfirm={handleMap2ConfirmFinalBattle}
         onCancel={() => { setWorld2FightRegionId(null); setScreen('world-map-2') }}
         activeArmy={world2ActiveArmy}
-        onSwap={handleMap2ReorderUnits}
-        onMoveSlot={handleMap2MoveUnitSlot}
       />
     )
   }
